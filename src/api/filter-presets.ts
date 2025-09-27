@@ -465,7 +465,11 @@ export class FilterPreset {
    * @see {@link https://ffmpeg.org/ffmpeg-filters.html#fps | FFmpeg fps filter}
    */
   fps(fps: number): FilterPreset {
-    this.add(`fps=${fps}`);
+    if (fps <= 0) {
+      return this;
+    }
+
+    this.add(`fps=fps=${fps}`);
     return this;
   }
 
