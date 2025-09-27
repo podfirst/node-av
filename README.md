@@ -399,6 +399,7 @@ NodeAV provides direct bindings to FFmpeg's C APIs, which work with raw memory p
 | `api-frame-extract` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-frame-extract.ts) |
 | `api-hw-decode-sw-encode` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-hw-decode-sw-encode.ts) |
 | `api-hw-raw` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-hw-raw.ts) |
+| `api-hw-raw-output` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-hw-raw-output.ts) |
 | `api-hw-rtsp-custom-io` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-hw-rtsp-custom-io.ts) |
 | `api-hw-rtsp` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-hw-rtsp.ts) |
 | `api-hw-transcode` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-hw-transcode.ts) |
