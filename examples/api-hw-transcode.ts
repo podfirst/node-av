@@ -8,10 +8,8 @@
  * Example: tsx examples/api-hw-transcode.ts testdata/video.mp4 examples/.tmp/api-hw-transcode.mp4
  */
 
-import { AV_HWDEVICE_TYPE_CUDA, AV_LOG_DEBUG, Decoder, Encoder, FF_ENCODER_LIBX264, HardwareContext, Log, MediaInput, MediaOutput } from '../src/index.js';
+import { AV_HWDEVICE_TYPE_CUDA, AV_LOG_DEBUG, Codec, Decoder, Encoder, FF_ENCODER_LIBX265, HardwareContext, Log, MediaInput, MediaOutput } from '../src/index.js';
 import { prepareTestEnvironment } from './index.js';
-
-import type { FFEncoderCodec } from '../src/index.js';
 
 const inputFile = process.argv[2];
 const outputFile = process.argv[3];
@@ -68,19 +66,14 @@ using decoder = await Decoder.create(videoStream, {
   hardware: hw,
 });
 
-// Determine encoder based on hardware availability
-let encoderName: FFEncoderCodec = FF_ENCODER_LIBX264; // Default software encoder
-
-if (hw) {
-  const encoderCodec = hw.getEncoderCodec('hevc');
-  if (encoderCodec?.isHardwareAcceleratedEncoder()) {
-    encoderName = encoderCodec.name as FFEncoderCodec;
-  }
+// Create encoder
+const encoderCodec = hw?.getEncoderCodec('hevc') ?? Codec.findEncoderByName(FF_ENCODER_LIBX265);
+if (!encoderCodec) {
+  throw new Error('No suitable HEVC encoder found');
 }
 
-// Create encoder
-console.log(`Creating encoder: ${encoderName}...`);
-using encoder = await Encoder.create(encoderName, {
+console.log(`Creating encoder: ${encoderCodec.name}...`);
+using encoder = await Encoder.create(encoderCodec, {
   timeBase: videoStream.timeBase,
   frameRate: videoStream.avgFrameRate,
 });

@@ -16,10 +16,23 @@
  *   tsx examples/api-pipeline-hw-rtsp.ts rtsp://server/live output.mp4 --scale 1280x720
  */
 
-import { AV_LOG_DEBUG, Decoder, Encoder, FF_ENCODER_LIBX265, FilterAPI, FilterPreset, HardwareContext, Log, MediaInput, MediaOutput, pipeline } from '../src/index.js';
+import {
+  AV_LOG_DEBUG,
+  Codec,
+  Decoder,
+  Encoder,
+  FF_ENCODER_LIBX265,
+  FilterAPI,
+  FilterPreset,
+  HardwareContext,
+  Log,
+  MediaInput,
+  MediaOutput,
+  pipeline,
+} from '../src/index.js';
 import { prepareTestEnvironment } from './index.js';
 
-import type { FFEncoderCodec, PipelineControl } from '../src/index.js';
+import type { PipelineControl } from '../src/index.js';
 
 // Parse command line arguments
 const args = process.argv.slice(2);
@@ -100,19 +113,10 @@ console.log('Creating pipeline components...');
 
 using decoder = await Decoder.create(videoStream, {
   hardware,
+  exitOnError: false,
 });
 
-// Determine encoder and filter based on hardware
-let encoderName: FFEncoderCodec = FF_ENCODER_LIBX265;
-let filterChain = `scale=${scaleWidth}:${scaleHeight},setpts=N/FRAME_RATE/TB`;
-
-if (hardware) {
-  const encoderCodec = hardware.getEncoderCodec('hevc');
-  if (encoderCodec?.isHardwareAcceleratedEncoder()) {
-    encoderName = encoderCodec.name as FFEncoderCodec;
-    filterChain = FilterPreset.chain(hardware).scale(scaleWidth, scaleHeight).custom('setpts=N/FRAME_RATE/TB').build();
-  }
-}
+const filterChain = FilterPreset.chain(hardware).scale(scaleWidth, scaleHeight).custom('setpts=N/FRAME_RATE/TB').build();
 
 using filter = FilterAPI.create(filterChain, {
   timeBase: videoStream.timeBase,
@@ -120,7 +124,13 @@ using filter = FilterAPI.create(filterChain, {
   hardware,
 });
 
-using encoder = await Encoder.create(encoderName, {
+// Create encoder
+const encoderCodec = hardware?.getEncoderCodec('hevc') ?? Codec.findEncoderByName(FF_ENCODER_LIBX265);
+if (!encoderCodec) {
+  throw new Error('No suitable HEVC encoder found');
+}
+
+using encoder = await Encoder.create(encoderCodec, {
   timeBase: videoStream.timeBase,
   frameRate: videoStream.avgFrameRate,
   bitrate: '2M',

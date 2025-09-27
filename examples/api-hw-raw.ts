@@ -19,8 +19,8 @@
 
 import {
   AV_LOG_DEBUG,
-  AV_PIX_FMT_NV12,
   AV_PIX_FMT_YUV420P,
+  Codec,
   Decoder,
   Encoder,
   FF_ENCODER_LIBX265,
@@ -32,8 +32,6 @@ import {
   MediaOutput,
 } from '../src/index.js';
 import { prepareTestEnvironment } from './index.js';
-
-import type { FFEncoderCodec } from '../src/index.js';
 
 // Parse command line arguments
 const args = process.argv.slice(2);
@@ -101,17 +99,12 @@ using decoder = await Decoder.create(videoStream, {
   hardware, // Will be ignored for rawvideo codec
 });
 
-// Determine encoder based on hardware
-let encoderName: FFEncoderCodec = FF_ENCODER_LIBX265; // Default software encoder
-let filterChain = 'scale=640:360,setpts=N/FRAME_RATE/TB';
-
-if (hardware) {
-  const encoderCodec = hardware.getEncoderCodec('hevc');
-  if (encoderCodec?.isHardwareAcceleratedEncoder()) {
-    encoderName = encoderCodec.name as FFEncoderCodec;
-    filterChain = FilterPreset.chain(hardware).format(AV_PIX_FMT_NV12).hwupload().scale(640, 360).custom('setpts=N/FRAME_RATE/TB').build();
-  }
-}
+// Create filter
+const filterChain = FilterPreset.chain(hardware)
+  .custom(hardware ? 'format=nv12,hwupload' : undefined)
+  .scale(640, 360)
+  .custom('setpts=N/FRAME_RATE/TB')
+  .build();
 
 console.log(`Creating filter: ${filterChain}`);
 using filter = FilterAPI.create(filterChain, {
@@ -120,9 +113,14 @@ using filter = FilterAPI.create(filterChain, {
   hardware,
 });
 
-// Create encoder with scaled dimensions
-console.log(`Creating encoder: ${encoderName}...`);
-using encoder = await Encoder.create(encoderName, {
+// Create encoder
+const encoderCodec = hardware?.getEncoderCodec('hevc') ?? Codec.findEncoderByName(FF_ENCODER_LIBX265);
+if (!encoderCodec) {
+  throw new Error('No suitable HEVC encoder found');
+}
+
+console.log(`Creating encoder: ${encoderCodec.name}...`);
+using encoder = await Encoder.create(encoderCodec, {
   timeBase: videoStream.timeBase,
   frameRate: videoStream.avgFrameRate,
   bitrate: '1M',
