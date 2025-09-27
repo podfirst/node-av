@@ -149,7 +149,11 @@ export class FilterPreset {
    * chain.custom('myfilter=param1:param2')
    * ```
    */
-  custom(filter: string): this {
+  custom(filter?: string): this {
+    if (!filter) {
+      return this;
+    }
+
     return this.add(filter);
   }
 
@@ -1704,6 +1708,7 @@ export class FilterPreset {
 
   /**
    * Adds a hwupload filter to upload frames to hardware.
+   * Only applied if hardware acceleration is configured.
    *
    * @returns This instance for chaining
    *
@@ -1716,7 +1721,11 @@ export class FilterPreset {
    * ```
    */
   hwupload(): FilterPreset {
-    if (this.hardware?.deviceType === AV_HWDEVICE_TYPE_CUDA) {
+    if (!this.hardware) {
+      return this;
+    }
+
+    if (this.hardware.deviceType === AV_HWDEVICE_TYPE_CUDA) {
       this.add('hwupload_cuda');
     } else {
       this.add('hwupload');
@@ -1726,6 +1735,7 @@ export class FilterPreset {
 
   /**
    * Adds a hwdownload filter to download frames from hardware.
+   * Only applied if hardware acceleration is configured.
    *
    * @returns This instance for chaining
    *
@@ -1738,6 +1748,10 @@ export class FilterPreset {
    * ```
    */
   hwdownload(): FilterPreset {
+    if (!this.hardware) {
+      return this;
+    }
+
     this.add('hwdownload');
     return this;
   }
