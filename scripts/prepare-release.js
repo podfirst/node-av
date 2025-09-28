@@ -83,7 +83,7 @@ if (existsSync(changelogPath)) {
 execSync('git add package.json', { cwd: rootDir });
 
 // Regenerate package-lock.json
-execSync('npm i --package-lock-only', { cwd: rootDir, env: { ...process.env, SKIP_FFMPEG: 'true' } });
+execSync('npm i --package-lock-only --ignore-scripts', { cwd: rootDir });
 execSync('git add package-lock.json', { cwd: rootDir });
 
 // Also stage CHANGELOG.md if it was updated
@@ -99,12 +99,5 @@ console.log(`Created commit for version ${newVersion}`);
 execSync(`git tag -a v${newVersion} -m "Release v${newVersion}"`, { cwd: rootDir });
 console.log(`Created tag v${newVersion}`);
 
-console.log('\n✅ Release preparation complete!');
-console.log('\nNext steps:');
-console.log('1. Review the changes: git show');
-console.log(`2. Push to origin: git push && git push origin v${newVersion}`);
-console.log('3. The GitHub Actions workflow will automatically:');
-console.log('   - Build binaries for all platforms');
-console.log('   - Create GitHub release with CHANGELOG notes');
-console.log('   - Publish platform packages to npm');
-console.log('   - Publish main package to npm');
+console.log('\nRelease preparation complete!');
+console.log(`\nPush to origin: git push && git push origin v${newVersion}`);
