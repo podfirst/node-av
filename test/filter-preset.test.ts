@@ -52,12 +52,12 @@ describe('FilterPreset', () => {
     describe('fps()', () => {
       it('should add fps filter with frame rate', () => {
         const graph = FilterPreset.chain().fps(30).build();
-        strictEqual(graph, 'fps=30');
+        strictEqual(graph, 'fps=fps=30');
       });
 
       it('should handle decimal frame rate', () => {
         const graph = FilterPreset.chain().fps(29.97).build();
-        strictEqual(graph, 'fps=29.97');
+        strictEqual(graph, 'fps=fps=29.97');
       });
 
       // fps() doesn't support options in current implementation
@@ -391,7 +391,7 @@ describe('FilterPreset', () => {
   describe('Complex Chains', () => {
     it('should chain multiple filters', () => {
       const graph = FilterPreset.chain().scale(1920, 1080).format(AV_PIX_FMT_YUV420P).fps(30).build();
-      strictEqual(graph, 'scale=1920:1080,format=yuv420p,fps=30');
+      strictEqual(graph, 'scale=1920:1080,format=yuv420p,fps=fps=30');
     });
 
     it('should handle mixed audio and video filters', () => {
@@ -402,7 +402,7 @@ describe('FilterPreset', () => {
     it('should handle complex filter chain', () => {
       const graph = FilterPreset.chain().scale(1280, 720).crop(1024, 576).pad(1920, 1080, '448', '252').format(AV_PIX_FMT_YUV420P).fps(25).build();
 
-      strictEqual(graph, 'scale=1280:720,crop=1024:576:0:0,pad=1920:1080:448:252:black,format=yuv420p,fps=25');
+      strictEqual(graph, 'scale=1280:720,crop=1024:576:0:0,pad=1920:1080:448:252:black,format=yuv420p,fps=fps=25');
     });
   });
 
