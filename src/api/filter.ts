@@ -82,10 +82,6 @@ export class FilterAPI implements Disposable {
    *
    * @returns Configured filter instance
    *
-   * @throws {Error} If filter creation or configuration fails
-   *
-   * @throws {FFmpegError} If graph parsing or config fails
-   *
    * @example
    * ```typescript
    * // Simple video filter
@@ -258,6 +254,10 @@ export class FilterAPI implements Disposable {
       }
 
       await this.initialize(frame);
+    }
+
+    if (!this.initialized) {
+      return null;
     }
 
     if (!this.buffersrcCtx || !this.buffersinkCtx) {
@@ -884,9 +884,10 @@ export class FilterAPI implements Disposable {
 
     if (typeof result === 'number') {
       FFmpegError.throwIfError(result, 'Failed to send filter command');
+      return '';
     }
 
-    return (result as any).response;
+    return result.response ?? '';
   }
 
   /**
