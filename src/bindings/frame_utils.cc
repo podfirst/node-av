@@ -83,7 +83,6 @@ Napi::Value FrameUtils::Process(const Napi::CallbackInfo& info) {
 
   // Default values
   int cropX = 0, cropY = 0, cropWidth = input_width_, cropHeight = input_height_;
-  int resizeWidth = input_width_, resizeHeight = input_height_;
   AVPixelFormat outputFormat = AV_PIX_FMT_NV12;
 
   // Parse crop options
@@ -95,7 +94,11 @@ Napi::Value FrameUtils::Process(const Napi::CallbackInfo& info) {
     if (crop.Has("height")) cropHeight = crop.Get("height").As<Napi::Number>().Int32Value();
   }
 
-  // Parse resize options
+  // Default resize to crop dimensions (or input dimensions if no crop)
+  int resizeWidth = cropWidth;
+  int resizeHeight = cropHeight;
+
+  // Parse resize options (overrides defaults)
   if (options.Has("resize") && options.Get("resize").IsObject()) {
     Napi::Object resize = options.Get("resize").As<Napi::Object>();
     if (resize.Has("width")) resizeWidth = resize.Get("width").As<Napi::Number>().Int32Value();
@@ -194,7 +197,13 @@ AVFrame* FrameUtils::GetOrCreateFrame(int width, int height, AVPixelFormat forma
 
   auto it = frame_pool_.find(config);
   if (it != frame_pool_.end()) {
-    return it->second;
+    // Return existing frame with matching config
+    AVFrame* frame = it->second;
+    // Ensure frame dimensions match (in case of reuse)
+    frame->width = width;
+    frame->height = height;
+    frame->format = format;
+    return frame;
   }
 
   // Create new frame
