@@ -6,7 +6,6 @@ import type { HardwareContext } from './hardware.js';
  * Raw video data configuration.
  *
  * Specifies parameters for opening raw video files like YUV.
- *
  */
 export interface VideoRawData {
   /** Type discriminator for TypeScript */
@@ -32,7 +31,6 @@ export interface VideoRawData {
  * Raw audio data configuration.
  *
  * Specifies parameters for opening raw audio files like PCM.
- *
  */
 export interface AudioRawData {
   /** Type discriminator for TypeScript */
@@ -113,8 +111,6 @@ export interface MediaOutputOptions {
    * memory usage.
    *
    * @default 4096
-   *
-   * ```
    */
   bufferSize?: number;
 }
@@ -124,7 +120,6 @@ export interface MediaOutputOptions {
  *
  * Configuration parameters for initializing a media decoder.
  * Supports hardware acceleration and threading configuration.
- *
  */
 export interface DecoderOptions {
   /** Number of threads to use (0 for auto) */
@@ -145,7 +140,6 @@ export interface DecoderOptions {
  *
  * Encoder-specific configuration options.
  * Stream parameters (width, height, format, etc.) are taken from the provided stream.
- *
  */
 export interface EncoderOptions {
   /** Target bitrate (number, bigint, or string like '5M') */
@@ -181,7 +175,6 @@ export interface EncoderOptions {
 
 /**
  * Options for creating a filter instance.
- *
  */
 export interface FilterOptions {
   /**

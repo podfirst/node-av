@@ -105,9 +105,7 @@ export class Encoder implements Disposable {
    *
    * @returns Configured encoder instance
    *
-   * @throws {Error} If encoder not found or timeBase not provided
-   *
-   * @throws {FFmpegError} If codec allocation fails
+   * @throws {Error} If encoder not found
    *
    * @example
    * ```typescript

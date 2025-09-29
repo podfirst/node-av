@@ -127,10 +127,6 @@ export class Decoder implements Disposable {
    * @see {@link DecoderOptions} For configuration options
    */
   static async create(stream: Stream, options: DecoderOptions = {}): Promise<Decoder> {
-    if (!stream) {
-      throw new Error('Stream is required');
-    }
-
     // Find decoder for this codec
     const codec = Codec.findDecoder(stream.codecpar.codecId);
     if (!codec) {
@@ -229,10 +225,6 @@ export class Decoder implements Disposable {
    * @see {@link create} For async version
    */
   static createSync(stream: Stream, options: DecoderOptions = {}): Decoder {
-    if (!stream) {
-      throw new Error('Stream is required');
-    }
-
     // Find decoder for this codec
     const codec = Codec.findDecoder(stream.codecpar.codecId);
     if (!codec) {
