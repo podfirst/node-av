@@ -98,6 +98,15 @@ Napi::Value FrameUtils::Process(const Napi::CallbackInfo& info) {
   const uint8_t* inputData = inputBuffer.Data();
   size_t inputSize = inputBuffer.Length();
 
+  // Validate buffer size (NV12 requires width * height * 1.5 bytes)
+  size_t requiredSize = input_width_ * input_height_ * 3 / 2;
+  if (inputSize < requiredSize) {
+    Napi::TypeError::New(env,
+      "Invalid buffer size. Expected at least " + std::to_string(requiredSize) +
+      " bytes, got " + std::to_string(inputSize)).ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+
   // Parse options
   Napi::Object options = info[1].As<Napi::Object>();
 
@@ -331,12 +340,23 @@ void FrameUtils::CopyBufferToFrame(AVFrame* frame, const uint8_t* buffer, size_t
   int y_size = frame->width * frame->height;
   int uv_size = y_size / 2;
 
+  // Check if buffer is large enough for Y plane
+  if (buffer_size < static_cast<size_t>(y_size)) {
+    // Buffer too small, copy what we can or skip
+    return;
+  }
+
   // Copy Y plane
   const uint8_t* src_y = buffer;
   uint8_t* dst_y = frame->data[0];
   for (int row = 0; row < frame->height; row++) {
+    size_t offset = row * frame->width;
+    // Check if this row is within buffer bounds
+    if (offset + frame->width > buffer_size) {
+      break;  // Stop if we would read past buffer end
+    }
     memcpy(dst_y + row * frame->linesize[0],
-           src_y + row * frame->width,
+           src_y + offset,
            frame->width);
   }
 

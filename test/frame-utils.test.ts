@@ -368,14 +368,8 @@ describe('FrameUtils', async () => {
       using processor = new FrameUtils(320, 180);
       const wrongSizeBuffer = Buffer.alloc(100); // Too small
 
-      // Should not crash, native code should handle gracefully
-      try {
-        const output = processor.process(wrongSizeBuffer);
-        assert.ok(Buffer.isBuffer(output));
-      } catch (e: any) {
-        // May throw, which is acceptable
-        assert.ok(e.message);
-      }
+      // Should throw an error for incorrect buffer size
+      assert.throws(() => processor.process(wrongSizeBuffer), /buffer size/i);
     });
 
     it('should handle very large dimensions', () => {
