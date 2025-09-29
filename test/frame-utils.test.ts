@@ -26,9 +26,9 @@ describe('FrameUtils', async () => {
     });
 
     it('should throw on invalid dimensions', () => {
-      assert.throws(() => new FrameUtils(0, 180), /Failed to allocate frame buffer/);
-      assert.throws(() => new FrameUtils(320, 0), /Failed to allocate frame buffer/);
-      assert.throws(() => new FrameUtils(-1, 180), /Failed to allocate frame buffer/);
+      assert.throws(() => new FrameUtils(0, 180), /Invalid dimensions/);
+      assert.throws(() => new FrameUtils(320, 0), /Invalid dimensions/);
+      assert.throws(() => new FrameUtils(-1, 180), /Invalid dimensions/);
     });
 
     it('should implement Disposable pattern', () => {

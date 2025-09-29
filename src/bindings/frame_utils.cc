@@ -10,8 +10,8 @@ Napi::Object FrameUtils::Init(Napi::Env env, Napi::Object exports) {
   Napi::HandleScope scope(env);
 
   Napi::Function func = DefineClass(env, "FrameUtils", {
-    InstanceMethod("process", &FrameUtils::Process),
-    InstanceMethod("close", &FrameUtils::Close),
+    InstanceMethod<&FrameUtils::Process>("process"),
+    InstanceMethod<&FrameUtils::Close>("close"),
   });
 
   constructor = Napi::Persistent(func);
@@ -22,7 +22,7 @@ Napi::Object FrameUtils::Init(Napi::Env env, Napi::Object exports) {
 }
 
 FrameUtils::FrameUtils(const Napi::CallbackInfo& info)
-  : Napi::ObjectWrap<FrameUtils>(info) {
+  : Napi::ObjectWrap<FrameUtils>(info), input_frame_(nullptr) {
 
   Napi::Env env = info.Env();
 
@@ -34,6 +34,12 @@ FrameUtils::FrameUtils(const Napi::CallbackInfo& info)
   input_width_ = info[0].As<Napi::Number>().Int32Value();
   input_height_ = info[1].As<Napi::Number>().Int32Value();
   input_format_ = AV_PIX_FMT_NV12;  // Always NV12 as specified
+
+  // Validate dimensions
+  if (input_width_ <= 0 || input_height_ <= 0 || input_width_ > 16384 || input_height_ > 16384) {
+    Napi::TypeError::New(env, "Invalid dimensions").ThrowAsJavaScriptException();
+    return;
+  }
 
   // Pre-allocate input frame
   input_frame_ = av_frame_alloc();
@@ -59,12 +65,14 @@ FrameUtils::FrameUtils(const Napi::CallbackInfo& info)
 }
 
 FrameUtils::~FrameUtils() {
-  CleanupFrames();
-  CleanupSwsContexts();
-
+  // Clean up in reverse order of allocation
   if (input_frame_) {
     av_frame_free(&input_frame_);
+    input_frame_ = nullptr;
   }
+
+  CleanupFrames();
+  CleanupSwsContexts();
 }
 
 Napi::Value FrameUtils::Process(const Napi::CallbackInfo& info) {
@@ -157,6 +165,11 @@ Napi::Value FrameUtils::Process(const Napi::CallbackInfo& info) {
       resizeWidth, resizeHeight, outputFormat
     );
 
+    if (!sws_ctx) {
+      Napi::Error::New(env, "Failed to create SWS context").ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
+
     int ret = sws_scale(sws_ctx,
                        current_frame->data, current_frame->linesize, 0, current_frame->height,
                        output_frame->data, output_frame->linesize);
@@ -245,10 +258,11 @@ SwsContext* FrameUtils::GetOrCreateSwsContext(int src_w, int src_h, AVPixelForma
     nullptr, nullptr, nullptr
   );
 
-  if (sws_ctx) {
-    sws_pool_[config] = sws_ctx;
+  if (!sws_ctx) {
+    return nullptr;
   }
 
+  sws_pool_[config] = sws_ctx;
   return sws_ctx;
 }
 
