@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
 
+import { type } from 'node:os';
 import { log, spawnRebuild, useGlobalFFmpeg } from './ffmpeg.js';
 
 const require = createRequire(import.meta.url);
@@ -12,16 +13,37 @@ const tryLoadPrebuilt = () => {
   // Try to load from platform-specific package (optionalDependencies)
   const platform = process.platform;
   const arch = process.arch;
-  const packageName = `@seydx/node-av-${platform}-${arch}`;
 
-  try {
-    const packagePath = require.resolve(`${packageName}/node-av.node`);
-    if (existsSync(packagePath)) {
-      log(`Using prebuilt binary from ${packageName}`);
-      return true;
+  if (platform === 'win32') {
+    const useMingW = type() !== 'Windows_NT';
+    if (useMingW) {
+      try {
+        const packageName = `@seydx/node-av-${platform}-${arch}-mingw`;
+        return require(`${packageName}/node-av.node`);
+      } catch {
+        // Package not installed or file not found
+      }
     }
-  } catch {
-    // Package not installed or file not found
+
+    // Fallback to MSVC
+    try {
+      const packageName = `@seydx/node-av-${platform}-${arch}-msvc`;
+      return require(`${packageName}/node-av.node`);
+    } catch {
+      // Package not installed or file not found
+    }
+  } else {
+    const packageName = `@seydx/node-av-${platform}-${arch}`;
+
+    try {
+      const packagePath = require.resolve(`${packageName}/node-av.node`);
+      if (existsSync(packagePath)) {
+        log(`Using prebuilt binary from ${packageName}`);
+        return true;
+      }
+    } catch {
+      // Package not installed or file not found
+    }
   }
 
   // Try local binary folder (for development)
