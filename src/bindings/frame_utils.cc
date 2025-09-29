@@ -46,7 +46,9 @@ FrameUtils::FrameUtils(const Napi::CallbackInfo& info)
   input_frame_->height = input_height_;
   input_frame_->format = input_format_;
 
-  int ret = av_frame_get_buffer(input_frame_, 32);  // 32-byte alignment
+  // Use default alignment (0) for better cross-platform compatibility
+  // FFmpeg will choose appropriate alignment for the platform
+  int ret = av_frame_get_buffer(input_frame_, 0);
   if (ret < 0) {
     av_frame_free(&input_frame_);
     char errbuf[AV_ERROR_MAX_STRING_SIZE];
@@ -181,7 +183,7 @@ Napi::Value FrameUtils::Process(const Napi::CallbackInfo& info) {
   uint8_t* outputData = outputBuffer.Data();
 
   // Copy frame to output buffer
-  size_t bytes_copied = CopyFrameToBuffer(outputData, current_frame);
+  CopyFrameToBuffer(outputData, current_frame);
 
   return outputBuffer;
 }
@@ -216,7 +218,7 @@ AVFrame* FrameUtils::GetOrCreateFrame(int width, int height, AVPixelFormat forma
   frame->height = height;
   frame->format = format;
 
-  int ret = av_frame_get_buffer(frame, 32);
+  int ret = av_frame_get_buffer(frame, 0);  // Use platform default alignment
   if (ret < 0) {
     av_frame_free(&frame);
     return nullptr;
@@ -251,6 +253,11 @@ SwsContext* FrameUtils::GetOrCreateSwsContext(int src_w, int src_h, AVPixelForma
 }
 
 void FrameUtils::CropFrame(AVFrame* dst, AVFrame* src, int x, int y, int width, int height) {
+  // Validate data pointers
+  if (!src->data[0] || !dst->data[0]) {
+    return;  // Invalid frames
+  }
+
   // For NV12: Y plane followed by interleaved UV
   int src_y_stride = src->linesize[0];
   int dst_y_stride = dst->linesize[0];
@@ -262,19 +269,26 @@ void FrameUtils::CropFrame(AVFrame* dst, AVFrame* src, int x, int y, int width, 
            width);
   }
 
-  // Copy UV plane (height is halved, width stays same for NV12)
-  int uv_height = (height + 1) / 2;
-  int src_uv_stride = src->linesize[1];
-  int dst_uv_stride = dst->linesize[1];
+  // Copy UV plane if present (height is halved, width stays same for NV12)
+  if (src->data[1] && dst->data[1]) {
+    int uv_height = (height + 1) / 2;
+    int src_uv_stride = src->linesize[1];
+    int dst_uv_stride = dst->linesize[1];
 
-  for (int row = 0; row < uv_height; row++) {
-    memcpy(dst->data[1] + row * dst_uv_stride,
-           src->data[1] + (y/2 + row) * src_uv_stride + (x & ~1),
-           (width + 1) & ~1);
+    for (int row = 0; row < uv_height; row++) {
+      memcpy(dst->data[1] + row * dst_uv_stride,
+             src->data[1] + (y/2 + row) * src_uv_stride + (x & ~1),
+             (width + 1) & ~1);
+    }
   }
 }
 
 void FrameUtils::CopyBufferToFrame(AVFrame* frame, const uint8_t* buffer, size_t buffer_size) {
+  // Validate input
+  if (!frame->data[0] || !buffer) {
+    return;
+  }
+
   // For NV12 format
   int y_size = frame->width * frame->height;
   int uv_size = y_size / 2;
@@ -288,8 +302,8 @@ void FrameUtils::CopyBufferToFrame(AVFrame* frame, const uint8_t* buffer, size_t
            frame->width);
   }
 
-  // Copy UV plane
-  if (buffer_size >= y_size + uv_size) {
+  // Copy UV plane if present and buffer is large enough
+  if (frame->data[1] && buffer_size >= static_cast<size_t>(y_size + uv_size)) {
     const uint8_t* src_uv = buffer + y_size;
     uint8_t* dst_uv = frame->data[1];
     int uv_height = frame->height / 2;
