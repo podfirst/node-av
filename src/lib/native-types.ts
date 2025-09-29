@@ -45,7 +45,7 @@ import type {
   AVSampleFormat,
   AVStreamEventFlag,
 } from '../constants/index.js';
-import type { ChannelLayout, CodecProfile, FilterPad, IRational } from './types.js';
+import type { ChannelLayout, CodecProfile, FilterPad, ImageOptions, IRational } from './types.js';
 
 /**
  * Native AVPacket binding interface
@@ -585,6 +585,20 @@ export interface NativeSoftwareScaleContext extends Disposable {
   scaleFrameSync(dst: NativeFrame, src: NativeFrame): number;
 
   [Symbol.dispose](): void;
+}
+
+/**
+ * Native FrameUtils binding interface
+ *
+ * Frame processing utilities with persistent frame pools.
+ * Provides crop, scale, and format conversion operations.
+ *
+ * @internal
+ */
+export interface NativeFrameUtils extends Disposable {
+  readonly __brand: 'NativeFrameUtils';
+  process(buffer: Buffer, options: ImageOptions): Buffer;
+  close(): void;
 }
 
 /**

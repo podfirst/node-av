@@ -31,6 +31,7 @@ import type {
   NativeFilterInOut,
   NativeFormatContext,
   NativeFrame,
+  NativeFrameUtils,
   NativeHardwareDeviceContext,
   NativeHardwareFramesContext,
   NativeInputFormat,
@@ -122,6 +123,7 @@ type NativeBitStreamFilterContextConstructor = new () => NativeBitStreamFilterCo
 type NativeAudioFifoConstructor = new () => NativeAudioFifo;
 type NativeSoftwareScaleContextConstructor = new () => NativeSoftwareScaleContext;
 type NativeSoftwareResampleContextConstructor = new () => NativeSoftwareResampleContext;
+type NativeFrameUtilsConstructor = new (width: number, height: number) => NativeFrameUtils;
 
 // Hardware
 interface NativeHardwareDeviceContextConstructor {
@@ -217,6 +219,7 @@ export interface NativeBinding {
   AudioFifo: NativeAudioFifoConstructor;
   SoftwareScaleContext: NativeSoftwareScaleContextConstructor;
   SoftwareResampleContext: NativeSoftwareResampleContextConstructor;
+  FrameUtils: NativeFrameUtilsConstructor;
 
   // Hardware
   HardwareDeviceContext: NativeHardwareDeviceContextConstructor;
@@ -270,6 +273,17 @@ export interface NativeBinding {
     width: number,
     height: number,
     align: number,
+  ) => number;
+  avImageCrop: (
+    dstBuffer: Buffer,
+    srcBuffer: Buffer,
+    pixFmt: AVPixelFormat,
+    srcWidth: number,
+    srcHeight: number,
+    cropX: number,
+    cropY: number,
+    cropWidth: number,
+    cropHeight: number,
   ) => number;
   avTs2Str: (ts: bigint | number | null) => string;
   avTs2TimeStr: (ts: bigint | number | null, timeBase: IRational) => string;
