@@ -57,9 +57,19 @@ FrameUtils::FrameUtils(const Napi::CallbackInfo& info)
   int ret = av_frame_get_buffer(input_frame_, 0);
   if (ret < 0) {
     av_frame_free(&input_frame_);
+    input_frame_ = nullptr;
     char errbuf[AV_ERROR_MAX_STRING_SIZE];
     av_strerror(ret, errbuf, sizeof(errbuf));
     Napi::Error::New(env, std::string("Failed to allocate frame buffer: ") + errbuf).ThrowAsJavaScriptException();
+    return;
+  }
+
+  // Make frame writable to ensure clean state
+  ret = av_frame_make_writable(input_frame_);
+  if (ret < 0) {
+    av_frame_free(&input_frame_);
+    input_frame_ = nullptr;
+    Napi::Error::New(env, "Failed to make frame writable").ThrowAsJavaScriptException();
     return;
   }
 }
@@ -149,6 +159,10 @@ Napi::Value FrameUtils::Process(const Napi::CallbackInfo& info) {
   // Step 1: Crop if needed
   if (cropX != 0 || cropY != 0 || cropWidth != input_width_ || cropHeight != input_height_) {
     AVFrame* cropped_frame = GetOrCreateFrame(cropWidth, cropHeight, input_format_);
+    if (!cropped_frame) {
+      Napi::Error::New(env, "Failed to allocate cropped frame").ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
     CropFrame(cropped_frame, current_frame, cropX, cropY, cropWidth, cropHeight);
     current_frame = cropped_frame;
   }
@@ -159,6 +173,10 @@ Napi::Value FrameUtils::Process(const Napi::CallbackInfo& info) {
 
   if (needs_scaling || needs_conversion) {
     AVFrame* output_frame = GetOrCreateFrame(resizeWidth, resizeHeight, outputFormat);
+    if (!output_frame) {
+      Napi::Error::New(env, "Failed to allocate output frame").ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
 
     SwsContext* sws_ctx = GetOrCreateSwsContext(
       current_frame->width, current_frame->height, static_cast<AVPixelFormat>(current_frame->format),
@@ -232,6 +250,12 @@ AVFrame* FrameUtils::GetOrCreateFrame(int width, int height, AVPixelFormat forma
   frame->format = format;
 
   int ret = av_frame_get_buffer(frame, 0);  // Use platform default alignment
+  if (ret < 0) {
+    av_frame_free(&frame);
+    return nullptr;
+  }
+
+  ret = av_frame_make_writable(frame);
   if (ret < 0) {
     av_frame_free(&frame);
     return nullptr;
