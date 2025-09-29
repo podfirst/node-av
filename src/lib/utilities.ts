@@ -790,6 +790,61 @@ export function avSamplesGetBufferSize(
 }
 
 /**
+ * Image crop function.
+ *
+ * Crops an image region from source buffer to destination buffer.
+ *
+ * @param dstBuffer - Destination buffer (must be pre-allocated)
+ *
+ * @param srcBuffer - Source buffer containing the image
+ *
+ * @param pixFmt - Pixel format
+ *
+ * @param srcWidth - Source image width
+ *
+ * @param srcHeight - Source image height
+ *
+ * @param cropX - X coordinate of crop region (left)
+ *
+ * @param cropY - Y coordinate of crop region (top)
+ *
+ * @param cropWidth - Width of crop region
+ *
+ * @param cropHeight - Height of crop region
+ *
+ * @returns Number of bytes copied
+ *
+ * @example
+ * ```typescript
+ * import { AV_PIX_FMT_NV12 } from 'node-av/constants';
+ *
+ * const dstSize = avImageGetBufferSize(AV_PIX_FMT_NV12, 100, 100, 1);
+ * const dstBuffer = Buffer.alloc(dstSize);
+ *
+ * const bytesCopied = avImageCrop(
+ *   dstBuffer, srcBuffer,
+ *   AV_PIX_FMT_NV12,
+ *   320, 180,  // source dimensions
+ *   10, 10,    // crop position
+ *   100, 100   // crop size
+ * );
+ * ```
+ */
+export function avImageCrop(
+  dstBuffer: Buffer,
+  srcBuffer: Buffer,
+  pixFmt: AVPixelFormat,
+  srcWidth: number,
+  srcHeight: number,
+  cropX: number,
+  cropY: number,
+  cropWidth: number,
+  cropHeight: number,
+): number {
+  return bindings.avImageCrop(dstBuffer, srcBuffer, pixFmt, srcWidth, srcHeight, cropX, cropY, cropWidth, cropHeight);
+}
+
+/**
  * Describe channel layout.
  *
  * Returns a human-readable description of a channel layout.

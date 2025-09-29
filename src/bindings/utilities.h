@@ -47,6 +47,7 @@ public:
   static Napi::Value ImageCopy2(const Napi::CallbackInfo& info);
   static Napi::Value ImageGetBufferSize(const Napi::CallbackInfo& info);
   static Napi::Value ImageCopyToBuffer(const Napi::CallbackInfo& info);
+  static Napi::Value ImageCrop(const Napi::CallbackInfo& info);
   
   // Timestamp utilities
   static Napi::Value Ts2Str(const Napi::CallbackInfo& info);

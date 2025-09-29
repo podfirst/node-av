@@ -40,6 +40,7 @@ Napi::Object Utilities::Init(Napi::Env env, Napi::Object exports) {
   exports.Set("avImageCopy2", Napi::Function::New(env, ImageCopy2));
   exports.Set("avImageGetBufferSize", Napi::Function::New(env, ImageGetBufferSize));
   exports.Set("avImageCopyToBuffer", Napi::Function::New(env, ImageCopyToBuffer));
+  exports.Set("avImageCrop", Napi::Function::New(env, ImageCrop));
 
   // Timestamp utilities
   exports.Set("avTs2Str", Napi::Function::New(env, Ts2Str));
@@ -496,6 +497,273 @@ Napi::Value Utilities::ImageCopyToBuffer(const Napi::CallbackInfo& info) {
                                     width, height, align);
   
   return Napi::Number::New(env, ret);
+}
+
+Napi::Value Utilities::ImageCrop(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+
+  if (info.Length() < 9) {
+    Napi::TypeError::New(env, "Expected 9 arguments (dstBuffer, srcBuffer, pixFmt, srcWidth, srcHeight, cropX, cropY, cropWidth, cropHeight)")
+        .ThrowAsJavaScriptException();
+    return Napi::Number::New(env, AVERROR(EINVAL));
+  }
+
+  // Get destination buffer
+  if (!info[0].IsBuffer()) {
+    Napi::TypeError::New(env, "First argument must be a destination buffer").ThrowAsJavaScriptException();
+    return Napi::Number::New(env, AVERROR(EINVAL));
+  }
+  Napi::Buffer<uint8_t> dstBuffer = info[0].As<Napi::Buffer<uint8_t>>();
+  uint8_t* dst = dstBuffer.Data();
+
+  // Get source buffer
+  if (!info[1].IsBuffer()) {
+    Napi::TypeError::New(env, "Second argument must be a source buffer").ThrowAsJavaScriptException();
+    return Napi::Number::New(env, AVERROR(EINVAL));
+  }
+  Napi::Buffer<uint8_t> srcBuffer = info[1].As<Napi::Buffer<uint8_t>>();
+  const uint8_t* src = srcBuffer.Data();
+
+  // Get parameters
+  int pix_fmt = info[2].As<Napi::Number>().Int32Value();
+  int src_width = info[3].As<Napi::Number>().Int32Value();
+  int src_height = info[4].As<Napi::Number>().Int32Value();
+  int crop_x = info[5].As<Napi::Number>().Int32Value();
+  int crop_y = info[6].As<Napi::Number>().Int32Value();
+  int crop_width = info[7].As<Napi::Number>().Int32Value();
+  int crop_height = info[8].As<Napi::Number>().Int32Value();
+
+  // Validate crop parameters
+  if (crop_x < 0 || crop_y < 0 || crop_width <= 0 || crop_height <= 0 ||
+      crop_x + crop_width > src_width || crop_y + crop_height > src_height) {
+    Napi::TypeError::New(env, "Invalid crop parameters").ThrowAsJavaScriptException();
+    return Napi::Number::New(env, AVERROR(EINVAL));
+  }
+
+  AVPixelFormat format = static_cast<AVPixelFormat>(pix_fmt);
+  const AVPixFmtDescriptor* desc = av_pix_fmt_desc_get(format);
+  if (!desc) {
+    Napi::TypeError::New(env, "Invalid pixel format").ThrowAsJavaScriptException();
+    return Napi::Number::New(env, AVERROR(EINVAL));
+  }
+
+  // Handle different pixel formats with optimized copy
+  int bytes_copied = 0;
+
+  if (format == AV_PIX_FMT_NV12 || format == AV_PIX_FMT_NV21) {
+    // NV12/NV21: Y plane followed by interleaved UV plane
+    int y_stride = src_width;
+    int uv_stride = src_width;
+    int y_src_offset = crop_y * y_stride + crop_x;
+    int uv_src_offset = src_width * src_height + (crop_y / 2) * uv_stride + (crop_x & ~1);
+
+    // Copy Y plane with SIMD-friendly memcpy
+    for (int y = 0; y < crop_height; y++) {
+      memcpy(dst + y * crop_width,
+             src + y_src_offset + y * y_stride,
+             crop_width);
+    }
+    bytes_copied += crop_width * crop_height;
+
+    // Copy UV plane (height is halved for 4:2:0)
+    int uv_crop_height = (crop_height + 1) / 2;
+    int uv_crop_width = (crop_width + 1) & ~1; // Ensure even width
+    for (int y = 0; y < uv_crop_height; y++) {
+      memcpy(dst + crop_width * crop_height + y * uv_crop_width,
+             src + uv_src_offset + y * uv_stride,
+             uv_crop_width);
+    }
+    bytes_copied += uv_crop_width * uv_crop_height;
+
+  } else if (format == AV_PIX_FMT_YUV420P || format == AV_PIX_FMT_YUV422P || format == AV_PIX_FMT_YUV444P) {
+    // Planar YUV formats
+    int y_stride = src_width;
+    int y_size = src_width * src_height;
+
+    // Determine chroma subsampling
+    int h_sub = (format == AV_PIX_FMT_YUV444P) ? 0 : 1;
+    int v_sub = (format == AV_PIX_FMT_YUV420P) ? 1 : 0;
+
+    int chroma_width = (src_width + h_sub) >> h_sub;
+    int chroma_height = (src_height + v_sub) >> v_sub;
+    int u_stride = chroma_width;
+    int v_stride = chroma_width;
+
+    // Copy Y plane
+    int y_src_offset = crop_y * y_stride + crop_x;
+    for (int y = 0; y < crop_height; y++) {
+      memcpy(dst + y * crop_width,
+             src + y_src_offset + y * y_stride,
+             crop_width);
+    }
+    bytes_copied += crop_width * crop_height;
+
+    // Calculate chroma crop dimensions
+    int chroma_crop_x = crop_x >> h_sub;
+    int chroma_crop_y = crop_y >> v_sub;
+    int chroma_crop_width = (crop_width + h_sub) >> h_sub;
+    int chroma_crop_height = (crop_height + v_sub) >> v_sub;
+
+    // Copy U plane
+    int u_src_offset = y_size + chroma_crop_y * u_stride + chroma_crop_x;
+    for (int y = 0; y < chroma_crop_height; y++) {
+      memcpy(dst + crop_width * crop_height + y * chroma_crop_width,
+             src + u_src_offset + y * u_stride,
+             chroma_crop_width);
+    }
+    bytes_copied += chroma_crop_width * chroma_crop_height;
+
+    // Copy V plane
+    int v_src_offset = y_size + chroma_width * chroma_height + chroma_crop_y * v_stride + chroma_crop_x;
+    for (int y = 0; y < chroma_crop_height; y++) {
+      memcpy(dst + crop_width * crop_height + chroma_crop_width * chroma_crop_height + y * chroma_crop_width,
+             src + v_src_offset + y * v_stride,
+             chroma_crop_width);
+    }
+    bytes_copied += chroma_crop_width * chroma_crop_height;
+
+  } else if (format == AV_PIX_FMT_RGB24 || format == AV_PIX_FMT_BGR24) {
+    // Packed RGB formats - 3 bytes per pixel
+    int bytes_per_pixel = 3;
+    int src_stride = src_width * bytes_per_pixel;
+    int dst_stride = crop_width * bytes_per_pixel;
+    int src_offset = crop_y * src_stride + crop_x * bytes_per_pixel;
+
+    for (int y = 0; y < crop_height; y++) {
+      memcpy(dst + y * dst_stride,
+             src + src_offset + y * src_stride,
+             dst_stride);
+    }
+    bytes_copied = dst_stride * crop_height;
+
+  } else if (format == AV_PIX_FMT_RGBA || format == AV_PIX_FMT_BGRA ||
+             format == AV_PIX_FMT_ARGB || format == AV_PIX_FMT_ABGR) {
+    // Packed RGBA formats - 4 bytes per pixel
+    int bytes_per_pixel = 4;
+    int src_stride = src_width * bytes_per_pixel;
+    int dst_stride = crop_width * bytes_per_pixel;
+    int src_offset = crop_y * src_stride + crop_x * bytes_per_pixel;
+
+    // Use optimized copy for aligned data
+    if ((reinterpret_cast<uintptr_t>(src + src_offset) & 15) == 0 &&
+        (reinterpret_cast<uintptr_t>(dst) & 15) == 0 &&
+        (dst_stride & 15) == 0) {
+      // Data is 16-byte aligned, can use SIMD operations
+      for (int y = 0; y < crop_height; y++) {
+        const uint32_t* src_row = reinterpret_cast<const uint32_t*>(src + src_offset + y * src_stride);
+        uint32_t* dst_row = reinterpret_cast<uint32_t*>(dst + y * dst_stride);
+
+        // Copy as 32-bit integers for better performance
+        for (int x = 0; x < crop_width; x++) {
+          dst_row[x] = src_row[x];
+        }
+      }
+    } else {
+      // Fallback to regular memcpy
+      for (int y = 0; y < crop_height; y++) {
+        memcpy(dst + y * dst_stride,
+               src + src_offset + y * src_stride,
+               dst_stride);
+      }
+    }
+    bytes_copied = dst_stride * crop_height;
+
+  } else if (format == AV_PIX_FMT_GRAY8) {
+    // Grayscale - 1 byte per pixel
+    int src_stride = src_width;
+    int src_offset = crop_y * src_stride + crop_x;
+
+    for (int y = 0; y < crop_height; y++) {
+      memcpy(dst + y * crop_width,
+             src + src_offset + y * src_stride,
+             crop_width);
+    }
+    bytes_copied = crop_width * crop_height;
+
+  } else if (format == AV_PIX_FMT_GRAY16BE || format == AV_PIX_FMT_GRAY16LE) {
+    // 16-bit grayscale
+    int bytes_per_pixel = 2;
+    int src_stride = src_width * bytes_per_pixel;
+    int dst_stride = crop_width * bytes_per_pixel;
+    int src_offset = crop_y * src_stride + crop_x * bytes_per_pixel;
+
+    for (int y = 0; y < crop_height; y++) {
+      memcpy(dst + y * dst_stride,
+             src + src_offset + y * src_stride,
+             dst_stride);
+    }
+    bytes_copied = dst_stride * crop_height;
+
+  } else {
+    // Generic fallback for other formats using av_image_copy2
+    // This is slower but handles all formats correctly
+    uint8_t* dst_data[4] = {dst, nullptr, nullptr, nullptr};
+    int dst_linesizes[4] = {0};
+
+    uint8_t* src_data[4] = {const_cast<uint8_t*>(src), nullptr, nullptr, nullptr};
+    int src_linesizes_int[4] = {0};
+    ptrdiff_t src_linesizes[4] = {0};
+
+    // Calculate linesizes for the format
+    av_image_fill_linesizes(src_linesizes_int, format, src_width);
+    av_image_fill_linesizes(dst_linesizes, format, crop_width);
+
+    // Convert int linesizes to ptrdiff_t for av_image_fill_plane_sizes
+    for (int i = 0; i < 4; i++) {
+      src_linesizes[i] = src_linesizes_int[i];
+    }
+
+    // Set up plane pointers
+    if (desc->nb_components > 1) {
+      // Calculate plane offsets
+      size_t plane_sizes[4] = {0};
+      av_image_fill_plane_sizes(plane_sizes, format, src_height, src_linesizes);
+
+      // Set up source plane pointers
+      for (int i = 1; i < 4 && i < desc->nb_components; i++) {
+        if (plane_sizes[i-1] > 0) {
+          src_data[i] = src_data[i-1] + plane_sizes[i-1];
+        }
+      }
+
+      // Adjust source pointers for crop offset
+      for (int i = 0; i < desc->nb_components; i++) {
+        if (src_data[i] && src_linesizes_int[i] > 0) {
+          int plane_crop_x = crop_x;
+          int plane_crop_y = crop_y;
+
+          // Adjust for chroma subsampling
+          if (i > 0) {
+            plane_crop_x >>= desc->log2_chroma_w;
+            plane_crop_y >>= desc->log2_chroma_h;
+          }
+
+          src_data[i] += plane_crop_y * src_linesizes_int[i] + plane_crop_x;
+        }
+      }
+
+      // Set up destination plane pointers
+      size_t dst_plane_sizes[4] = {0};
+      ptrdiff_t dst_linesizes_ptrdiff[4] = {0};
+      for (int i = 0; i < 4; i++) {
+        dst_linesizes_ptrdiff[i] = dst_linesizes[i];
+      }
+      av_image_fill_plane_sizes(dst_plane_sizes, format, crop_height, dst_linesizes_ptrdiff);
+      for (int i = 1; i < 4 && i < desc->nb_components; i++) {
+        if (dst_plane_sizes[i-1] > 0) {
+          dst_data[i] = dst_data[i-1] + dst_plane_sizes[i-1];
+        }
+      }
+    }
+
+    // Copy using av_image_copy2
+    av_image_copy2(dst_data, dst_linesizes, src_data, src_linesizes_int,
+                   format, crop_width, crop_height);
+
+    bytes_copied = av_image_get_buffer_size(format, crop_width, crop_height, 1);
+  }
+
+  return Napi::Number::New(env, bytes_copied);
 }
 
 // === Timestamp utilities ===
