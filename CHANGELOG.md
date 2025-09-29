@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+#### Frame Processing Utilities
+
+Added `FrameUtils` class for efficient image processing of NV12 video frames. This native implementation provides crop, resize, and format conversion operations with internal resource pooling for improved performance in streaming scenarios.
+
+**Usage:**
+```typescript
+import { FrameUtils } from 'node-av/lib';
+
+// Initialize once for your input dimensions
+const processor = new FrameUtils(1920, 1080);
+
+// Process frames with various operations
+const output = processor.process(nv12Buffer, {
+  crop: { left: 100, top: 100, width: 640, height: 480 },
+  resize: { width: 1280, height: 720 },
+  format: { to: 'rgba' }
+});
+
+processor.close();
+
+// Automatic cleanup with using statement
+{
+  using processor = new FrameUtils(320, 180);
+  // Process frames...
+} // Automatically disposed
+```
+
 ## [2.5.0] - 2025-09-26
 
 ### Added
