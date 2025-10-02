@@ -27,7 +27,7 @@ import type { HardwareContext } from './hardware.js';
  * by the hardware acceleration type.
  *
  * Support varies significantly between hardware types:
- * - CUDA: Comprehensive filter support with NPP integration
+ * - CUDA: Comprehensive filter support with custom kernels
  * - VAAPI: Good Linux support with Intel/AMD GPUs
  * - QSV: Intel Quick Sync with basic filtering
  * - VideoToolbox: macOS/iOS with CoreImage filters
@@ -195,7 +195,7 @@ export class FilterPreset {
    *
    * @param height - Target height in pixels
    *
-   * @param options - Additional scaling options (e.g., flags for algorithm, npp for CUDA)
+   * @param options - Additional scaling options (e.g., flags for algorithm)
    *
    * @returns This instance for chaining
    *
@@ -203,7 +203,6 @@ export class FilterPreset {
    * ```typescript
    * chain.scale(1920, 1080)  // Scale to Full HD
    * chain.scale(640, 480, { flags: 'lanczos' })  // With specific algorithm
-   * chain.scale(1920, 1080, { npp: true })  // Use NPP for CUDA
    * ```
    *
    * @see {@link https://ffmpeg.org/ffmpeg-filters.html#scale | FFmpeg scale filter}
@@ -216,9 +215,7 @@ export class FilterPreset {
     if (this.hardware) {
       // Special handling for different hardware scalers
       let filterName: string;
-      if (this.hardware.deviceType === AV_HWDEVICE_TYPE_CUDA && options?.npp) {
-        filterName = 'scale_npp';
-      } else if (this.hardware.deviceType === AV_HWDEVICE_TYPE_RKMPP) {
+      if (this.hardware.deviceType === AV_HWDEVICE_TYPE_RKMPP) {
         filterName = 'scale_rkrga'; // RKMPP uses RGA for scaling
       } else if (this.hardware.deviceType === AV_HWDEVICE_TYPE_VIDEOTOOLBOX) {
         filterName = 'scale_vt'; // VideoToolbox uses scale_vt
@@ -230,10 +227,7 @@ export class FilterPreset {
 
       if (options) {
         for (const [key, value] of Object.entries(options)) {
-          if (key !== 'npp') {
-            // Skip our special npp flag
-            filter += `:${key}=${value}`;
-          }
+          filter += `:${key}=${value}`;
         }
       }
 
@@ -270,6 +264,9 @@ export class FilterPreset {
    * @see {@link https://ffmpeg.org/ffmpeg-filters.html#crop | FFmpeg crop filter}
    */
   crop(width: number, height: number, x = 0, y = 0): FilterPreset {
+    // The crop filter sets AVFrame crop fields which are read by hardware scalers
+    // Our patches (1001, 1002, 1003) enable scale_vt, scale_cuda, and scale_qsv to use these fields
+    // This works for both software and hardware pipelines
     this.add(`crop=${width}:${height}:${x}:${y}`);
     return this;
   }
@@ -369,8 +366,8 @@ export class FilterPreset {
           filter = amount ? `unsharp_opencl=amount=${amount}` : 'unsharp_opencl';
           break;
         case AV_HWDEVICE_TYPE_CUDA:
-          // CUDA uses NPP for sharpening
-          filter = 'sharpen_npp';
+          // CUDA sharpening not available (NPP not included)
+          filter = null;
           break;
         default:
           filter = null;
@@ -1077,7 +1074,7 @@ export class FilterPreset {
       // Special handling for different hardware transpose implementations
       let filterName: string;
       if (this.hardware.deviceType === AV_HWDEVICE_TYPE_CUDA) {
-        filterName = 'transpose_cuda'; // Uses transpose_cuda from patch, not NPP
+        filterName = 'transpose_cuda'; // Uses custom CUDA kernel (patch 0054)
       } else if (this.hardware.deviceType === AV_HWDEVICE_TYPE_VIDEOTOOLBOX) {
         filterName = 'transpose_vt'; // CoreImage-based transpose
       } else {
@@ -1838,7 +1835,7 @@ export class FilterPreset {
     switch (this.hardware.deviceType) {
       case AV_HWDEVICE_TYPE_CUDA:
         return {
-          scale: true, // scale_cuda
+          scale: true, // scale_cuda with crop support (patch 1002)
           overlay: true, // overlay_cuda
           transpose: true, // transpose_cuda (patch 0054)
           tonemap: true, // tonemap_cuda (patch 0004)
@@ -1846,7 +1843,7 @@ export class FilterPreset {
           denoise: false,
           flip: false,
           blur: true, // bilateral_cuda
-          sharpen: false, // Uses NPP
+          sharpen: false, // Not available (NPP not included in build)
           sobel: false,
           chromakey: true, // chromakey_cuda
           colorspace: true, // colorspace_cuda
@@ -1874,7 +1871,7 @@ export class FilterPreset {
 
       case AV_HWDEVICE_TYPE_QSV:
         return {
-          scale: true, // scale_qsv
+          scale: true, // scale_qsv with crop support (patch 1003)
           overlay: true, // overlay_qsv
           transpose: false,
           tonemap: false,
@@ -1928,7 +1925,7 @@ export class FilterPreset {
 
       case AV_HWDEVICE_TYPE_VIDEOTOOLBOX:
         return {
-          scale: true, // scale_vt (patch 0047 adds format option)
+          scale: true, // scale_vt with crop support (patches 0047, 1001)
           overlay: true, // overlay_videotoolbox (patch 0048)
           transpose: true, // transpose_vt (patch 0049, CoreImage based)
           tonemap: true, // tonemap_videotoolbox (patch 0050)
@@ -2007,9 +2004,7 @@ export class FilterPreset {
         };
 
       default:
-        // Unknown hardware - no support
-        // NPP is not a separate hardware type, it's CUDA-based
-        // We handle it through CUDA with special filter names
+        // Unknown hardware - no filter support
         return {
           scale: false,
           overlay: false,
