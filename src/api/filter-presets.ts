@@ -198,6 +198,8 @@ export class FilterPreset {
    *
    * @param height - Target height in pixels
    *
+   * @param format - Output pixel format for GPU format conversion (optional)
+   *
    * @param options - Additional scaling options (e.g., flags for algorithm)
    *
    * @returns This instance for chaining
@@ -205,7 +207,7 @@ export class FilterPreset {
    * @example
    * ```typescript
    * chain.scale(1920, 1080)  // Scale to Full HD
-   * chain.scale(640, 480, { flags: 'lanczos' })  // With specific algorithm
+   * chain.scale(640, 480, undefined, { flags: 'lanczos' })  // With specific algorithm
    * ```
    *
    * @example
@@ -215,10 +217,17 @@ export class FilterPreset {
    *   .scale(1920, 1080)          // Hardware scaler reads crop fields
    * ```
    *
+   * @example
+   * ```typescript
+   * // GPU format conversion during scaling
+   * chain.scale(1920, 1080, 'nv12')  // Scale + convert to NV12 on GPU
+   * chain.scale(640, 480, 'p010')    // Scale + convert to P010 (10-bit) on GPU
+   * ```
+   *
    * @see {@link https://ffmpeg.org/ffmpeg-filters.html#scale | FFmpeg scale filter}
    * @see {@link scaleOpenCL}
    */
-  scale(width: number, height: number, options?: Record<string, any>): FilterPreset {
+  scale(width: number, height: number, format?: string, options?: Record<string, any>): FilterPreset {
     if (!this.support.scale) {
       return this;
     }
@@ -235,6 +244,11 @@ export class FilterPreset {
       }
 
       let filter = `${filterName}=${width}:${height}`;
+
+      // Add format parameter for GPU format conversion
+      if (format) {
+        filter += `:format=${format}`;
+      }
 
       if (options) {
         for (const [key, value] of Object.entries(options)) {
@@ -261,6 +275,8 @@ export class FilterPreset {
    *
    * @param height - Output height in pixels
    *
+   * @param format - Output pixel format for GPU format conversion (optional)
+   *
    * @param cropWidth - Crop width (optional)
    *
    * @param cropHeight - Crop height (optional)
@@ -278,7 +294,7 @@ export class FilterPreset {
    * // Scale with crop
    * const hw = await HardwareContext.auto(); // OpenCL
    * const filter = FilterPreset.chain(hw)
-   *   .scaleOpenCL(1920, 1080, 100, 100, 50, 50)
+   *   .scaleOpenCL(1920, 1080, undefined, 100, 100, 50, 50)
    *   .build();
    * // Generates: scale_opencl=1920:1080:cw=100:ch=100:cx=50:cy=50
    * ```
@@ -287,17 +303,40 @@ export class FilterPreset {
    * ```typescript
    * // Scale with crop from origin
    * const filter = FilterPreset.chain(hw)
-   *   .scaleOpenCL(1920, 1080, 100, 100)
+   *   .scaleOpenCL(1920, 1080, undefined, 100, 100)
    *   .build();
    * // Generates: scale_opencl=1920:1080:cw=100:ch=100
    * ```
+   *
+   * @example
+   * ```typescript
+   * // Scale with format conversion
+   * const filter = FilterPreset.chain(hw)
+   *   .scaleOpenCL(1920, 1080, 'nv12')
+   *   .build();
+   * // Generates: scale_opencl=1920:1080:format=nv12
+   * ```
    */
-  scaleOpenCL(width: number, height: number, cropWidth?: number, cropHeight?: number, cropX = 0, cropY = 0, options?: Record<string, any>): FilterPreset {
+  scaleOpenCL(
+    width: number,
+    height: number,
+    format?: string,
+    cropWidth?: number,
+    cropHeight?: number,
+    cropX = 0,
+    cropY = 0,
+    options?: Record<string, any>,
+  ): FilterPreset {
     if (!this.hardware || this.hardware.deviceType !== AV_HWDEVICE_TYPE_OPENCL) {
       throw new Error('scaleOpenCL() is only available for OpenCL hardware contexts');
     }
 
     let filter = `scale_opencl=${width}:${height}`;
+
+    // Add format parameter for GPU format conversion
+    if (format) {
+      filter += `:format=${format}`;
+    }
 
     // Add crop parameters if specified
     if (cropWidth !== undefined && cropHeight !== undefined && cropWidth > 0 && cropHeight > 0) {

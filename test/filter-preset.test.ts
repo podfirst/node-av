@@ -27,7 +27,7 @@ describe('FilterPreset', () => {
       });
 
       it('should add scale filter with options', () => {
-        const graph = FilterPreset.chain().scale(1920, 1080, { flags: 'bicubic' }).build();
+        const graph = FilterPreset.chain().scale(1920, 1080, undefined, { flags: 'bicubic' }).build();
         strictEqual(graph, 'scale=1920:1080:flags=bicubic');
       });
 
