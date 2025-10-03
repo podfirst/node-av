@@ -191,6 +191,9 @@ export class FilterPreset {
    * Adds a scale filter to the chain.
    * Automatically selects hardware-specific scaler if hardware context is set.
    *
+   * Note: For OpenCL hardware contexts, consider using scaleOpenCL() which
+   * integrates crop+scale in a single GPU operation instead of two passes.
+   *
    * @param width - Target width in pixels
    *
    * @param height - Target height in pixels
@@ -205,7 +208,15 @@ export class FilterPreset {
    * chain.scale(640, 480, { flags: 'lanczos' })  // With specific algorithm
    * ```
    *
+   * @example
+   * ```typescript
+   * // Hardware crop + scale (VAAPI, CUDA, QSV, VideoToolbox)
+   * chain.crop(100, 100, 50, 50)  // Sets AVFrame crop fields
+   *   .scale(1920, 1080)          // Hardware scaler reads crop fields
+   * ```
+   *
    * @see {@link https://ffmpeg.org/ffmpeg-filters.html#scale | FFmpeg scale filter}
+   * @see {@link scaleOpenCL}
    */
   scale(width: number, height: number, options?: Record<string, any>): FilterPreset {
     if (!this.support.scale) {
@@ -243,7 +254,75 @@ export class FilterPreset {
   }
 
   /**
+   * Adds OpenCL scale filter with integrated crop support.
+   * Only available for OpenCL hardware contexts.
+   *
+   * @param width - Output width in pixels
+   *
+   * @param height - Output height in pixels
+   *
+   * @param cropWidth - Crop width (optional)
+   *
+   * @param cropHeight - Crop height (optional)
+   *
+   * @param cropX - Crop offset X (default: 0)
+   *
+   * @param cropY - Crop offset Y (default: 0)
+   *
+   * @param options - Additional scaling options (e.g., algo for algorithm)
+   *
+   * @returns This instance for chaining
+   *
+   * @example
+   * ```typescript
+   * // Scale with crop
+   * const hw = await HardwareContext.auto(); // OpenCL
+   * const filter = FilterPreset.chain(hw)
+   *   .scaleOpenCL(1920, 1080, 100, 100, 50, 50)
+   *   .build();
+   * // Generates: scale_opencl=1920:1080:cw=100:ch=100:cx=50:cy=50
+   * ```
+   *
+   * @example
+   * ```typescript
+   * // Scale with crop from origin
+   * const filter = FilterPreset.chain(hw)
+   *   .scaleOpenCL(1920, 1080, 100, 100)
+   *   .build();
+   * // Generates: scale_opencl=1920:1080:cw=100:ch=100
+   * ```
+   */
+  scaleOpenCL(width: number, height: number, cropWidth?: number, cropHeight?: number, cropX = 0, cropY = 0, options?: Record<string, any>): FilterPreset {
+    if (!this.hardware || this.hardware.deviceType !== AV_HWDEVICE_TYPE_OPENCL) {
+      throw new Error('scaleOpenCL() is only available for OpenCL hardware contexts');
+    }
+
+    let filter = `scale_opencl=${width}:${height}`;
+
+    // Add crop parameters if specified
+    if (cropWidth !== undefined && cropHeight !== undefined && cropWidth > 0 && cropHeight > 0) {
+      filter += `:cw=${cropWidth}:ch=${cropHeight}`;
+      if (cropX !== 0 || cropY !== 0) {
+        filter += `:cx=${cropX}:cy=${cropY}`;
+      }
+    }
+
+    // Add additional options
+    if (options) {
+      for (const [key, value] of Object.entries(options)) {
+        filter += `:${key}=${value}`;
+      }
+    }
+
+    this.add(filter);
+    return this;
+  }
+
+  /**
    * Adds a crop filter to the chain.
+   *
+   * Note: For OpenCL hardware contexts, consider using scaleOpenCL() which
+   * integrates crop+scale in a single GPU operation instead of two passes.
    *
    * @param width - Width of the cropped area
    *
@@ -261,12 +340,21 @@ export class FilterPreset {
    * chain.crop(1280, 720)  // Crop from top-left corner
    * ```
    *
+   * @example
+   * ```typescript
+   * // Hardware crop + scale (works with VAAPI, Vulkan, VideoToolbox, CUDA, QSV)
+   * chain.crop(100, 100, 50, 50)
+   *   .scale(1920, 1080)
+   * ```
+   *
    * @see {@link https://ffmpeg.org/ffmpeg-filters.html#crop | FFmpeg crop filter}
+   * @see {@link scaleOpenCL}
    */
   crop(width: number, height: number, x = 0, y = 0): FilterPreset {
     // The crop filter sets AVFrame crop fields which are read by hardware scalers
     // Our patches (1001, 1002, 1003) enable scale_vt, scale_cuda, and scale_qsv to use these fields
     // This works for both software and hardware pipelines
+    // For OpenCL, use scaleOpenCL() method instead for integrated crop+scale
     this.add(`crop=${width}:${height}:${x}:${y}`);
     return this;
   }
@@ -1907,7 +1995,7 @@ export class FilterPreset {
 
       case AV_HWDEVICE_TYPE_OPENCL:
         return {
-          scale: true, // scale_opencl (patch 0006)
+          scale: true, // scale_opencl with crop support (patches 0006, 1004)
           overlay: true, // overlay_opencl (+ PGS support patch 0008)
           transpose: true, // transpose_opencl
           tonemap: true, // tonemap_opencl (enhanced in patch 0007)
