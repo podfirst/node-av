@@ -709,15 +709,6 @@ jobs:
             ARCH_NAME="x86_64"
           fi
 
-          # For x64 builds on ARM64 runner, we need to set up cross-compilation
-          if [ "$ARCH_NAME" = "x86_64" ] && [ "$(uname -m)" = "arm64" ]; then
-            echo "Setting up cross-compilation for x86_64 on ARM64 host"
-            export CFLAGS="-arch x86_64"
-            export CXXFLAGS="-arch x86_64"
-            export LDFLAGS="-arch x86_64"
-            export CMAKE_OSX_ARCHITECTURES="x86_64"
-          fi
-
           # Run Jellyfin build script
           ./buildmac.sh $ARCH_NAME
 
