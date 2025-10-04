@@ -36,7 +36,7 @@
     "build:examples": "tsc -p tsconfig.examples.json",
     "build:native": "node-gyp rebuild && cpy --flat build/Release/node-av.node binary/",
     "build:tests": "tsc -p tsconfig.tests.json",
-    "build:tsc": "rimraf dist && tsc -p tsconfig.build.json",
+    "build:tsc": "rimraf dist && tsc -p tsconfig.build.json && cpy --flat src/api/data/* dist/api/data --parents",
     "clean": "rimraf dist && node-gyp clean && npm run generate && npm run format && npm run lint:fix && npm run build:tests && npm run build:examples && npm run build:tsc",
     "docs:dev": "npm run predocs && vitepress dev docs --port 5173",
     "docs:build": "npm run predocs && rimraf docs/.vitepress/dist && vitepress build docs && cpy --flat docs/logo.png docs/.vitepress/dist",
