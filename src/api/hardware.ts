@@ -1,3 +1,7 @@
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { Decoder, Encoder, MediaInput } from '../api/index.js';
 import {
   AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX,
   AV_CODEC_HW_CONFIG_METHOD_HW_FRAMES_CTX,
@@ -40,8 +44,14 @@ import {
 } from '../constants/constants.js';
 import { Codec, Dictionary, FFmpegError, HardwareDeviceContext } from '../lib/index.js';
 
-import type { AVCodecID, AVHWDeviceType, AVPixelFormat, FFEncoderCodec } from '../constants/index.js';
+import type { AVCodecID, AVHWDeviceType, AVPixelFormat, FFDecoderCodec, FFEncoderCodec } from '../constants/index.js';
+import type { Packet } from '../lib/index.js';
 import type { BaseCodecName, HardwareOptions } from './types.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const h264Data = join(__dirname, 'data', 'test_h264.h264');
+const hevcData = join(__dirname, 'data', 'test_hevc.h265');
 
 /**
  * High-level hardware acceleration management.
@@ -136,7 +146,20 @@ export class HardwareContext implements Disposable {
 
     for (const deviceType of preferenceOrder) {
       try {
-        return this.createFromType(deviceType, options.device, options.options);
+        if (deviceType === AV_HWDEVICE_TYPE_VAAPI && !options.device) {
+          options.device = '/dev/dri/renderD128'; // Default VAAPI render node
+        }
+
+        let hwCtx: HardwareContext | null = this.createFromType(deviceType, options.device, options.options);
+
+        const isSupported = hwCtx.testDecoder();
+        if (!isSupported) {
+          hwCtx.dispose();
+          hwCtx = null;
+          continue;
+        }
+
+        return hwCtx;
       } catch {
         // Try next device type
         continue;
@@ -392,6 +415,8 @@ export class HardwareContext implements Disposable {
    *
    * @param codec - Generic codec name (e.g., 'h264', 'hevc', 'av1') or AVCodecID
    *
+   * @param validate - Whether to validate encoder by testing (default: false)
+   *
    * @returns Hardware encoder codec or null if unsupported
    *
    * @example
@@ -414,13 +439,13 @@ export class HardwareContext implements Disposable {
    *
    * @see {@link Encoder.create} For using the codec
    */
-  getEncoderCodec(codec: BaseCodecName | AVCodecID): Codec | null {
+  getEncoderCodec(codec: BaseCodecName | AVCodecID, validate?: boolean): Codec | null {
     // Build the encoder name
-    let codecBaseName = '';
+    let codecBaseName: BaseCodecName | null = null;
     let encoderSuffix = '';
 
     if (typeof codec === 'number') {
-      codecBaseName = this.getBaseCodecName(codec) ?? '';
+      codecBaseName = this.getBaseCodecName(codec) ?? null;
     } else {
       codecBaseName = codec;
     }
@@ -428,6 +453,8 @@ export class HardwareContext implements Disposable {
     if (!codecBaseName) {
       return null;
     }
+
+    const decoderCodecId = this.getCodecIDFromBaseName(codecBaseName);
 
     // We might only have hardware decode capabilities (d3d11va, d3d12va etc)
     // So we need to check for other hardware encoders
@@ -498,7 +525,96 @@ export class HardwareContext implements Disposable {
       return null;
     }
 
+    if (validate && decoderCodecId !== null) {
+      const isValid = this.testEncoder(decoderCodecId, encoderCodec);
+      if (!isValid) {
+        return null;
+      }
+    }
+
     return encoderCodec;
+  }
+
+  /**
+   * Test if hardware acceleration is working by decoding a test frame.
+   *
+   * Creates a simple decoder and attempts to decode with hardware acceleration.
+   * Returns true if hardware decoding succeeds, false otherwise.
+   * Useful for validating hardware setup before processing.
+   *
+   * @param codecId - Codec ID to test (default: H.264)
+   *
+   * @returns Promise that resolves to true if hardware works
+   *
+   * @example
+   * ```typescript
+   * const hw = HardwareContext.auto();
+   * if (hw && await hw.testDecoder()) {
+   *   console.log('Hardware acceleration working!');
+   *   // Proceed with hardware decoding/encoding
+   * } else {
+   *   console.log('Hardware acceleration not available');
+   *   // Fall back to software
+   * }
+   * ```
+   *
+   * @example
+   * ```typescript
+   * // Test specific hardware
+   * const cuda = HardwareContext.create(AV_HWDEVICE_TYPE_CUDA);
+   * if (cuda && await cuda.testDecoder()) {
+   *   console.log('CUDA acceleration works');
+   * }
+   * ```
+   *
+   * @see {@link supportsCodec} For checking codec support
+   */
+  testDecoder(codecId: AVCodecID = AV_CODEC_ID_H264): boolean {
+    try {
+      if (this.supportsCodec(codecId, false)) {
+        const isSupported = this.testCodec(codecId);
+        if (!isSupported) {
+          return false;
+        }
+      }
+
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Test if hardware encoding works with a specific codec pair.
+   *
+   * Attempts to decode and re-encode a test frame using hardware acceleration.
+   * Validates both decoding and encoding paths for the given codecs.
+   *
+   * @param decoderCodec - Codec name, ID, or instance to use for decoding
+   *
+   * @param encoderCodec - Codec name or instance to use for encoding
+   *
+   * @returns true if both decoding and encoding succeed
+   *
+   * @example
+   * ```typescript
+   * import { AV_CODEC_ID_H264 } from 'node-av/constants';
+   *
+   * const hw = HardwareContext.auto();
+   * if (hw && hw.testEncoder(AV_CODEC_ID_H264, AV_CODEC_ID_H264)) {
+   *   console.log('Hardware H.264 encoding works!');
+   * }
+   * ```
+   *
+   * @see {@link getEncoderCodec} For obtaining hardware encoder codec
+   */
+  testEncoder(decoderCodec: FFDecoderCodec | Codec | AVCodecID, encoderCodec: FFEncoderCodec | Codec): boolean {
+    const isSupported = this.testCodec(decoderCodec, encoderCodec);
+    if (!isSupported) {
+      return false;
+    }
+
+    return true;
   }
 
   /**
@@ -585,6 +701,86 @@ export class HardwareContext implements Disposable {
   }
 
   /**
+   * Test hardware decoding with a specific codec.
+   *
+   * @param decoderCodec - Decoder codec name, ID, or instance to test
+   *
+   * @param encoderCodec - Optional encoder codec name or instance to test
+   *
+   * @returns true if decoding succeeds
+   *
+   * @internal
+   */
+  private testCodec(decoderCodec: FFDecoderCodec | AVCodecID | Codec, encoderCodec?: FFEncoderCodec | Codec): boolean {
+    try {
+      let codecDecoder: Codec | null = null;
+      let codecEncoder: Codec | null = null;
+
+      if (decoderCodec instanceof Codec) {
+        codecDecoder = decoderCodec;
+      } else if (typeof decoderCodec === 'string') {
+        codecDecoder = Codec.findDecoderByName(decoderCodec);
+      } else {
+        codecDecoder = Codec.findDecoder(decoderCodec);
+      }
+
+      if (!codecDecoder) {
+        throw new Error('Decoder codec not found');
+      }
+
+      const testFilePath = codecDecoder.id === AV_CODEC_ID_HEVC ? hevcData : h264Data;
+
+      // Read test bitstream
+      using input = MediaInput.openSync(testFilePath);
+      const videoStream = input.video()!;
+
+      using decoder = Decoder.createSync(videoStream, {
+        hardware: this,
+      });
+
+      const inputGenerator = input.packetsSync();
+      const frameGenerator = decoder.framesSync(inputGenerator);
+      let packetGenerator: Generator<Packet> | null = null;
+      let encoder: Encoder | null = null;
+
+      if (encoderCodec) {
+        if (encoderCodec instanceof Codec) {
+          codecEncoder = encoderCodec;
+        } else if (typeof encoderCodec === 'string') {
+          codecEncoder = Codec.findEncoderByName(encoderCodec);
+        } else if (encoderCodec) {
+          codecEncoder = Codec.findEncoder(encoderCodec);
+        }
+
+        if (!codecEncoder) {
+          throw new Error('Encoder codec not found');
+        }
+
+        encoder = Encoder.createSync(codecEncoder, {
+          timeBase: videoStream.timeBase,
+          frameRate: videoStream.avgFrameRate,
+        });
+
+        packetGenerator = encoder.packetsSync(frameGenerator);
+      }
+
+      using _encoder = encoder;
+
+      let hasData = false;
+
+      const generator = packetGenerator ?? frameGenerator;
+      for (using _ of generator) {
+        hasData = true;
+        break; // We only need to decode one frame
+      }
+
+      return hasData;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Map AVCodecID to base codec name for hardware encoder lookup.
    *
    * Converts codec IDs to generic codec names used for encoder naming.
@@ -618,6 +814,45 @@ export class HardwareContext implements Disposable {
         return 'mjpeg';
       case AV_CODEC_ID_PRORES:
         return 'prores';
+      default:
+        return null;
+    }
+  }
+
+  /**
+   * Map base codec name to AVCodecID for internal use.
+   *
+   * Converts generic codec names to AVCodecID enum values.
+   * Used internally for codec testing and validation.
+   *
+   * @param codecBaseName - Base codec name string
+   *
+   * @returns Corresponding AVCodecID or null if unsupported
+   *
+   * @internal
+   */
+  private getCodecIDFromBaseName(codecBaseName: BaseCodecName): AVCodecID | null {
+    switch (codecBaseName) {
+      case 'av1':
+        return AV_CODEC_ID_AV1;
+      case 'h264':
+        return AV_CODEC_ID_H264;
+      case 'hevc':
+        return AV_CODEC_ID_HEVC;
+      case 'h263':
+        return AV_CODEC_ID_H263;
+      case 'mpeg2':
+        return AV_CODEC_ID_MPEG2VIDEO;
+      case 'mpeg4':
+        return AV_CODEC_ID_MPEG4;
+      case 'vp8':
+        return AV_CODEC_ID_VP8;
+      case 'vp9':
+        return AV_CODEC_ID_VP9;
+      case 'mjpeg':
+        return AV_CODEC_ID_MJPEG;
+      case 'prores':
+        return AV_CODEC_ID_PRORES;
       default:
         return null;
     }
