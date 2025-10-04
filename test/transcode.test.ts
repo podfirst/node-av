@@ -294,7 +294,7 @@ describe('Transcode Scenarios', () => {
     using decoder = await Decoder.create(videoStream);
     assert.ok(decoder, 'Should create software decoder');
 
-    const filterChain = FilterPreset.chain().format(AV_PIX_FMT_NV12).scale(100, 100).hwupload().build();
+    const filterChain = FilterPreset.chain(hw).format(AV_PIX_FMT_NV12).hwupload().build();
 
     using filter = FilterAPI.create(filterChain, {
       timeBase: { num: 1, den: 30 },
