@@ -415,9 +415,7 @@ export class Encoder implements Disposable {
    *
    * @param frame - Raw frame to encode (or null to flush)
    *
-   * @returns Encoded packet or null if more data needed
-   *
-   * @throws {Error} If encoder is closed
+   * @returns Encoded packet, null if more data needed, or null if encoder is closed
    *
    * @throws {FFmpegError} If encoding fails
    *
@@ -449,11 +447,7 @@ export class Encoder implements Disposable {
    */
   async encode(frame: Frame | null): Promise<Packet | null> {
     if (this.isClosed) {
-      if (!frame) {
-        return null;
-      }
-
-      throw new Error('Encoder is closed');
+      return null;
     }
 
     // Open encoder if not already done
@@ -494,9 +488,7 @@ export class Encoder implements Disposable {
    *
    * @param frame - Raw frame to encode (or null to flush)
    *
-   * @returns Encoded packet or null if more data needed
-   *
-   * @throws {Error} If encoder is closed
+   * @returns Encoded packet, null if more data needed, or null if encoder is closed
    *
    * @throws {FFmpegError} If encoding fails
    *
@@ -527,11 +519,7 @@ export class Encoder implements Disposable {
    */
   encodeSync(frame: Frame | null): Packet | null {
     if (this.isClosed) {
-      if (!frame) {
-        return null;
-      }
-
-      throw new Error('Encoder is closed');
+      return null;
     }
 
     // Open encoder if not already done
@@ -571,8 +559,6 @@ export class Encoder implements Disposable {
    * @param frames - Async iterable of frames (freed automatically)
    *
    * @yields {Packet} Encoded packets (caller must free)
-   *
-   * @throws {Error} If encoder is closed
    *
    * @throws {FFmpegError} If encoding fails
    *
@@ -637,7 +623,7 @@ export class Encoder implements Disposable {
 
     // Flush encoder after all frames
     await this.flush();
-    while (true) {
+    while (!this.isClosed) {
       const remaining = await this.receive();
       if (!remaining) break;
       yield remaining;
@@ -656,8 +642,6 @@ export class Encoder implements Disposable {
    * @param frames - Iterable of frames (freed automatically)
    *
    * @yields {Packet} Encoded packets (caller must free)
-   *
-   * @throws {Error} If encoder is closed
    *
    * @throws {FFmpegError} If encoding fails
    *
@@ -707,7 +691,7 @@ export class Encoder implements Disposable {
 
     // Flush encoder after all frames
     this.flushSync();
-    while (true) {
+    while (!this.isClosed) {
       const remaining = this.receiveSync();
       if (!remaining) break;
       yield remaining;
