@@ -352,9 +352,7 @@ export class Decoder implements Disposable {
    *
    * @param packet - Compressed packet to decode
    *
-   * @returns Decoded frame or null if more data needed
-   *
-   * @throws {Error} If decoder is closed
+   * @returns Decoded frame or null if more data needed or decoder is closed
    *
    * @throws {FFmpegError} If decoding fails
    *
@@ -386,7 +384,7 @@ export class Decoder implements Disposable {
    */
   async decode(packet: Packet): Promise<Frame | null> {
     if (this.isClosed) {
-      throw new Error('Decoder is closed');
+      return null;
     }
 
     // Send packet to decoder
@@ -419,9 +417,7 @@ export class Decoder implements Disposable {
    *
    * @param packet - Compressed packet to decode
    *
-   * @returns Decoded frame or null
-   *
-   * @throws {Error} If decoder is closed
+   * @returns Decoded frame or null if more data needed or decoder is closed
    *
    * @throws {FFmpegError} If decoding fails
    *
@@ -437,7 +433,7 @@ export class Decoder implements Disposable {
    */
   decodeSync(packet: Packet): Frame | null {
     if (this.isClosed) {
-      throw new Error('Decoder is closed');
+      return null;
     }
 
     // Send packet to decoder
@@ -533,7 +529,7 @@ export class Decoder implements Disposable {
 
     // Flush decoder after all packets
     await this.flush();
-    while (true) {
+    while (!this.isClosed) {
       const remaining = await this.receive();
       if (!remaining) break;
       yield remaining;
@@ -585,7 +581,7 @@ export class Decoder implements Disposable {
 
     // Flush decoder after all packets
     this.flushSync();
-    while (true) {
+    while (!this.isClosed) {
       const remaining = this.receiveSync();
       if (!remaining) break;
       yield remaining;
@@ -773,6 +769,10 @@ export class Decoder implements Disposable {
     // Clear previous frame data
     this.frame.unref();
 
+    if (this.isClosed) {
+      return null;
+    }
+
     const ret = await this.codecContext.receiveFrame(this.frame);
 
     if (ret === 0) {
@@ -830,6 +830,10 @@ export class Decoder implements Disposable {
   receiveSync(): Frame | null {
     // Clear previous frame data
     this.frame.unref();
+
+    if (this.isClosed) {
+      return null;
+    }
 
     const ret = this.codecContext.receiveFrameSync(this.frame);
 
