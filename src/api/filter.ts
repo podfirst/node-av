@@ -984,6 +984,11 @@ export class FilterAPI implements Disposable {
         const filter = filterCtx.filter;
         if (filter && (filter.flags & AVFILTER_FLAG_HWDEVICE) !== 0) {
           filterCtx.hwDeviceCtx = frame.hwFramesCtx?.deviceRef ?? this.options.hardware?.deviceContext ?? null;
+
+          // Set extra_hw_frames if specified
+          if (this.options.extraHWFrames !== undefined && this.options.extraHWFrames > 0) {
+            filterCtx.extraHWFrames = this.options.extraHWFrames;
+          }
         }
       }
     }
@@ -1030,6 +1035,11 @@ export class FilterAPI implements Disposable {
         const filter = filterCtx.filter;
         if (filter && (filter.flags & AVFILTER_FLAG_HWDEVICE) !== 0) {
           filterCtx.hwDeviceCtx = frame.hwFramesCtx?.deviceRef ?? this.options.hardware?.deviceContext ?? null;
+
+          // Set extra_hw_frames if specified
+          if (this.options.extraHWFrames !== undefined && this.options.extraHWFrames > 0) {
+            filterCtx.extraHWFrames = this.options.extraHWFrames;
+          }
         }
       }
     }

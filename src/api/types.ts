@@ -133,6 +133,12 @@ export interface DecoderOptions {
 
   /** Hardware acceleration: Pass a HardwareContext instance */
   hardware?: HardwareContext | null;
+
+  /**
+   * Number of extra hardware frames to allocate.
+   * Useful for hardware decoders requiring frame buffering.
+   */
+  extraHWFrames?: number;
 }
 
 /**
@@ -197,6 +203,11 @@ export interface FilterOptions {
 
   /** Hardware acceleration: Pass a HardwareContext instance */
   hardware?: HardwareContext | null;
+
+  /**
+   * Number of extra hardware frames to allocate.
+   */
+  extraHWFrames?: number;
 }
 
 /**

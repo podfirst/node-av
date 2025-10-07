@@ -43,6 +43,7 @@ Napi::Object FilterContext::Init(Napi::Env env, Napi::Object exports) {
     InstanceMethod(Napi::Symbol::WellKnown(env, "dispose"), &FilterContext::Dispose),
 
     InstanceAccessor<&FilterContext::GetName, &FilterContext::SetName>("name"),
+    InstanceAccessor<&FilterContext::GetExtraHWFrames, &FilterContext::SetExtraHWFrames>("extraHWFrames"),
     InstanceAccessor<&FilterContext::GetFilter>("filter"),
     InstanceAccessor<&FilterContext::GetGraph>("graph"),
     InstanceAccessor<&FilterContext::GetNbInputs>("nbInputs"),
@@ -444,6 +445,29 @@ Napi::Value FilterContext::GetName(const Napi::CallbackInfo& info) {
     return env.Null();
   }
   return Napi::String::New(env, ctx->name);
+}
+
+Napi::Value FilterContext::GetExtraHWFrames(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  AVFilterContext* ctx = Get();
+  if (!ctx) {
+    return Napi::Number::New(env, 0);
+  }
+  return Napi::Number::New(env, ctx->extra_hw_frames);
+}
+
+void FilterContext::SetExtraHWFrames(const Napi::CallbackInfo& info, const Napi::Value& value) {
+  AVFilterContext* ctx = Get();
+  if (!ctx) {
+    return;
+  }
+  
+  if (value.IsNumber()) {
+    int extraHWFrames = value.As<Napi::Number>().Int32Value();
+    if (extraHWFrames >= 0) {
+      ctx->extra_hw_frames = extraHWFrames;
+    }
+  }
 }
 
 void FilterContext::SetName(const Napi::CallbackInfo& info, const Napi::Value& value) {

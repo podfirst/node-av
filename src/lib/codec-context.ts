@@ -649,6 +649,22 @@ export class CodecContext extends OptionMember<NativeCodecContext> implements Di
   }
 
   /**
+   * Number of extra hardware frames to allocate.
+   *
+   * Specifies additional hardware frame buffers for decoders that need them.
+   * Useful for hardware decoders requiring frame buffering or reordering.
+   *
+   * Direct mapping to AVCodecContext->extra_hw_frames.
+   */
+  get extraHWFrames(): number {
+    return this.native.extraHWFrames;
+  }
+
+  set extraHWFrames(value: number) {
+    this.native.extraHWFrames = value;
+  }
+
+  /**
    * Hardware frames context.
    *
    * Reference to hardware frames for GPU memory.

@@ -225,6 +225,7 @@ export interface NativeCodecContext extends Disposable {
   rcMinRate: bigint;
   hwDeviceCtx: NativeHardwareDeviceContext | null;
   hwFramesCtx: NativeHardwareFramesContext | null;
+  extraHWFrames: number;
 
   allocContext3(codec?: NativeCodec | null): void;
   freeContext(): void;
@@ -677,6 +678,7 @@ export interface NativeFilterContext extends Disposable {
   readonly ready: number;
   name: string | null;
   hwDeviceCtx: NativeHardwareDeviceContext | null;
+  extraHWFrames: number;
 
   init(options?: NativeDictionary | null): number;
   initStr(args?: string | null): number;

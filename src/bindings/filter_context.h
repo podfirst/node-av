@@ -80,6 +80,9 @@ private:
   Napi::Value GetName(const Napi::CallbackInfo& info);
   void SetName(const Napi::CallbackInfo& info, const Napi::Value& value);
 
+  Napi::Value GetExtraHWFrames(const Napi::CallbackInfo& info);
+  void SetExtraHWFrames(const Napi::CallbackInfo& info, const Napi::Value& value);
+
   Napi::Value GetFilter(const Napi::CallbackInfo& info);
 
   Napi::Value GetGraph(const Napi::CallbackInfo& info);

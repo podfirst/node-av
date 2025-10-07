@@ -76,6 +76,7 @@ Napi::Object CodecContext::Init(Napi::Env env, Napi::Object exports) {
     InstanceAccessor<&CodecContext::GetRcMinRate, &CodecContext::SetRcMinRate>("rcMinRate"),
     InstanceAccessor<&CodecContext::GetHwDeviceCtx, &CodecContext::SetHwDeviceCtx>("hwDeviceCtx"),
     InstanceAccessor<&CodecContext::GetHwFramesCtx, &CodecContext::SetHwFramesCtx>("hwFramesCtx"),
+    InstanceAccessor<&CodecContext::GetExtraHWFrames, &CodecContext::SetExtraHWFrames>("extraHWFrames"),
     InstanceAccessor<&CodecContext::IsOpen>("isOpen"),
   });
   
@@ -852,6 +853,27 @@ void CodecContext::SetHwFramesCtx(const Napi::CallbackInfo& info, const Napi::Va
   
   // Reference the new context
   context_->hw_frames_ctx = av_buffer_ref(frames->Get());
+}
+
+Napi::Value CodecContext::GetExtraHWFrames(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (!context_) {
+    return Napi::Number::New(env, 0);
+  }
+  return Napi::Number::New(env, context_->extra_hw_frames);
+}
+
+void CodecContext::SetExtraHWFrames(const Napi::CallbackInfo& info, const Napi::Value& value) {
+  if (!context_) {
+    return;
+  }
+
+  if (value.IsNumber()) {
+    int extraHWFrames = value.As<Napi::Number>().Int32Value();
+    if (extraHWFrames >= 0) {
+      context_->extra_hw_frames = extraHWFrames;
+    }
+  }
 }
 
 Napi::Value CodecContext::SetHardwarePixelFormat(const Napi::CallbackInfo& info) {

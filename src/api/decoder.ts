@@ -158,6 +158,11 @@ export class Decoder implements Disposable {
     const isHWDecoder = codec.isHardwareAcceleratedDecoder();
     if (isHWDecoder && options.hardware) {
       codecContext.hwDeviceCtx = options.hardware.deviceContext;
+
+      // Set extra_hw_frames if specified
+      if (options.extraHWFrames !== undefined && options.extraHWFrames > 0) {
+        codecContext.extraHWFrames = options.extraHWFrames;
+      }
     } else {
       options.hardware = undefined;
     }
@@ -256,6 +261,11 @@ export class Decoder implements Disposable {
     const isHWDecoder = codec.isHardwareAcceleratedDecoder();
     if (isHWDecoder && options.hardware) {
       codecContext.hwDeviceCtx = options.hardware.deviceContext;
+
+      // Set extra_hw_frames if specified
+      if (options.extraHWFrames !== undefined && options.extraHWFrames > 0) {
+        codecContext.extraHWFrames = options.extraHWFrames;
+      }
     } else {
       options.hardware = undefined;
     }

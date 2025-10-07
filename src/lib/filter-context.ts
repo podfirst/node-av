@@ -165,6 +165,22 @@ export class FilterContext extends OptionMember<NativeFilterContext> implements 
   }
 
   /**
+   * Number of extra hardware frames to allocate.
+   *
+   * Specifies additional hardware frame buffers for filters that need them.
+   * Useful for deinterlacing or other filters requiring frame buffering.
+   *
+   * Direct mapping to AVFilterContext->extra_hw_frames.
+   */
+  get extraHWFrames(): number {
+    return this.native.extraHWFrames;
+  }
+
+  set extraHWFrames(value: number) {
+    this.native.extraHWFrames = value;
+  }
+
+  /**
    * Initialize filter with dictionary options.
    *
    * Configures the filter with key-value option pairs.

@@ -169,6 +169,9 @@ private:
   Napi::Value GetHwFramesCtx(const Napi::CallbackInfo& info);
   void SetHwFramesCtx(const Napi::CallbackInfo& info, const Napi::Value& value);
 
+  Napi::Value GetExtraHWFrames(const Napi::CallbackInfo& info);
+  void SetExtraHWFrames(const Napi::CallbackInfo& info, const Napi::Value& value);
+
   Napi::Value SetHardwarePixelFormat(const Napi::CallbackInfo& info);
   
   // Static callback for FFmpeg
