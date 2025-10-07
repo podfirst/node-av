@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Hardware Frame Allocation Control**: Added `extraHWFrames` option to `DecoderOptions` and `FilterOptions` for controlling hardware frame buffer size
+  - Low-level access via `codecContext.extraHWFrames` and `filterContext.extraHWFrames`
+
+### Changed
+
+- **High-Level API Error Handling**: All high-level API methods now return `null` instead of throwing errors when resources are closed
+  - Affected methods: `decode()`, `encode()`, `process()`, `flush()` and their sync variants
+  - Generator methods (`frames()`, `packets()`, etc.) now exit gracefully when `closed`/`isClosed` flag is set
+  - Improves error handling in cleanup scenarios
+
+- **BitStreamFilterAPI Lifecycle Management**:
+  - Renamed `dispose()` method to `close()` for consistency with other high-level APIs
+  - Added `isBitstreamFilterOpen` getter to check filter state
+  - Symbol.dispose still supported for automatic cleanup with `using` statement
+
+- **Consistent Closed State Behavior**:
+  - Methods check closed state and return `null` instead of throwing exceptions
+  - Generator loops respect closed state
+
+### Fixed
+
+- **Log Callback Event Loop**: Fixed Node.js process not exiting when using `Log.setCallback()`
+  - ThreadSafeFunction is now unref'd to prevent keeping event loop alive
+  - Proper cleanup order in `SetCallback()` and `ResetCallback()`
+
+- **VideoToolbox Patch**: Fixed "Duplicated pixel format" error in hardware acceleration
+  - Corrected patch 1006 to avoid duplicate `AV_PIX_FMT_BGRA` entries in `supported_formats[]`
+  - Added `AV_PIX_FMT_GRAY8` and `AV_PIX_FMT_RGB24` to VideoToolbox format support
+
 ## [2.6.0] - 2025-09-29
 
 ### Added
