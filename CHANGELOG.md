@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.0] - 2025-10-07
+
 ### Added
 
 - **Hardware Frame Allocation Control**: Added `extraHWFrames` option to `DecoderOptions` and `FilterOptions` for controlling hardware frame buffer size
