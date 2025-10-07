@@ -536,6 +536,85 @@ export class HardwareContext implements Disposable {
   }
 
   /**
+   * Get the appropriate decoder codec for a given base codec name.
+   *
+   * Maps generic codec names to hardware-specific decoder implementations.
+   * Returns null if no hardware decoder is available for the codec.
+   * Automatically searches for decoders that support this hardware device type.
+   *
+   * @param codec - Generic codec name (e.g., 'h264', 'hevc', 'av1') or AVCodecID
+   *
+   * @returns Hardware decoder codec or null if unsupported
+   *
+   * @example
+   * ```typescript
+   * const decoderCodec = hw.getDecoderCodec('hevc');
+   * if (decoderCodec) {
+   *   console.log(`Using decoder: ${decoderCodec.name}`);
+   *   // e.g., "hevc_qsv" for QSV
+   * }
+   * ```
+   *
+   * @example
+   * ```typescript
+   * // Use with Decoder.create
+   * const codec = hw.getDecoderCodec(AV_CODEC_ID_H264);
+   * if (codec) {
+   *   const decoder = await Decoder.create(stream, { hardware: hw });
+   * }
+   * ```
+   *
+   * @see {@link Decoder.create} For using the codec
+   * @see {@link getEncoderCodec} For hardware encoders
+   */
+  getDecoderCodec(codec: BaseCodecName | AVCodecID): Codec | null {
+    // Get codec ID
+    let codecId: AVCodecID | null = null;
+
+    if (typeof codec === 'number') {
+      codecId = codec;
+    } else {
+      codecId = this.getCodecIDFromBaseName(codec);
+    }
+
+    if (codecId === null) {
+      return null;
+    }
+
+    // Find all decoders for this codec
+    const codecs = Codec.getCodecList();
+
+    for (const decoderCodec of codecs) {
+      // Skip if not a decoder
+      if (!decoderCodec.isDecoder()) {
+        continue;
+      }
+
+      // Skip if wrong codec ID
+      if (decoderCodec.id !== codecId) {
+        continue;
+      }
+
+      // Check if this decoder supports our hardware device type
+      for (let i = 0; ; i++) {
+        const config = decoderCodec.getHwConfig(i);
+        if (!config) break;
+
+        // Accept both HW_DEVICE_CTX and HW_FRAMES_CTX methods
+        const supportsDeviceCtx = (config.methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX) !== 0;
+        const supportsFramesCtx = (config.methods & AV_CODEC_HW_CONFIG_METHOD_HW_FRAMES_CTX) !== 0;
+
+        if ((supportsDeviceCtx || supportsFramesCtx) && config.deviceType === this._deviceType) {
+          // Found a hardware decoder that supports this device type
+          return decoderCodec;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /**
    * Test if hardware acceleration is working by decoding a test frame.
    *
    * Creates a simple decoder and attempts to decode with hardware acceleration.
@@ -962,15 +1041,15 @@ export class HardwareContext implements Disposable {
     let preferenceOrder: AVHWDeviceType[];
 
     if (platform === 'darwin') {
-      preferenceOrder = [AV_HWDEVICE_TYPE_VIDEOTOOLBOX, AV_HWDEVICE_TYPE_CUDA, AV_HWDEVICE_TYPE_VULKAN, AV_HWDEVICE_TYPE_OPENCL];
+      preferenceOrder = [AV_HWDEVICE_TYPE_VIDEOTOOLBOX];
     } else if (platform === 'win32') {
       preferenceOrder = [
         AV_HWDEVICE_TYPE_CUDA,
         AV_HWDEVICE_TYPE_QSV,
         AV_HWDEVICE_TYPE_D3D11VA,
         AV_HWDEVICE_TYPE_D3D12VA,
-        AV_HWDEVICE_TYPE_VULKAN,
         AV_HWDEVICE_TYPE_DXVA2,
+        AV_HWDEVICE_TYPE_VULKAN,
         AV_HWDEVICE_TYPE_OPENCL,
       ];
     } else {
@@ -978,9 +1057,9 @@ export class HardwareContext implements Disposable {
       const isARM = process.arch === 'arm64' || process.arch === 'arm';
 
       if (isARM) {
-        preferenceOrder = [AV_HWDEVICE_TYPE_RKMPP, AV_HWDEVICE_TYPE_VAAPI, AV_HWDEVICE_TYPE_CUDA, AV_HWDEVICE_TYPE_VULKAN, AV_HWDEVICE_TYPE_DRM, AV_HWDEVICE_TYPE_OPENCL];
+        preferenceOrder = [AV_HWDEVICE_TYPE_RKMPP, AV_HWDEVICE_TYPE_VAAPI, AV_HWDEVICE_TYPE_CUDA, AV_HWDEVICE_TYPE_DRM, AV_HWDEVICE_TYPE_VULKAN, AV_HWDEVICE_TYPE_OPENCL];
       } else {
-        preferenceOrder = [AV_HWDEVICE_TYPE_CUDA, AV_HWDEVICE_TYPE_VAAPI, AV_HWDEVICE_TYPE_VDPAU, AV_HWDEVICE_TYPE_VULKAN, AV_HWDEVICE_TYPE_DRM, AV_HWDEVICE_TYPE_OPENCL];
+        preferenceOrder = [AV_HWDEVICE_TYPE_CUDA, AV_HWDEVICE_TYPE_QSV, AV_HWDEVICE_TYPE_VAAPI, AV_HWDEVICE_TYPE_DRM, AV_HWDEVICE_TYPE_VULKAN, AV_HWDEVICE_TYPE_OPENCL];
       }
     }
 
