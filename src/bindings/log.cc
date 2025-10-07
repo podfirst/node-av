@@ -1,5 +1,6 @@
 #include "log.h"
 #include <thread>
+#include <chrono>
 #include <atomic>
 
 namespace ffmpeg {
@@ -72,16 +73,21 @@ Napi::Value Log::SetCallback(const Napi::CallbackInfo& info) {
     return env.Undefined();
   }
   
+  // Reset FFmpeg callback FIRST to prevent new calls
+  av_log_set_callback(av_log_default_callback);
+
   // Clean up existing callback if any
   if (callback_active.load()) {
+    // Stop our callback from processing
     callback_active.store(false);
     queue_cv.notify_all();  // Wake up worker thread
-    
+
     if (tsfn) {
+      // Always use Release (not Abort) to allow graceful shutdown
       tsfn.Release();
       tsfn = nullptr;
     }
-    
+
     // Clear queue
     {
       std::lock_guard<std::mutex> lock(queue_mutex);
@@ -89,10 +95,9 @@ Napi::Value Log::SetCallback(const Napi::CallbackInfo& info) {
       log_queue.swap(empty);
     }
   }
-  
+
   // Reset if null/undefined
   if (info[0].IsNull() || info[0].IsUndefined()) {
-    av_log_set_callback(av_log_default_callback);
     return env.Undefined();
   }
   
@@ -118,9 +123,15 @@ Napi::Value Log::SetCallback(const Napi::CallbackInfo& info) {
     info[0].As<Napi::Function>(),  // JavaScript function
     "FFmpegLogCallback",            // Resource name
     0,                              // Unlimited queue
-    1                               // Only one thread
+    1,                              // Only one thread
+    [](Napi::Env) {                // Finalizer - called when TSFN is destroyed
+      // Cleanup complete
+    }
   );
-  
+
+  // Unref the TSFN so it doesn't keep the event loop alive
+  tsfn.Unref(env);
+
   callback_active.store(true);
   
   // Set our C callback
@@ -158,24 +169,26 @@ Napi::Value Log::LogMessage(const Napi::CallbackInfo& info) {
 
 Napi::Value Log::ResetCallback(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
-  // Use internal cleanup (but use Release instead of Abort for normal cleanup)
+
+  // Reset FFmpeg callback FIRST to prevent new calls
   av_log_set_callback(av_log_default_callback);
-  
+
+  // Stop our callback from processing
   callback_active.store(false);
   queue_cv.notify_all();
-  
+
   if (tsfn) {
-    tsfn.Release();  // Use Release for graceful shutdown
+    // Always use Release for graceful shutdown
+    tsfn.Release();
     tsfn = nullptr;
   }
-  
+
   {
     std::lock_guard<std::mutex> lock(queue_mutex);
     std::queue<std::pair<int, std::string>> empty;
     log_queue.swap(empty);
   }
-  
+
   return env.Undefined();
 }
 
