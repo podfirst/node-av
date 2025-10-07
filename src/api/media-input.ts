@@ -53,6 +53,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
   private formatContext: FormatContext;
   private _streams: Stream[] = [];
   private ioContext?: IOContext;
+  private closed = false;
 
   /**
    * @param formatContext - Opened format context
@@ -770,7 +771,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
     packet.alloc();
 
     try {
-      while (true) {
+      while (!this.closed) {
         const ret = await this.formatContext.readFrame(packet);
         if (ret < 0) {
           // End of file or error
@@ -840,7 +841,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
     packet.alloc();
 
     try {
-      while (true) {
+      while (!this.closed) {
         const ret = this.formatContext.readFrameSync(packet);
         if (ret < 0) {
           // End of file or error
@@ -969,6 +970,11 @@ export class MediaInput implements AsyncDisposable, Disposable {
    * @see {@link Symbol.asyncDispose} For automatic cleanup
    */
   async close(): Promise<void> {
+    this.closed = true;
+    if (this.closed) {
+      return;
+    }
+
     // IMPORTANT: Clear pb reference FIRST to prevent use-after-free
     if (this.ioContext) {
       this.formatContext.pb = null;
@@ -1007,6 +1013,11 @@ export class MediaInput implements AsyncDisposable, Disposable {
    * @see {@link close} For async version
    */
   closeSync(): void {
+    this.closed = true;
+    if (this.closed) {
+      return;
+    }
+
     // IMPORTANT: Clear pb reference FIRST to prevent use-after-free
     if (this.ioContext) {
       this.formatContext.pb = null;
