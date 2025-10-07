@@ -53,7 +53,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
   private formatContext: FormatContext;
   private _streams: Stream[] = [];
   private ioContext?: IOContext;
-  private closed = false;
+  private isClosed = false;
 
   /**
    * @param formatContext - Opened format context
@@ -549,6 +549,20 @@ export class MediaInput implements AsyncDisposable, Disposable {
   }
 
   /**
+   * Check if input is open.
+   *
+   * @example
+   * ```typescript
+   * if (!input.isInputOpen) {
+   *   console.log('Input is not open');
+   * }
+   * ```
+   */
+  get isInputOpen(): boolean {
+    return !this.isClosed;
+  }
+
+  /**
    * Get all streams in the media.
    *
    * @example
@@ -565,7 +579,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
   /**
    * Get media duration in seconds.
    *
-   * Returns 0 if duration is unknown or not available.
+   * Returns 0 if duration is unknown or not available or input is closed.
    *
    * @example
    * ```typescript
@@ -573,8 +587,15 @@ export class MediaInput implements AsyncDisposable, Disposable {
    * ```
    */
   get duration(): number {
+    if (this.isClosed) {
+      return 0;
+    }
+
     const duration = this.formatContext.duration;
-    if (!duration || duration <= 0) return 0;
+    if (!duration || duration <= 0) {
+      return 0;
+    }
+
     // Convert from AV_TIME_BASE (microseconds) to seconds
     return Number(duration) / 1000000;
   }
@@ -582,7 +603,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
   /**
    * Get media bitrate in kilobits per second.
    *
-   * Returns 0 if bitrate is unknown.
+   * Returns 0 if bitrate is unknown or not available or input is closed.
    *
    * @example
    * ```typescript
@@ -590,8 +611,15 @@ export class MediaInput implements AsyncDisposable, Disposable {
    * ```
    */
   get bitRate(): number {
+    if (this.isClosed) {
+      return 0;
+    }
+
     const bitrate = this.formatContext.bitRate;
-    if (!bitrate || bitrate <= 0) return 0;
+    if (!bitrate || bitrate <= 0) {
+      return 0;
+    }
+
     // Convert from bits per second to kilobits per second
     return Number(bitrate) / 1000;
   }
@@ -609,11 +637,17 @@ export class MediaInput implements AsyncDisposable, Disposable {
    * ```
    */
   get metadata(): Record<string, string> {
+    if (this.isClosed) {
+      return {};
+    }
+
     return this.formatContext.metadata?.getAll() ?? {};
   }
 
   /**
    * Get format name.
+   *
+   * Returns 'unknown' if input is closed or format is not available.
    *
    * @example
    * ```typescript
@@ -621,11 +655,17 @@ export class MediaInput implements AsyncDisposable, Disposable {
    * ```
    */
   get formatName(): string {
+    if (this.isClosed) {
+      return 'unknown';
+    }
+
     return this.formatContext.iformat?.name ?? 'unknown';
   }
 
   /**
    * Get format long name.
+   *
+   * Returns 'Unknown Format' if input is closed or format is not available.
    *
    * @example
    * ```typescript
@@ -633,6 +673,10 @@ export class MediaInput implements AsyncDisposable, Disposable {
    * ```
    */
   get formatLongName(): string {
+    if (this.isClosed) {
+      return 'Unknown Format';
+    }
+
     return this.formatContext.iformat?.longName ?? 'Unknown Format';
   }
 
@@ -710,7 +754,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
    *
    * @param type - Media type to find
    *
-   * @returns Best stream or undefined if not found
+   * @returns Best stream or undefined if not found or input is closed
    *
    * @example
    * ```typescript
@@ -726,6 +770,10 @@ export class MediaInput implements AsyncDisposable, Disposable {
    * @see {@link audio} For direct audio stream access
    */
   findBestStream(type: AVMediaType): Stream | undefined {
+    if (this.isClosed) {
+      return undefined;
+    }
+
     const bestStreamIndex = this.formatContext.findBestStream(type);
     return this._streams.find((s) => s.index === bestStreamIndex);
   }
@@ -771,7 +819,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
     packet.alloc();
 
     try {
-      while (!this.closed) {
+      while (!this.isClosed) {
         const ret = await this.formatContext.readFrame(packet);
         if (ret < 0) {
           // End of file or error
@@ -841,7 +889,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
     packet.alloc();
 
     try {
-      while (!this.closed) {
+      while (!this.isClosed) {
         const ret = this.formatContext.readFrameSync(packet);
         if (ret < 0) {
           // End of file or error
@@ -885,6 +933,8 @@ export class MediaInput implements AsyncDisposable, Disposable {
    *
    * @returns 0 on success, negative on error
    *
+   * @throws {Error} If input is closed
+   *
    * @example
    * ```typescript
    * // Seek to 30 seconds
@@ -903,6 +953,10 @@ export class MediaInput implements AsyncDisposable, Disposable {
    * @see {@link AVSeekFlag} For seek flags
    */
   async seek(timestamp: number, streamIndex = -1, flags: AVSeekFlag = AVFLAG_NONE): Promise<number> {
+    if (this.isClosed) {
+      throw new Error('Cannot seek on closed input');
+    }
+
     // Convert seconds to AV_TIME_BASE
     const ts = BigInt(Math.floor(timestamp * 1000000));
     return this.formatContext.seekFrame(streamIndex, ts, flags);
@@ -925,6 +979,8 @@ export class MediaInput implements AsyncDisposable, Disposable {
    *
    * @returns 0 on success, negative on error
    *
+   * @throws {Error} If input is closed
+   *
    * @example
    * ```typescript
    * // Seek to 30 seconds
@@ -943,6 +999,10 @@ export class MediaInput implements AsyncDisposable, Disposable {
    * @see {@link seek} For async version
    */
   seekSync(timestamp: number, streamIndex = -1, flags: AVSeekFlag = AVFLAG_NONE): number {
+    if (this.isClosed) {
+      throw new Error('Cannot seek on closed input');
+    }
+
     // Convert seconds to AV_TIME_BASE
     const ts = BigInt(Math.floor(timestamp * 1000000));
     return this.formatContext.seekFrameSync(streamIndex, ts, flags);
@@ -970,10 +1030,11 @@ export class MediaInput implements AsyncDisposable, Disposable {
    * @see {@link Symbol.asyncDispose} For automatic cleanup
    */
   async close(): Promise<void> {
-    this.closed = true;
-    if (this.closed) {
+    if (this.isClosed) {
       return;
     }
+
+    this.isClosed = true;
 
     // IMPORTANT: Clear pb reference FIRST to prevent use-after-free
     if (this.ioContext) {
@@ -1013,10 +1074,11 @@ export class MediaInput implements AsyncDisposable, Disposable {
    * @see {@link close} For async version
    */
   closeSync(): void {
-    this.closed = true;
-    if (this.closed) {
+    if (this.isClosed) {
       return;
     }
+
+    this.isClosed = true;
 
     // IMPORTANT: Clear pb reference FIRST to prevent use-after-free
     if (this.ioContext) {
