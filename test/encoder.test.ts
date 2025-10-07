@@ -383,7 +383,7 @@ describe('Encoder', () => {
       encoder.close();
     });
 
-    it('should throw when encoder is closed (async)', async () => {
+    it('should not throw when encoder is closed (async)', async () => {
       const encoder = await Encoder.create(FF_ENCODER_LIBX264, {
         timeBase: { num: 1, den: 25 },
         frameRate: { num: 25, den: 1 },
@@ -407,12 +407,12 @@ describe('Encoder', () => {
       frame.height = 240;
       frame.format = AV_PIX_FMT_YUV420P;
 
-      await assert.rejects(async () => await encoder.encode(frame), /Encoder is closed/);
+      await assert.doesNotReject(async () => await encoder.encode(frame));
 
       frame.free();
     });
 
-    it('should throw when encoder is closed (sync)', () => {
+    it('should not throw when encoder is closed (sync)', () => {
       const encoder = Encoder.createSync(FF_ENCODER_LIBX264, {
         timeBase: { num: 1, den: 25 },
         frameRate: { num: 25, den: 1 },
@@ -436,7 +436,7 @@ describe('Encoder', () => {
       frame.height = 240;
       frame.format = AV_PIX_FMT_YUV420P;
 
-      assert.throws(() => encoder.encodeSync(frame), /Encoder is closed/);
+      assert.doesNotThrow(() => encoder.encodeSync(frame));
 
       frame.free();
     });

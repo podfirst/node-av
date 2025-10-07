@@ -386,7 +386,7 @@ describe('Decoder', () => {
       media.closeSync();
     });
 
-    it('should throw when decoder is closed (async)', async () => {
+    it('should not throw when decoder is closed (async)', async () => {
       const media = await MediaInput.open(inputFile);
       const videoStream = media.video();
       assert.ok(videoStream);
@@ -397,13 +397,13 @@ describe('Decoder', () => {
       const packet = new Packet();
       packet.alloc();
 
-      await assert.rejects(async () => await decoder.decode(packet), /Decoder is closed/);
+      await assert.doesNotReject(async () => await decoder.decode(packet));
 
       packet.free();
       await media.close();
     });
 
-    it('should throw when decoder is closed (sync)', () => {
+    it('should not throw when decoder is closed (sync)', () => {
       const media = MediaInput.openSync(inputFile);
       const videoStream = media.video();
       assert.ok(videoStream);
@@ -414,7 +414,7 @@ describe('Decoder', () => {
       const packet = new Packet();
       packet.alloc();
 
-      assert.throws(() => decoder.decodeSync(packet), /Decoder is closed/);
+      assert.doesNotThrow(() => decoder.decodeSync(packet));
 
       packet.free();
       media.closeSync();

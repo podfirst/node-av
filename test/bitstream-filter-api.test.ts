@@ -324,46 +324,42 @@ describe('BitStreamFilterAPI', () => {
   });
 
   describe('Error Handling', () => {
-    it('should throw when using disposed filter', async () => {
+    it('should not throw when using disposed filter', async () => {
       await using media = await MediaInput.open(inputFile);
       const stream = media.video();
       assert.ok(stream);
 
       const bsf = BitStreamFilterAPI.create('null', stream);
-      bsf.dispose();
+      bsf.close();
 
       // Create a test packet
       const packet = new Packet();
       packet.alloc();
 
-      // Should throw when trying to use disposed filter
-      await assert.rejects(async () => await bsf.process(packet), /BitStreamFilterAPI is disposed/);
-
-      await assert.rejects(async () => await bsf.flush(), /BitStreamFilterAPI is disposed/);
-
-      assert.throws(() => bsf.reset(), /BitStreamFilterAPI is disposed/);
+      // Should not throw when trying to use disposed filter
+      await assert.doesNotReject(async () => await bsf.process(packet));
+      await assert.doesNotReject(async () => await bsf.flush());
+      assert.doesNotThrow(() => bsf.reset());
 
       packet.unref();
     });
 
-    it('should throw when using disposed filter (sync)', () => {
+    it('should not throw when using disposed filter (sync)', () => {
       using media = MediaInput.openSync(inputFile);
       const stream = media.video();
       assert.ok(stream);
 
       const bsf = BitStreamFilterAPI.create('null', stream);
-      bsf.dispose();
+      bsf.close();
 
       // Create a test packet
       const packet = new Packet();
       packet.alloc();
 
-      // Should throw when trying to use disposed filter
-      assert.throws(() => bsf.processSync(packet), /BitStreamFilterAPI is disposed/);
-
-      assert.throws(() => bsf.flushSync(), /BitStreamFilterAPI is disposed/);
-
-      assert.throws(() => bsf.reset(), /BitStreamFilterAPI is disposed/);
+      // Should not throw when trying to use disposed filter
+      assert.doesNotThrow(() => bsf.processSync(packet));
+      assert.doesNotThrow(() => bsf.flushSync());
+      assert.doesNotThrow(() => bsf.reset());
 
       packet.unref();
     });

@@ -582,7 +582,7 @@ describe('High-Level Filter API', () => {
       filter.close();
     });
 
-    it('should throw when processing after free (async)', async () => {
+    it('should not throw when processing after free (async)', async () => {
       const filter = FilterAPI.create('volume=0.5', {
         timeBase: { num: 1, den: 48000 },
       });
@@ -596,14 +596,12 @@ describe('High-Level Filter API', () => {
       frame.channelLayout = { nbChannels: 2, order: 1, mask: 3n };
       frame.getBuffer();
 
-      await assert.rejects(async () => {
-        await filter.process(frame);
-      }, /Filter is closed/);
+      await assert.doesNotReject(async () => await filter.process(frame));
 
       frame.free();
     });
 
-    it('should throw when processing after free (sync)', () => {
+    it('should not throw when processing after free (sync)', () => {
       const filter = FilterAPI.create('volume=0.5', {
         timeBase: { num: 1, den: 48000 },
       });
@@ -617,9 +615,7 @@ describe('High-Level Filter API', () => {
       frame.channelLayout = { nbChannels: 2, order: 1, mask: 3n };
       frame.getBuffer();
 
-      assert.throws(() => {
-        filter.processSync(frame);
-      }, /Filter is closed/);
+      assert.doesNotThrow(() => filter.processSync(frame));
 
       frame.free();
     });

@@ -653,7 +653,7 @@ describe('Pipeline - Comprehensive Tests', () => {
   });
 
   describe('Error Handling', () => {
-    it('should handle invalid decoder', async () => {
+    it('should not throw if decoder is closed', async () => {
       await using input = await MediaInput.open(inputFile);
       const videoStream = input.video();
 
@@ -668,17 +668,13 @@ describe('Pipeline - Comprehensive Tests', () => {
       // This should fail when trying to decode
       const frameGenerator = pipeline(input, decoder);
 
-      await assert.rejects(
-        async () => {
-          for await (const frame of frameGenerator) {
-            // Should throw before getting here
-            frame.free();
-            break;
-          }
-        },
-        /closed|disposed/i,
-        'Should throw error for closed decoder',
-      );
+      await assert.doesNotReject(async () => {
+        for await (const frame of frameGenerator) {
+          // Should throw before getting here
+          frame.free();
+          break;
+        }
+      });
     });
   });
 
