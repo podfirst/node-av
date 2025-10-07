@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Automatic Hardware Decoder Selection**: `Decoder.create()` now automatically selects hardware decoders when hardware context is provided
+  - Mimics FFmpeg CLI behavior: "Selecting decoder 'hevc_qsv' because of requested hwaccel method qsv"
+  - New `HardwareContext.getDecoderCodec()` method to find hardware-specific decoders (e.g., `hevc_qsv`)
+  - Falls back to software decoder if no hardware decoder is available
+  - Works with both async `create()` and sync `createSync()` methods
+
+### Changed
+
+- **QSV Filter Support**: `FilterPresets` now uses `vpp_qsv` filter for Intel Quick Sync Video instead of `scale_qsv`
+
 ## [2.7.0] - 2025-10-07
 
 ### Added
