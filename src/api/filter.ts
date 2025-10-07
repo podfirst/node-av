@@ -211,7 +211,7 @@ export class FilterAPI implements Disposable {
    *
    * @returns Filtered frame or null if buffered
    *
-   * @throws {Error} If filter is closed with non-null frame
+   * @throws {Error} If filter could not be initialized
    *
    * @throws {FFmpegError} If processing fails
    *
@@ -240,11 +240,7 @@ export class FilterAPI implements Disposable {
    */
   async process(frame: Frame | null): Promise<Frame | null> {
     if (this.isClosed) {
-      if (!frame) {
-        return null;
-      }
-
-      throw new Error('Filter is closed');
+      return null;
     }
 
     // Open filter if not already done
@@ -261,7 +257,7 @@ export class FilterAPI implements Disposable {
     }
 
     if (!this.buffersrcCtx || !this.buffersinkCtx) {
-      throw new Error('Filter not initialized');
+      throw new Error('Could not initialize filter contexts');
     }
 
     // Send frame to filter
@@ -303,7 +299,7 @@ export class FilterAPI implements Disposable {
    *
    * @returns Filtered frame or null if buffered
    *
-   * @throws {Error} If filter is closed with non-null frame
+   * @throws {Error} If filter could not be initialized
    *
    * @throws {FFmpegError} If processing fails
    *
@@ -331,11 +327,7 @@ export class FilterAPI implements Disposable {
    */
   processSync(frame: Frame | null): Frame | null {
     if (this.isClosed) {
-      if (!frame) {
-        return null;
-      }
-
-      throw new Error('Filter is closed');
+      return null;
     }
 
     // Open filter if not already done
@@ -348,7 +340,7 @@ export class FilterAPI implements Disposable {
     }
 
     if (!this.buffersrcCtx || !this.buffersinkCtx) {
-      throw new Error('Filter not initialized');
+      throw new Error('Could not initialize filter contexts');
     }
 
     // Send frame to filter
@@ -382,7 +374,7 @@ export class FilterAPI implements Disposable {
    *
    * @param frames - Array of input frames
    *
-   * @returns Array of all output frames
+   * @returns Array of all output frames (empty if filter closed)
    *
    * @throws {Error} If filter not ready
    *
@@ -409,7 +401,7 @@ export class FilterAPI implements Disposable {
       }
 
       // Drain any additional frames
-      while (true) {
+      while (!this.isClosed) {
         const additional = await this.receive();
         if (!additional) break;
         outputFrames.push(additional);
@@ -428,7 +420,7 @@ export class FilterAPI implements Disposable {
    *
    * @param frames - Array of input frames
    *
-   * @returns Array of all output frames
+   * @returns Array of all output frames (empty if filter closed)
    *
    * @throws {Error} If filter not ready
    *
@@ -455,7 +447,7 @@ export class FilterAPI implements Disposable {
       }
 
       // Drain any additional frames
-      while (true) {
+      while (!this.isClosed) {
         const additional = this.receiveSync();
         if (!additional) break;
         outputFrames.push(additional);
@@ -518,7 +510,7 @@ export class FilterAPI implements Disposable {
         }
 
         // Drain any buffered frames
-        while (true) {
+        while (!this.isClosed) {
           const buffered = await this.receive();
           if (!buffered) break;
           yield buffered;
@@ -531,7 +523,7 @@ export class FilterAPI implements Disposable {
 
     // Flush and get remaining frames
     await this.flush();
-    while (true) {
+    while (!this.isClosed) {
       const remaining = await this.receive();
       if (!remaining) break;
       yield remaining;
@@ -591,7 +583,7 @@ export class FilterAPI implements Disposable {
         }
 
         // Drain any buffered frames
-        while (true) {
+        while (!this.isClosed) {
           const buffered = this.receiveSync();
           if (!buffered) break;
           yield buffered;
@@ -604,7 +596,7 @@ export class FilterAPI implements Disposable {
 
     // Flush and get remaining frames
     this.flushSync();
-    while (true) {
+    while (!this.isClosed) {
       const remaining = this.receiveSync();
       if (!remaining) break;
       yield remaining;
