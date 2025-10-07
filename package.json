@@ -99,7 +99,8 @@
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.45.0",
     "updates": "^16.8.0",
-    "vitepress": "^2.0.0-alpha.12"
+    "vitepress": "^2.0.0-alpha.12",
+    "why-is-node-running": "^3.2.2"
   },
   "bugs": {
     "url": "https://github.com/seydx/av/issues"
