@@ -222,15 +222,21 @@ export class FilterPreset {
     if (this.hardware) {
       // Special handling for different hardware scalers
       let filterName: string;
+      let filter: string;
+
       if (this.hardware.deviceType === AV_HWDEVICE_TYPE_RKMPP) {
         filterName = 'scale_rkrga'; // RKMPP uses RGA for scaling
+        filter = `${filterName}=${width}:${height}`;
       } else if (this.hardware.deviceType === AV_HWDEVICE_TYPE_VIDEOTOOLBOX) {
         filterName = 'scale_vt'; // VideoToolbox uses scale_vt
+        filter = `${filterName}=${width}:${height}`;
+      } else if (this.hardware.deviceType === AV_HWDEVICE_TYPE_QSV) {
+        filterName = 'vpp_qsv'; // QSV uses vpp_qsv for scaling with w= and h= parameters
+        filter = `${filterName}=w=${width}:h=${height}`;
       } else {
         filterName = `scale_${this.hardware.deviceTypeName}`;
+        filter = `${filterName}=${width}:${height}`;
       }
-
-      let filter = `${filterName}=${width}:${height}`;
 
       if (options) {
         for (const [key, value] of Object.entries(options)) {
@@ -294,6 +300,8 @@ export class FilterPreset {
       filterName = 'scale_rkrga';
     } else if (this.hardware.deviceType === AV_HWDEVICE_TYPE_VIDEOTOOLBOX) {
       filterName = 'scale_vt';
+    } else if (this.hardware.deviceType === AV_HWDEVICE_TYPE_QSV) {
+      filterName = 'vpp_qsv';
     } else {
       filterName = `scale_${this.hardware.deviceTypeName}`;
     }
@@ -337,6 +345,8 @@ export class FilterPreset {
   crop(width: number, height: number, x = 0, y = 0): FilterPreset {
     if (this.hardware?.deviceType === AV_HWDEVICE_TYPE_OPENCL) {
       this.add(`scale_opencl=cw=${width}:ch=${height}:cx=${x}:cy=${y}`);
+    } else if (this.hardware?.deviceType === AV_HWDEVICE_TYPE_QSV) {
+      this.add(`vpp_qsv=cw=${width}:ch=${height}:cx=${x}:cy=${y}`);
     } else {
       this.add(`crop=${width}:${height}:${x}:${y}`);
     }
@@ -437,6 +447,11 @@ export class FilterPreset {
           break;
         case AV_HWDEVICE_TYPE_OPENCL:
           filter = amount ? `unsharp_opencl=amount=${amount}` : 'unsharp_opencl';
+          break;
+        case AV_HWDEVICE_TYPE_QSV:
+          // vpp_qsv detail parameter: enhancement level [0-100]
+          const detail = amount ? Math.min(100, Math.max(0, Math.round(amount * 10))) : 50;
+          filter = `vpp_qsv=detail=${detail}`;
           break;
         case AV_HWDEVICE_TYPE_CUDA:
           // CUDA sharpening not available (NPP not included)
@@ -634,6 +649,13 @@ export class FilterPreset {
           this.add('vflip_vulkan');
         } else {
           this.add('hflip_vulkan');
+        }
+      } else if (this.hardware.deviceType === AV_HWDEVICE_TYPE_QSV) {
+        // vpp_qsv uses transpose option for flip
+        if (direction === 'v') {
+          this.add('vpp_qsv=transpose=vflip');
+        } else {
+          this.add('vpp_qsv=transpose=hflip');
         }
       }
     } else {
@@ -1149,16 +1171,19 @@ export class FilterPreset {
       }
 
       // Special handling for different hardware transpose implementations
-      let filterName: string;
+      let filter: string;
       if (this.hardware.deviceType === AV_HWDEVICE_TYPE_CUDA) {
-        filterName = 'transpose_cuda'; // Uses custom CUDA kernel (patch 0054)
+        filter = `transpose_cuda=dir=${dir}`; // Uses custom CUDA kernel (patch 0054)
       } else if (this.hardware.deviceType === AV_HWDEVICE_TYPE_VIDEOTOOLBOX) {
-        filterName = 'transpose_vt'; // CoreImage-based transpose
+        filter = `transpose_vt=dir=${dir}`; // CoreImage-based transpose
+      } else if (this.hardware.deviceType === AV_HWDEVICE_TYPE_QSV) {
+        // vpp_qsv transpose parameter maps: clock=1, cclock=2, cclock_hflip=0, clock_hflip=3, reversal=4, hflip=5, vflip=6
+        filter = `vpp_qsv=transpose=${dir}`;
       } else {
-        filterName = `transpose_${this.hardware.deviceTypeName}`;
+        filter = `transpose_${this.hardware.deviceTypeName}=dir=${dir}`;
       }
 
-      this.add(`${filterName}=dir=${dir}`);
+      this.add(filter);
     } else {
       this.add(`transpose=${mode}`);
     }
@@ -1268,7 +1293,9 @@ export class FilterPreset {
           filter = mode ? `deinterlace_vaapi=mode=${mode}` : 'deinterlace_vaapi';
           break;
         case AV_HWDEVICE_TYPE_QSV:
-          filter = mode ? `deinterlace_qsv=mode=${mode}` : 'deinterlace_qsv';
+          // vpp_qsv deinterlace: 0=off, 1=bob, 2=advanced
+          // Map yadif/bwdif mode to vpp_qsv: default to bob(1)
+          filter = mode ? 'vpp_qsv=deinterlace=1' : 'vpp_qsv=deinterlace=1';
           break;
         case AV_HWDEVICE_TYPE_VULKAN:
           filter = mode ? `bwdif_vulkan=mode=${mode}` : 'bwdif_vulkan';
@@ -1948,18 +1975,18 @@ export class FilterPreset {
 
       case AV_HWDEVICE_TYPE_QSV:
         return {
-          scale: true, // scale_qsv with crop support (patch 1003)
+          scale: true, // vpp_qsv (w/h params) with crop support (cw/ch/cx/cy)
           overlay: true, // overlay_qsv
-          transpose: false,
-          tonemap: false,
-          deinterlace: true, // deinterlace_qsv
-          denoise: false,
-          flip: false,
+          transpose: true, // vpp_qsv transpose option
+          tonemap: true, // vpp_qsv tonemap option
+          deinterlace: true, // vpp_qsv deinterlace option (bob, advanced)
+          denoise: true, // vpp_qsv denoise option [0-100]
+          flip: true, // vpp_qsv transpose=hflip/vflip
           blur: false,
-          sharpen: false,
+          sharpen: true, // vpp_qsv detail option [0-100]
           sobel: false,
           chromakey: false,
-          colorspace: false,
+          colorspace: true, // vpp_qsv out_color_matrix/primaries/transfer
           pad: false,
           stack: true, // hstack_qsv, vstack_qsv, xstack_qsv
         };
