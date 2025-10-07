@@ -127,10 +127,23 @@ export class Decoder implements Disposable {
    * @see {@link DecoderOptions} For configuration options
    */
   static async create(stream: Stream, options: DecoderOptions = {}): Promise<Decoder> {
-    // Find decoder for this codec
-    const codec = Codec.findDecoder(stream.codecpar.codecId);
+    let codec: Codec | null = null;
+
+    // If hardware acceleration requested, try to find hardware decoder first
+    if (options.hardware) {
+      codec = options.hardware.getDecoderCodec(stream.codecpar.codecId);
+      if (!codec) {
+        // No hardware decoder available, fall back to software
+        options.hardware = undefined;
+      }
+    }
+
+    // If no hardware decoder or no hardware requested, use software decoder
     if (!codec) {
-      throw new Error(`Decoder not found for codec ${stream.codecpar.codecId}`);
+      codec = Codec.findDecoder(stream.codecpar.codecId);
+      if (!codec) {
+        throw new Error(`Decoder not found for codec ${stream.codecpar.codecId}`);
+      }
     }
 
     // Allocate and configure codec context
@@ -230,10 +243,23 @@ export class Decoder implements Disposable {
    * @see {@link create} For async version
    */
   static createSync(stream: Stream, options: DecoderOptions = {}): Decoder {
-    // Find decoder for this codec
-    const codec = Codec.findDecoder(stream.codecpar.codecId);
+    let codec: Codec | null = null;
+
+    // If hardware acceleration requested, try to find hardware decoder first
+    if (options.hardware) {
+      codec = options.hardware.getDecoderCodec(stream.codecpar.codecId);
+      if (!codec) {
+        // No hardware decoder available, fall back to software
+        options.hardware = undefined;
+      }
+    }
+
+    // If no hardware decoder or no hardware requested, use software decoder
     if (!codec) {
-      throw new Error(`Decoder not found for codec ${stream.codecpar.codecId}`);
+      codec = Codec.findDecoder(stream.codecpar.codecId);
+      if (!codec) {
+        throw new Error(`Decoder not found for codec ${stream.codecpar.codecId}`);
+      }
     }
 
     // Allocate and configure codec context
