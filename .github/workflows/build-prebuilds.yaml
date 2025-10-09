@@ -570,21 +570,19 @@ jobs:
             echo "Warning: FFmpeg binary not found at $FFMPEG_BIN"
           fi
 
-      - name: Install GCC 15 from Docker image
+      - name: Build Native Addon in Docker
         run: |
           # Determine target based on architecture
           if [ "${{ matrix.target }}" = "amd64" ]; then
             TARGET="linux64"
-            TOOLCHAIN="x86_64-ffbuild-linux-gnu"
           else
             TARGET="linuxarm64"
-            TOOLCHAIN="aarch64-ffbuild-linux-gnu"
           fi
 
           # Use our FFmpeg build Docker image which has GCC 15.2.0
           IMAGE="ghcr.io/${{ github.repository }}/${TARGET}-gpl:latest"
 
-          # Pull image if not already cached locally (it should be cached from FFmpeg build)
+          # Pull image if not already cached locally
           if ! docker image inspect "${IMAGE}" > /dev/null 2>&1; then
             echo "Pulling Docker image: ${IMAGE}"
             docker pull "${IMAGE}"
@@ -592,54 +590,39 @@ jobs:
             echo "Using locally cached Docker image: ${IMAGE}"
           fi
 
-          # Create temporary container
-          CONTAINER_ID=$(docker create "${IMAGE}")
+          # Run the build inside the Docker container
+          docker run --rm \
+            -v "$(pwd)":/workspace \
+            -w /workspace \
+            -e PKG_CONFIG_PATH="/opt/ffbuild/prefix/lib/pkgconfig" \
+            "${IMAGE}" \
+            bash -c "
+              set -e
 
-          echo "Extracting GCC 15 from toolchain: ${TOOLCHAIN}"
+              # Install Node.js in the container
+              curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
+              apt-get install -y nodejs
 
-          # Extract GCC 15 binaries from /opt/ct-ng/bin/
-          sudo docker cp "${CONTAINER_ID}:/opt/ct-ng/bin/${TOOLCHAIN}-gcc" /usr/bin/gcc-15
-          sudo docker cp "${CONTAINER_ID}:/opt/ct-ng/bin/${TOOLCHAIN}-g++" /usr/bin/g++-15
-          sudo docker cp "${CONTAINER_ID}:/opt/ct-ng/bin/${TOOLCHAIN}-gcc-ar" /usr/bin/gcc-ar-15
-          sudo docker cp "${CONTAINER_ID}:/opt/ct-ng/bin/${TOOLCHAIN}-gcc-nm" /usr/bin/gcc-nm-15
-          sudo docker cp "${CONTAINER_ID}:/opt/ct-ng/bin/${TOOLCHAIN}-gcc-ranlib" /usr/bin/gcc-ranlib-15
+              # Verify Node.js installation
+              node --version
+              npm --version
 
-          # Copy GCC libraries and support files
-          sudo docker cp "${CONTAINER_ID}:/opt/ct-ng/lib/gcc" /usr/lib/ 2>/dev/null || true
+              # Install dependencies
+              npm install --ignore-scripts
 
-          if [ "${{ matrix.target }}" = "amd64" ]; then
-            sudo docker cp "${CONTAINER_ID}:/opt/ct-ng/x86_64-ffbuild-linux-gnu" /usr/ 2>/dev/null || true
-          else
-            sudo docker cp "${CONTAINER_ID}:/opt/ct-ng/aarch64-ffbuild-linux-gnu" /usr/ 2>/dev/null || true
-          fi
+              # Copy binding configuration
+              cp binding-jellyfin.gyp binding.gyp
 
-          docker rm "${CONTAINER_ID}"
+              # Build with GCC from crosstool-ng (uses system's native gcc wrapper)
+              npx prebuildify \
+                --napi \
+                --strip \
+                --arch=${{ matrix.arch }} \
+                --tag-libc
 
-          # Set as default compiler
-          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-15 100
-          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-15 100
-          sudo update-alternatives --install /usr/bin/gcc-ar gcc-ar /usr/bin/gcc-ar-15 100
-          sudo update-alternatives --install /usr/bin/gcc-nm gcc-nm /usr/bin/gcc-nm-15 100
-          sudo update-alternatives --install /usr/bin/gcc-ranlib gcc-ranlib /usr/bin/gcc-ranlib-15 100
-
-          # Verify installation
-          echo "Verifying GCC 15 installation:"
-          gcc --version
-          g++ --version
-
-      - name: Install Node dependencies
-        run: npm install --ignore-scripts
-
-      - name: Build Native Addon
-        run: |
-          cp binding-jellyfin.gyp binding.gyp
-
-          # Build N-API binary
-          npx prebuildify \
-            --napi \
-            --strip \
-            --arch=${{ matrix.arch }} \
-            --tag-libc
+              # Fix ownership (Docker runs as root)
+              chown -R $(id -u):$(id -g) prebuilds node_modules build 2>/dev/null || true
+            "
 
           # Rename the built file to node-av.node for consistency
           BUILT_FILE=$(find prebuilds -name "*.node" -type f | head -1)
