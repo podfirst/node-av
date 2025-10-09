@@ -75,6 +75,7 @@
                             "-Wl,-force_load,/opt/ffbuild/prefix/lib/libavutil.a",
                             "-Wl,-force_load,/opt/ffbuild/prefix/lib/libswscale.a",
                             "-Wl,-force_load,/opt/ffbuild/prefix/lib/libswresample.a",
+                            "-Wl,-force_load,/opt/ffbuild/prefix/lib/libpostproc.a",
                             "-Wl,-force_load,/opt/ffbuild/prefix/lib/libavdevice.a",
                             "-L/opt/ffbuild/prefix/lib",
                             "/opt/ffbuild/prefix/lib/libx264.a",
@@ -139,6 +140,7 @@
                             "OTHER_CPLUSPLUSFLAGS": [
                                 "-fexceptions",
                                 "-O3",
+                                "-Wno-stringop-overflow",
                             ],
                             "OTHER_LDFLAGS": [
                                 "-Wl,-dead_strip",
@@ -167,6 +169,7 @@
                             "/opt/ffbuild/prefix/lib/libswscale.a",
                             "/opt/ffbuild/prefix/lib/libswresample.a",
                             "/opt/ffbuild/prefix/lib/libavutil.a",
+                            "/opt/ffbuild/prefix/lib/libpostproc.a",
                             "-Wl,--end-group",
                             "-Wl,--no-whole-archive",
                             "<!@(ls /opt/ffbuild/prefix/lib/libx264.a 2>/dev/null || echo '')",
@@ -273,6 +276,7 @@
                             "-std=c++17",
                             "-fexceptions",
                             "-O3",
+                            "-Wno-stringop-overflow",
                         ],
                         "ldflags": [
                             "-Wl,-Bsymbolic",
@@ -369,6 +373,7 @@
                             "-std=c++17",
                             "-fexceptions",
                             "-O3",
+                            "-Wno-stringop-overflow",
                         ],
                         "ldflags": [
                             "-static-libgcc",
