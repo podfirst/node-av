@@ -994,6 +994,12 @@ export class HardwareContext implements Disposable {
    * @internal
    */
   private static createFromType(deviceType: AVHWDeviceType, device?: string, options?: Record<string, string>): HardwareContext {
+    // Set environment variables for Vulkan to enable video support on older gpus
+    if (deviceType === AV_HWDEVICE_TYPE_VULKAN) {
+      process.env.ANV_DEBUG ??= 'video-decode,video-encode';
+      process.env.RADV_PERFTEST ??= 'video_decode,video_encode';
+    }
+
     const deviceCtx = new HardwareDeviceContext();
 
     // Convert options to Dictionary if provided
