@@ -72,20 +72,25 @@ export class Encoder implements Disposable {
   private initialized = false;
   private isClosed = false;
   private opts?: Dictionary | null;
+  private options: EncoderOptions;
 
   /**
    * @param codecContext - Configured codec context
    *
    * @param codec - Encoder codec
    *
+   * @param options - Encoder options
+   *
    * @param opts - Encoder options as Dictionary
    *
    * @internal
    */
-  private constructor(codecContext: CodecContext, codec: Codec, opts?: Dictionary | null) {
+  private constructor(codecContext: CodecContext, codec: Codec, options: EncoderOptions, opts?: Dictionary | null) {
     this.codecContext = codecContext;
     this.codec = codec;
+    this.options = options;
     this.opts = opts;
+
     this.packet = new Packet();
     this.packet.alloc();
   }
@@ -209,7 +214,7 @@ export class Encoder implements Disposable {
 
     const opts = options.options ? Dictionary.fromObject(options.options) : undefined;
 
-    return new Encoder(codecContext, codec, opts);
+    return new Encoder(codecContext, codec, options, opts);
   }
 
   /**
@@ -334,7 +339,7 @@ export class Encoder implements Disposable {
 
     const opts = options.options ? Dictionary.fromObject(options.options) : undefined;
 
-    return new Encoder(codecContext, codec, opts);
+    return new Encoder(codecContext, codec, options, opts);
   }
 
   /**
@@ -464,7 +469,9 @@ export class Encoder implements Disposable {
     if (sendRet < 0 && sendRet !== AVERROR_EOF) {
       // Encoder might be full, try to receive first
       const packet = await this.receive();
-      if (packet) return packet;
+      if (packet) {
+        return packet;
+      }
 
       // If still failing, it's an error
       if (sendRet !== AVERROR_EAGAIN) {
