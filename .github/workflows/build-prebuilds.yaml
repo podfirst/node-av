@@ -438,10 +438,10 @@ jobs:
         include:
           - arch: x64
             target: amd64
-            runner: ubuntu-22.04
+            runner: ubuntu-latest
           - arch: arm64
             target: arm64
-            runner: ubuntu-22.04-arm
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v5
         with:
@@ -569,6 +569,63 @@ jobs:
           else
             echo "Warning: FFmpeg binary not found at $FFMPEG_BIN"
           fi
+
+      - name: Install GCC 15 from Docker image
+        run: |
+          # Determine target based on architecture
+          if [ "${{ matrix.target }}" = "amd64" ]; then
+            TARGET="linux64"
+            TOOLCHAIN="x86_64-ffbuild-linux-gnu"
+          else
+            TARGET="linuxarm64"
+            TOOLCHAIN="aarch64-ffbuild-linux-gnu"
+          fi
+
+          # Use our FFmpeg build Docker image which has GCC 15.2.0
+          IMAGE="ghcr.io/${{ github.repository }}/${TARGET}-gpl:latest"
+
+          # Pull image if not already cached locally (it should be cached from FFmpeg build)
+          if ! docker image inspect "${IMAGE}" > /dev/null 2>&1; then
+            echo "Pulling Docker image: ${IMAGE}"
+            docker pull "${IMAGE}"
+          else
+            echo "Using locally cached Docker image: ${IMAGE}"
+          fi
+
+          # Create temporary container
+          CONTAINER_ID=$(docker create "${IMAGE}")
+
+          echo "Extracting GCC 15 from toolchain: ${TOOLCHAIN}"
+
+          # Extract GCC 15 binaries from /opt/ct-ng/bin/
+          sudo docker cp "${CONTAINER_ID}:/opt/ct-ng/bin/${TOOLCHAIN}-gcc" /usr/bin/gcc-15
+          sudo docker cp "${CONTAINER_ID}:/opt/ct-ng/bin/${TOOLCHAIN}-g++" /usr/bin/g++-15
+          sudo docker cp "${CONTAINER_ID}:/opt/ct-ng/bin/${TOOLCHAIN}-gcc-ar" /usr/bin/gcc-ar-15
+          sudo docker cp "${CONTAINER_ID}:/opt/ct-ng/bin/${TOOLCHAIN}-gcc-nm" /usr/bin/gcc-nm-15
+          sudo docker cp "${CONTAINER_ID}:/opt/ct-ng/bin/${TOOLCHAIN}-gcc-ranlib" /usr/bin/gcc-ranlib-15
+
+          # Copy GCC libraries and support files
+          sudo docker cp "${CONTAINER_ID}:/opt/ct-ng/lib/gcc" /usr/lib/ 2>/dev/null || true
+
+          if [ "${{ matrix.target }}" = "amd64" ]; then
+            sudo docker cp "${CONTAINER_ID}:/opt/ct-ng/x86_64-ffbuild-linux-gnu" /usr/ 2>/dev/null || true
+          else
+            sudo docker cp "${CONTAINER_ID}:/opt/ct-ng/aarch64-ffbuild-linux-gnu" /usr/ 2>/dev/null || true
+          fi
+
+          docker rm "${CONTAINER_ID}"
+
+          # Set as default compiler
+          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-15 100
+          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-15 100
+          sudo update-alternatives --install /usr/bin/gcc-ar gcc-ar /usr/bin/gcc-ar-15 100
+          sudo update-alternatives --install /usr/bin/gcc-nm gcc-nm /usr/bin/gcc-nm-15 100
+          sudo update-alternatives --install /usr/bin/gcc-ranlib gcc-ranlib /usr/bin/gcc-ranlib-15 100
+
+          # Verify installation
+          echo "Verifying GCC 15 installation:"
+          gcc --version
+          g++ --version
 
       - name: Install Node dependencies
         run: npm install --ignore-scripts
