@@ -69,3 +69,5 @@ ffmpeg_examples
 /projects
 /ffmpeg-msvc
 /build_mac_local.sh
+/*.txt
+/list.ts
