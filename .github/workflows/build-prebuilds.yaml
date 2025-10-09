@@ -593,6 +593,7 @@ jobs:
           # Run the build inside the Docker container
           docker run --rm \
             -v "$(pwd)":/workspace \
+            -v /opt/ffbuild:/opt/ffbuild \
             -w /workspace \
             -e PKG_CONFIG_PATH="/opt/ffbuild/prefix/lib/pkgconfig" \
             "${IMAGE}" \
@@ -613,7 +614,7 @@ jobs:
               # Copy binding configuration
               cp binding-jellyfin.gyp binding.gyp
 
-              # Build with GCC from crosstool-ng (uses system's native gcc wrapper)
+              # Build with GCC from crosstool-ng (native GCC 15.2.0)
               npx prebuildify \
                 --napi \
                 --strip \
@@ -621,7 +622,7 @@ jobs:
                 --tag-libc
 
               # Fix ownership (Docker runs as root)
-              chown -R $(id -u):$(id -g) prebuilds node_modules build 2>/dev/null || true
+              chown -R $(stat -c '%u:%g' /workspace) prebuilds node_modules build 2>/dev/null || true
             "
 
           # Rename the built file to node-av.node for consistency
