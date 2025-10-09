@@ -137,7 +137,6 @@
                             "CLANG_CXX_LIBRARY": "libc++",
                             "CLANG_CXX_LANGUAGE_STANDARD": "c++17",
                             "MACOSX_DEPLOYMENT_TARGET": "12.0",
-                            "OTHER_CFLAGS": ["-Wno-stringop-overflow"],
                             "OTHER_CPLUSPLUSFLAGS": [
                                 "-fexceptions",
                                 "-O3",
@@ -255,7 +254,6 @@
                             "-latomic",
                             "-lstdc++",
                         ],
-                        "cflags": ["-Wno-stringop-overflow"],
                         "cflags_cc": [
                             "-std=c++17",
                             "-fexceptions",
@@ -366,7 +364,6 @@
                             "-lmfuuid",
                             "-lpsapi",
                         ],
-                        "cflags": ["-Wno-stringop-overflow"],
                         "cflags_cc": [
                             "-std=c++17",
                             "-fexceptions",
