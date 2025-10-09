@@ -250,6 +250,14 @@ jobs:
           export CXX="clang++"
           export AR="llvm-ar"
 
+          # Set pkg-config path
+          export PKG_CONFIG_PATH="${PREFIX}/lib/pkgconfig:${PKG_CONFIG_PATH}"
+
+          # Set include and lib paths
+          export CFLAGS="-I${PREFIX}/include"
+          export CXXFLAGS="-I${PREFIX}/include"
+          export LDFLAGS="-L${PREFIX}/lib"
+
           # Use our custom node-gyp directly for better control
           NODE_GYP_PATH="$(pwd)/externals/node-gyp/bin/node-gyp.js"
           NODE_GYP_WIN_PATH="$(cygpath -w $NODE_GYP_PATH)"
