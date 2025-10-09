@@ -402,7 +402,7 @@ describe('FilterPreset', () => {
     it('should handle complex filter chain', () => {
       const graph = FilterPreset.chain().scale(1280, 720).crop(1024, 576).pad(1920, 1080, '448', '252').format(AV_PIX_FMT_YUV420P).fps(25).build();
 
-      strictEqual(graph, 'scale=1280:720,crop=1024:576:0:0,pad=1920:1080:448:252:black,format=yuv420p,fps=fps=25');
+      strictEqual(graph, 'crop=1024:576:0:0,scale=1280:720,pad=1920:1080:448:252:black,format=yuv420p,fps=fps=25');
     });
   });
 
