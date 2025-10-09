@@ -237,6 +237,7 @@
                         "ldflags": [
                             "-Wl,-Bsymbolic",
                             "-Wl,-rpath,'$$ORIGIN'",
+                            "-Wl,--allow-multiple-definition",
                         ],
                         "conditions": [
                             [
