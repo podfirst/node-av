@@ -30,7 +30,7 @@ CHANGELOG.md
 /binary
 /tests
 /binding-jellyfin.gyp
-/binding-jellyfin-msvc.gyp
+/binding-msvc.gyp
 /build
 /externals
 /go-astiav

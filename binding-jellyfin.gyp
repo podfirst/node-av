@@ -136,6 +136,10 @@
                             "CLANG_CXX_LIBRARY": "libc++",
                             "CLANG_CXX_LANGUAGE_STANDARD": "c++17",
                             "MACOSX_DEPLOYMENT_TARGET": "12.0",
+                            "OTHER_CPLUSPLUSFLAGS": [
+                                "-fexceptions",
+                                "-O3",
+                            ],
                             "OTHER_LDFLAGS": [
                                 "-Wl,-dead_strip",
                                 "-Wl,-no_warn_duplicate_libraries",
@@ -225,19 +229,14 @@
                             "-latomic",
                             "-lstdc++",
                         ],
-                        "cflags": ["-fPIC", "-O3", "-fno-finite-math-only"],
                         "cflags_cc": [
-                            "-fPIC",
-                            "-O3",
-                            "-fno-finite-math-only",
                             "-std=c++17",
+                            "-fexceptions",
+                            "-O3",
                         ],
                         "ldflags": [
                             "-Wl,-Bsymbolic",
-                            "-Wl,--allow-multiple-definition",
                             "-Wl,-rpath,'$$ORIGIN'",
-                            "-Wl,-z,origin",
-                            "-Wl,-z,notext",
                         ],
                         "conditions": [
                             [
@@ -349,18 +348,10 @@
                             "-lmfuuid",
                             "-lpsapi",
                         ],
-                        "cflags": [
-                            "-fPIC",
-                            "-O3",
-                            "-fexceptions",
-                            "-DNAPI_DISABLE_CPP_EXCEPTIONS",
-                        ],
                         "cflags_cc": [
-                            "-fPIC",
-                            "-O3",
-                            "-fexceptions",
                             "-std=c++17",
-                            "-DNAPI_DISABLE_CPP_EXCEPTIONS",
+                            "-fexceptions",
+                            "-O3",
                         ],
                         "ldflags": [
                             "-static-libgcc",

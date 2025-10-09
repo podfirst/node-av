@@ -73,10 +73,20 @@
       "cflags_cc!": [
         "-fno-exceptions"
       ],
+      "cflags_cc": [
+        "-std=c++17",
+        "-fexceptions",
+        "-O3"
+      ],
       "xcode_settings": {
         "GCC_ENABLE_CPP_EXCEPTIONS": "YES",
         "CLANG_CXX_LIBRARY": "libc++",
-        "MACOSX_DEPLOYMENT_TARGET": "14.0"
+        "CLANG_CXX_LANGUAGE_STANDARD": "c++17",
+        "MACOSX_DEPLOYMENT_TARGET": "12.0",
+        "OTHER_CPLUSPLUSFLAGS": [
+          "-fexceptions",
+          "-O3"
+        ]
       },
       "msvs_settings": {
         "VCCLCompilerTool": {

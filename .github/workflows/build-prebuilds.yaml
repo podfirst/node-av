@@ -250,14 +250,6 @@ jobs:
           export CXX="clang++"
           export AR="llvm-ar"
 
-          # Set pkg-config path
-          export PKG_CONFIG_PATH="${PREFIX}/lib/pkgconfig:${PKG_CONFIG_PATH}"
-
-          # Set include and lib paths
-          export CFLAGS="-I${PREFIX}/include"
-          export CXXFLAGS="-I${PREFIX}/include"
-          export LDFLAGS="-L${PREFIX}/lib"
-
           # Use our custom node-gyp directly for better control
           NODE_GYP_PATH="$(pwd)/externals/node-gyp/bin/node-gyp.js"
           NODE_GYP_WIN_PATH="$(cygpath -w $NODE_GYP_PATH)"
@@ -389,7 +381,7 @@ jobs:
         run: |
           # Use the MSVC-compatible binding.gyp
           Copy-Item binding.gyp binding.gyp.bak
-          Copy-Item binding-jellyfin-msvc.gyp binding.gyp
+          Copy-Item binding-msvc.gyp binding.gyp
 
           # Build N-API binary directly with node-gyp
           npx node-gyp configure --arch=${{ matrix.os.arch }} --verbose --release
@@ -585,25 +577,7 @@ jobs:
         run: |
           cp binding-jellyfin.gyp binding.gyp
 
-          # Set up environment variables that node-gyp will use
-          export PKG_CONFIG_PATH="/opt/ffbuild/prefix/lib/pkgconfig:${PKG_CONFIG_PATH}"
-
-          export CC=clang-14
-          export CXX=clang++-14
-          export AR=llvm-ar-14
-          export NM=llvm-nm-14
-          export RANLIB=llvm-ranlib-14
-
-          export LD=ld.lld-14
-          # Use -Bsymbolic to bind symbols locally and avoid PIC issues
-          # Use -z,notext to allow text relocations (needed for assembly code)
-          export LDFLAGS="-fuse-ld=lld-14 -Wl,-z,notext -Wl,-Bsymbolic"
-          BUILD_LDFLAGS="-L/opt/ffbuild/prefix/lib -fuse-ld=lld-14 -Wl,--allow-multiple-definition -Wl,-z,notext -Wl,-Bsymbolic"
-
-          # Build N-API binary with proper include paths
-          CFLAGS="-I/opt/ffbuild/prefix/include -fPIC" \
-          CXXFLAGS="-I/opt/ffbuild/prefix/include -fPIC" \
-          LDFLAGS="$BUILD_LDFLAGS" \
+          # Build N-API binary
           npx prebuildify \
             --napi \
             --strip \
@@ -756,23 +730,17 @@ jobs:
         run: |
           cp binding-jellyfin.gyp binding.gyp
 
-          export PKG_CONFIG_PATH="/opt/ffbuild/prefix/lib/pkgconfig:${PKG_CONFIG_PATH}"
-
           # For x64 builds on ARM64 runner, set up cross-compilation
           if [ "${{ matrix.arch }}" = "x64" ] && [ "$(uname -m)" = "arm64" ]; then
             echo "Setting up Node.js cross-compilation for x86_64"
-            export CFLAGS="-arch x86_64 -I/opt/ffbuild/prefix/include"
-            export CXXFLAGS="-arch x86_64 -I/opt/ffbuild/prefix/include"
-            export LDFLAGS="-arch x86_64 -L/opt/ffbuild/prefix/lib"
+            export CFLAGS="-arch x86_64"
+            export CXXFLAGS="-arch x86_64"
+            export LDFLAGS="-arch x86_64"
             export npm_config_arch=x64
             export npm_config_target_arch=x64
             export npm_config_disturl=https://nodejs.org/dist
             export npm_config_runtime=node
             export npm_config_build_from_source=true
-          else
-            export CFLAGS="-I/opt/ffbuild/prefix/include"
-            export CXXFLAGS="-I/opt/ffbuild/prefix/include"
-            export LDFLAGS="-L/opt/ffbuild/prefix/lib"
           fi
 
           # Build N-API binary
