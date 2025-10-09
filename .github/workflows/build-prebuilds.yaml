@@ -630,7 +630,7 @@ jobs:
                 --tag-libc
 
               # Fix ownership (Docker runs as root)
-              chown -R $(stat -c '%u:%g' /workspace) prebuilds node_modules build 2>/dev/null || true
+              chown -R 1001:127 prebuilds node_modules build 2>/dev/null || true
             "
 
           # Rename the built file to node-av.node for consistency
