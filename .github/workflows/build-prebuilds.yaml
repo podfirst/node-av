@@ -10,7 +10,7 @@ env:
   CACHE_VERSION_MACOS: "v12"
   FFMPEG_VERSION: "7.1.2"
   # JELLYFIN_FFMPEG_HASH: "21198ee5630df2b0dabe4bb416e6c9c4a32522ed"
-  UPLOAD_CACHES: true
+  UPLOAD_CACHES: false
 
 on:
   workflow_dispatch:
