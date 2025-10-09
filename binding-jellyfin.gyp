@@ -222,6 +222,7 @@
                             "<!@(ls /opt/ffbuild/prefix/lib/libglslang-default-resource-limits.a 2>/dev/null || echo '')",
                             "<!@(ls /opt/ffbuild/prefix/lib/liblcms2.a 2>/dev/null || echo '')",
                             "<!@(ls /opt/ffbuild/prefix/lib/libOpenCL.a 2>/dev/null || echo '')",
+                            "<!@(ls /opt/ffbuild/prefix/lib/libiconv.a 2>/dev/null || echo '')",
                             "-lpthread",
                             "-lm",
                             "-ldl",
