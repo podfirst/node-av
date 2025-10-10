@@ -247,6 +247,7 @@
                             "<!@(ls /opt/ffbuild/prefix/lib/librockchip_mpp.a 2>/dev/null || echo '')",
                             "<!@(ls /opt/ffbuild/prefix/lib/librga.a 2>/dev/null || echo '')",
                             "<!@(ls /opt/ffbuild/prefix/lib/libNE10.a 2>/dev/null || echo '')",
+                            "-ldrm",
                             "-lpthread",
                             "-lm",
                             "-ldl",
@@ -272,7 +273,6 @@
                                         "-lva",
                                         "-lva-drm",
                                         "-lva-x11",
-                                        "-ldrm",
                                         "-lX11",
                                     ]
                                 },
@@ -281,9 +281,8 @@
                     },
                 ],
                 [
-                    "OS=='win' or (OS!='mac' and OS!='linux')",
+                    "OS=='win' or (OS!='mac' and OS!='linux')", #Mingw
                     {
-                        "msvs_settings": {"VCCLCompilerTool": {"ExceptionHandling": 1}},
                         "conditions": [
                             [
                                 "target_arch=='x64'",
