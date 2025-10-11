@@ -32,6 +32,9 @@ private:
 
   AVStream* stream_ = nullptr;
 
+  Napi::Value SetEventFlagsMethod(const Napi::CallbackInfo& info);
+  Napi::Value ClearEventFlagsMethod(const Napi::CallbackInfo& info);
+
   Napi::Value GetIndex(const Napi::CallbackInfo& info);
 
   Napi::Value GetId(const Napi::CallbackInfo& info);
@@ -73,7 +76,7 @@ private:
   Napi::Value GetAttachedPic(const Napi::CallbackInfo& info);
 
   Napi::Value GetEventFlags(const Napi::CallbackInfo& info);
-  void SetEventFlags(const Napi::CallbackInfo& info, const Napi::Value& value);
+  void SetEventFlagsAccessor(const Napi::CallbackInfo& info, const Napi::Value& value);
 };
 
 } // namespace ffmpeg
