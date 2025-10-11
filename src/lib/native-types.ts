@@ -80,6 +80,8 @@ export interface NativePacket extends Disposable {
   addSideData(type: AVPacketSideDataType, data: Buffer): number;
   newSideData(type: AVPacketSideDataType, size: number): Buffer;
   freeSideData(): void;
+  setFlags(...flags: AVPacketFlag[]): void;
+  clearFlags(...flags: AVPacketFlag[]): void;
 
   [Symbol.dispose](): void;
 }
@@ -244,6 +246,10 @@ export interface NativeCodecContext extends Disposable {
   receivePacket(packet: NativePacket): Promise<number>;
   receivePacketSync(packet: NativePacket): number;
   setHardwarePixelFormat(hwFormat: AVPixelFormat, swFormat?: AVPixelFormat): void;
+  setFlags(...flags: AVCodecFlag[]): void;
+  clearFlags(...flags: AVCodecFlag[]): void;
+  setFlags2(...flags: AVCodecFlag2[]): void;
+  clearFlags2(...flags: AVCodecFlag2[]): void;
 
   [Symbol.dispose](): void;
 }
@@ -450,6 +456,8 @@ export interface NativeStream {
   rFrameRate: IRational;
   metadata: NativeDictionary | null;
   eventFlags: AVStreamEventFlag;
+  setEventFlags(...flags: AVStreamEventFlag[]): void;
+  clearEventFlags(...flags: AVStreamEventFlag[]): void;
 }
 
 /**
@@ -519,6 +527,8 @@ export interface NativeFormatContext extends AsyncDisposable {
     wantDecoder: boolean,
     flags: number,
   ): number | { streamIndex: number; decoder: NativeCodec | null };
+  setFlags(...flags: AVFormatFlag[]): void;
+  clearFlags(...flags: AVFormatFlag[]): void;
 
   [Symbol.dispose](): void;
 }
