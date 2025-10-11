@@ -18,6 +18,8 @@ Napi::Object Packet::Init(Napi::Env env, Napi::Object exports) {
     InstanceMethod<&Packet::AddSideData>("addSideData"),
     InstanceMethod<&Packet::NewSideData>("newSideData"),
     InstanceMethod<&Packet::FreeSideData>("freeSideData"),
+    InstanceMethod<&Packet::SetFlagsMethod>("setFlags"),
+    InstanceMethod<&Packet::ClearFlagsMethod>("clearFlags"),
     InstanceMethod<&Packet::Dispose>(Napi::Symbol::WellKnown(env, "dispose")),
 
     InstanceAccessor<&Packet::GetStreamIndex, &Packet::SetStreamIndex>("streamIndex"),
@@ -26,7 +28,7 @@ Napi::Object Packet::Init(Napi::Env env, Napi::Object exports) {
     InstanceAccessor<&Packet::GetDuration, &Packet::SetDuration>("duration"),
     InstanceAccessor<&Packet::GetPos, &Packet::SetPos>("pos"),
     InstanceAccessor<&Packet::GetSize>("size"),
-    InstanceAccessor<&Packet::GetFlags, &Packet::SetFlags>("flags"),
+    InstanceAccessor<&Packet::GetFlags, &Packet::SetFlagsAccessor>("flags"),
     InstanceAccessor<&Packet::GetData, &Packet::SetData>("data"),
     InstanceAccessor<&Packet::GetIsKeyframe, &Packet::SetIsKeyframe>("isKeyframe"),
   });
@@ -177,163 +179,6 @@ Napi::Value Packet::MakeWritable(const Napi::CallbackInfo& info) {
   return Napi::Number::New(env, ret);
 }
 
-Napi::Value Packet::GetStreamIndex(const Napi::CallbackInfo& info) {
-  Napi::Env env = info.Env();
-  if (!packet_) {
-    return Napi::Number::New(env, -1);
-  }
-  return Napi::Number::New(env, packet_->stream_index);
-}
-
-void Packet::SetStreamIndex(const Napi::CallbackInfo& info, const Napi::Value& value) {
-  if (packet_) {
-    packet_->stream_index = value.As<Napi::Number>().Int32Value();
-  }
-}
-
-Napi::Value Packet::GetPts(const Napi::CallbackInfo& info) {
-  Napi::Env env = info.Env();
-  if (!packet_) {
-    return Napi::BigInt::New(env, AV_NOPTS_VALUE);
-  }
-  return Napi::BigInt::New(env, packet_->pts);
-}
-
-void Packet::SetPts(const Napi::CallbackInfo& info, const Napi::Value& value) {
-  if (packet_) {
-    bool lossless;
-    packet_->pts = value.As<Napi::BigInt>().Int64Value(&lossless);
-  }
-}
-
-Napi::Value Packet::GetDts(const Napi::CallbackInfo& info) {
-  Napi::Env env = info.Env();
-  if (!packet_) {
-    return Napi::BigInt::New(env, AV_NOPTS_VALUE);
-  }
-  return Napi::BigInt::New(env, packet_->dts);
-}
-
-void Packet::SetDts(const Napi::CallbackInfo& info, const Napi::Value& value) {
-  if (packet_) {
-    bool lossless;
-    packet_->dts = value.As<Napi::BigInt>().Int64Value(&lossless);
-  }
-}
-
-Napi::Value Packet::GetDuration(const Napi::CallbackInfo& info) {
-  Napi::Env env = info.Env();
-  if (!packet_) {
-    return Napi::BigInt::New(env, static_cast<int64_t>(0));
-  }
-  return Napi::BigInt::New(env, packet_->duration);
-}
-
-void Packet::SetDuration(const Napi::CallbackInfo& info, const Napi::Value& value) {
-  if (packet_) {
-    bool lossless;
-    packet_->duration = value.As<Napi::BigInt>().Int64Value(&lossless);
-  }
-}
-
-Napi::Value Packet::GetPos(const Napi::CallbackInfo& info) {
-  Napi::Env env = info.Env();
-  if (!packet_) {
-    return Napi::BigInt::New(env, static_cast<int64_t>(-1));
-  }
-  return Napi::BigInt::New(env, packet_->pos);
-}
-
-void Packet::SetPos(const Napi::CallbackInfo& info, const Napi::Value& value) {
-  if (packet_) {
-    bool lossless;
-    packet_->pos = value.As<Napi::BigInt>().Int64Value(&lossless);
-  }
-}
-
-Napi::Value Packet::GetSize(const Napi::CallbackInfo& info) {
-  Napi::Env env = info.Env();
-  if (!packet_) {
-    return Napi::Number::New(env, 0);
-  }
-  return Napi::Number::New(env, packet_->size);
-}
-
-Napi::Value Packet::GetFlags(const Napi::CallbackInfo& info) {
-  Napi::Env env = info.Env();
-  if (!packet_) {
-    return Napi::Number::New(env, 0);
-  }
-  return Napi::Number::New(env, packet_->flags);
-}
-
-void Packet::SetFlags(const Napi::CallbackInfo& info, const Napi::Value& value) {
-  if (packet_) {
-    packet_->flags = value.As<Napi::Number>().Int32Value();
-  }
-}
-
-Napi::Value Packet::GetData(const Napi::CallbackInfo& info) {
-  Napi::Env env = info.Env();
-  
-  if (!packet_ || !packet_->data || packet_->size <= 0) {
-    return env.Null();
-  }
-  
-  // Return a copy of the data as Buffer
-  return Napi::Buffer<uint8_t>::Copy(env, packet_->data, packet_->size);
-}
-
-void Packet::SetData(const Napi::CallbackInfo& info, const Napi::Value& value) {
-  Napi::Env env = info.Env();
-  
-  if (!packet_) {
-    return;
-  }
-  
-  if (value.IsNull() || value.IsUndefined()) {
-    // Clear data
-    av_packet_unref(packet_);
-    return;
-  }
-  
-  if (!value.IsBuffer()) {
-    Napi::TypeError::New(env, "Data must be a Buffer").ThrowAsJavaScriptException();
-    return;
-  }
-  
-  Napi::Buffer<uint8_t> buffer = value.As<Napi::Buffer<uint8_t>>();
-  size_t size = buffer.Length();
-  
-  // Allocate new buffer for packet
-  int ret = av_new_packet(packet_, size);
-  if (ret < 0) {
-    Napi::Error::New(env, "Failed to allocate packet data").ThrowAsJavaScriptException();
-    return;
-  }
-  
-  // Copy data
-  memcpy(packet_->data, buffer.Data(), size);
-}
-
-Napi::Value Packet::GetIsKeyframe(const Napi::CallbackInfo& info) {
-  Napi::Env env = info.Env();
-  if (!packet_) {
-    return Napi::Boolean::New(env, false);
-  }
-  return Napi::Boolean::New(env, (packet_->flags & AV_PKT_FLAG_KEY) != 0);
-}
-
-void Packet::SetIsKeyframe(const Napi::CallbackInfo& info, const Napi::Value& value) {
-  if (packet_) {
-    if (value.As<Napi::Boolean>().Value()) {
-      packet_->flags |= AV_PKT_FLAG_KEY;
-    } else {
-      packet_->flags &= ~AV_PKT_FLAG_KEY;
-    }
-  }
-}
-
 Napi::Value Packet::GetSideData(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
   
@@ -436,6 +281,205 @@ Napi::Value Packet::FreeSideData(const Napi::CallbackInfo& info) {
   
   av_packet_free_side_data(packet_);
   return env.Undefined();
+}
+
+Napi::Value Packet::SetFlagsMethod(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+
+  if (!packet_) {
+    Napi::Error::New(env, "Packet not allocated").ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+
+  // Iterate through all arguments and OR them together
+  for (size_t i = 0; i < info.Length(); i++) {
+    if (!info[i].IsNumber()) {
+      Napi::TypeError::New(env, "All arguments must be numbers (flags)").ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
+    int flag = info[i].As<Napi::Number>().Int32Value();
+    packet_->flags |= flag;
+  }
+
+  return env.Undefined();
+}
+
+Napi::Value Packet::ClearFlagsMethod(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+
+  if (!packet_) {
+    Napi::Error::New(env, "Packet not allocated").ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+
+  // Iterate through all arguments and clear them with AND NOT
+  for (size_t i = 0; i < info.Length(); i++) {
+    if (!info[i].IsNumber()) {
+      Napi::TypeError::New(env, "All arguments must be numbers (flags)").ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
+    int flag = info[i].As<Napi::Number>().Int32Value();
+    packet_->flags &= ~flag;
+  }
+
+  return env.Undefined();
+}
+
+Napi::Value Packet::GetStreamIndex(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (!packet_) {
+    return Napi::Number::New(env, -1);
+  }
+  return Napi::Number::New(env, packet_->stream_index);
+}
+
+void Packet::SetStreamIndex(const Napi::CallbackInfo& info, const Napi::Value& value) {
+  if (packet_) {
+    packet_->stream_index = value.As<Napi::Number>().Int32Value();
+  }
+}
+
+Napi::Value Packet::GetPts(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (!packet_) {
+    return Napi::BigInt::New(env, AV_NOPTS_VALUE);
+  }
+  return Napi::BigInt::New(env, packet_->pts);
+}
+
+void Packet::SetPts(const Napi::CallbackInfo& info, const Napi::Value& value) {
+  if (packet_) {
+    bool lossless;
+    packet_->pts = value.As<Napi::BigInt>().Int64Value(&lossless);
+  }
+}
+
+Napi::Value Packet::GetDts(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (!packet_) {
+    return Napi::BigInt::New(env, AV_NOPTS_VALUE);
+  }
+  return Napi::BigInt::New(env, packet_->dts);
+}
+
+void Packet::SetDts(const Napi::CallbackInfo& info, const Napi::Value& value) {
+  if (packet_) {
+    bool lossless;
+    packet_->dts = value.As<Napi::BigInt>().Int64Value(&lossless);
+  }
+}
+
+Napi::Value Packet::GetDuration(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (!packet_) {
+    return Napi::BigInt::New(env, static_cast<int64_t>(0));
+  }
+  return Napi::BigInt::New(env, packet_->duration);
+}
+
+void Packet::SetDuration(const Napi::CallbackInfo& info, const Napi::Value& value) {
+  if (packet_) {
+    bool lossless;
+    packet_->duration = value.As<Napi::BigInt>().Int64Value(&lossless);
+  }
+}
+
+Napi::Value Packet::GetPos(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (!packet_) {
+    return Napi::BigInt::New(env, static_cast<int64_t>(-1));
+  }
+  return Napi::BigInt::New(env, packet_->pos);
+}
+
+void Packet::SetPos(const Napi::CallbackInfo& info, const Napi::Value& value) {
+  if (packet_) {
+    bool lossless;
+    packet_->pos = value.As<Napi::BigInt>().Int64Value(&lossless);
+  }
+}
+
+Napi::Value Packet::GetSize(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (!packet_) {
+    return Napi::Number::New(env, 0);
+  }
+  return Napi::Number::New(env, packet_->size);
+}
+
+Napi::Value Packet::GetFlags(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (!packet_) {
+    return Napi::Number::New(env, 0);
+  }
+  return Napi::Number::New(env, packet_->flags);
+}
+
+void Packet::SetFlagsAccessor(const Napi::CallbackInfo& info, const Napi::Value& value) {
+  if (packet_) {
+    packet_->flags = value.As<Napi::Number>().Int32Value();
+  }
+}
+
+Napi::Value Packet::GetData(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  
+  if (!packet_ || !packet_->data || packet_->size <= 0) {
+    return env.Null();
+  }
+  
+  // Return a copy of the data as Buffer
+  return Napi::Buffer<uint8_t>::Copy(env, packet_->data, packet_->size);
+}
+
+void Packet::SetData(const Napi::CallbackInfo& info, const Napi::Value& value) {
+  Napi::Env env = info.Env();
+  
+  if (!packet_) {
+    return;
+  }
+  
+  if (value.IsNull() || value.IsUndefined()) {
+    // Clear data
+    av_packet_unref(packet_);
+    return;
+  }
+  
+  if (!value.IsBuffer()) {
+    Napi::TypeError::New(env, "Data must be a Buffer").ThrowAsJavaScriptException();
+    return;
+  }
+  
+  Napi::Buffer<uint8_t> buffer = value.As<Napi::Buffer<uint8_t>>();
+  size_t size = buffer.Length();
+  
+  // Allocate new buffer for packet
+  int ret = av_new_packet(packet_, size);
+  if (ret < 0) {
+    Napi::Error::New(env, "Failed to allocate packet data").ThrowAsJavaScriptException();
+    return;
+  }
+  
+  // Copy data
+  memcpy(packet_->data, buffer.Data(), size);
+}
+
+Napi::Value Packet::GetIsKeyframe(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (!packet_) {
+    return Napi::Boolean::New(env, false);
+  }
+  return Napi::Boolean::New(env, (packet_->flags & AV_PKT_FLAG_KEY) != 0);
+}
+
+void Packet::SetIsKeyframe(const Napi::CallbackInfo& info, const Napi::Value& value) {
+  if (packet_) {
+    if (value.As<Napi::Boolean>().Value()) {
+      packet_->flags |= AV_PKT_FLAG_KEY;
+    } else {
+      packet_->flags &= ~AV_PKT_FLAG_KEY;
+    }
+  }
 }
 
 Napi::Value Packet::Dispose(const Napi::CallbackInfo& info) {

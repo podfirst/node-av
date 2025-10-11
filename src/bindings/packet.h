@@ -38,6 +38,8 @@ private:
   Napi::Value AddSideData(const Napi::CallbackInfo& info);
   Napi::Value NewSideData(const Napi::CallbackInfo& info);
   Napi::Value FreeSideData(const Napi::CallbackInfo& info);
+  Napi::Value SetFlagsMethod(const Napi::CallbackInfo& info);
+  Napi::Value ClearFlagsMethod(const Napi::CallbackInfo& info);
   Napi::Value Dispose(const Napi::CallbackInfo& info);
 
   Napi::Value GetStreamIndex(const Napi::CallbackInfo& info);
@@ -58,7 +60,7 @@ private:
   Napi::Value GetSize(const Napi::CallbackInfo& info);
 
   Napi::Value GetFlags(const Napi::CallbackInfo& info);
-  void SetFlags(const Napi::CallbackInfo& info, const Napi::Value& value);
+  void SetFlagsAccessor(const Napi::CallbackInfo& info, const Napi::Value& value);
 
   Napi::Value GetData(const Napi::CallbackInfo& info);
   void SetData(const Napi::CallbackInfo& info, const Napi::Value& value);
