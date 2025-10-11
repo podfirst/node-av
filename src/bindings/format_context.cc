@@ -47,6 +47,8 @@ Napi::Object FormatContext::Init(Napi::Env env, Napi::Object exports) {
     InstanceMethod<&FormatContext::NewStream>("newStream"),
     InstanceMethod<&FormatContext::DumpFormat>("dumpFormat"),
     InstanceMethod<&FormatContext::FindBestStream>("findBestStream"),
+    InstanceMethod<&FormatContext::SetFlagsMethod>("setFlags"),
+    InstanceMethod<&FormatContext::ClearFlagsMethod>("clearFlags"),
     InstanceMethod(Napi::Symbol::WellKnown(env, "asyncDispose"), &FormatContext::DisposeAsync),
 
     InstanceAccessor<&FormatContext::GetStreams, nullptr>("streams"),
@@ -55,7 +57,7 @@ Napi::Object FormatContext::Init(Napi::Env env, Napi::Object exports) {
     InstanceAccessor<&FormatContext::GetStartTime, nullptr>("startTime"),
     InstanceAccessor<&FormatContext::GetDuration, nullptr>("duration"),
     InstanceAccessor<&FormatContext::GetBitRate, nullptr>("bitRate"),
-    InstanceAccessor<&FormatContext::GetFlags, &FormatContext::SetFlags>("flags"),
+    InstanceAccessor<&FormatContext::GetFlags, &FormatContext::SetFlagsAccessor>("flags"),
     InstanceAccessor<&FormatContext::GetProbesize, &FormatContext::SetProbesize>("probesize"),
     InstanceAccessor<&FormatContext::GetMaxAnalyzeDuration, &FormatContext::SetMaxAnalyzeDuration>("maxAnalyzeDuration"),
     InstanceAccessor<&FormatContext::GetMetadata, &FormatContext::SetMetadata>("metadata"),
@@ -86,8 +88,11 @@ FormatContext::FormatContext(const Napi::CallbackInfo& info)
 FormatContext::~FormatContext() {
   // Clean up if user forgot to call freeContext()
   if (ctx_) {
+    // Clear the interrupt callback opaque
+    ctx_->interrupt_callback.opaque = nullptr;
+
     // We never own custom pb - IOContext always keeps ownership
-    
+
     if (is_output_) {
       // For output contexts
       // Only close pb if it's not custom IO
@@ -110,16 +115,22 @@ FormatContext::~FormatContext() {
 
 Napi::Value FormatContext::AllocContext(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
+
   AVFormatContext* new_ctx = avformat_alloc_context();
   if (!new_ctx) {
     Napi::Error::New(env, "Failed to allocate format context").ThrowAsJavaScriptException();
     return env.Undefined();
   }
-  
+
+  // Register interrupt callback BEFORE avformat_open_input()
+  // This allows FFmpeg to check for interruption during blocking I/O operations
+  new_ctx->interrupt_callback.callback = InterruptCallback;
+  new_ctx->interrupt_callback.opaque = this;
+  interrupt_requested_.store(false);
+
   ctx_ = new_ctx;
   is_output_ = false;
-  
+
   return env.Undefined();
 }
 
@@ -157,36 +168,44 @@ Napi::Value FormatContext::AllocOutputContext2(const Napi::CallbackInfo& info) {
   
   AVFormatContext* new_ctx = nullptr;
   int ret = avformat_alloc_output_context2(&new_ctx, oformat, format_name, filename);
-  
+
   if (ret < 0) {
     char errbuf[AV_ERROR_MAX_STRING_SIZE];
     av_strerror(ret, errbuf, sizeof(errbuf));
     Napi::Error::New(env, std::string("Failed to allocate output context: ") + errbuf).ThrowAsJavaScriptException();
     return env.Undefined();
   }
-  
+
+  // Register interrupt callback for output contexts too
+  new_ctx->interrupt_callback.callback = InterruptCallback;
+  new_ctx->interrupt_callback.opaque = this;
+  interrupt_requested_.store(false);
+
   ctx_ = new_ctx;
   is_output_ = true;
-  
+
   return Napi::Number::New(env, ret);
 }
 
 Napi::Value FormatContext::FreeContext(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
+
   if (!ctx_) {
     // Already freed
     return env.Undefined();
   }
-  
+
   AVFormatContext* ctx = ctx_;
   ctx_ = nullptr;
-  
+
   if (!ctx) {
     // Already freed
     return env.Undefined();
   }
-  
+
+  // Clear the interrupt callback opaque pointer
+  ctx->interrupt_callback.opaque = nullptr;
+
   if (is_output_) {
     // For output contexts allocated with avformat_alloc_output_context2
     // Close pb if it exists and the format requires file I/O
@@ -201,9 +220,9 @@ Napi::Value FormatContext::FreeContext(const Napi::CallbackInfo& info) {
     // For input contexts, use avformat_close_input which also frees the context
     avformat_close_input(&ctx);
   }
-  
+
   is_output_ = false;
-  
+
   return env.Undefined();
 }
 
@@ -331,6 +350,48 @@ Napi::Value FormatContext::FindBestStream(const Napi::CallbackInfo& info) {
   return Napi::Number::New(env, ret);
 }
 
+Napi::Value FormatContext::SetFlagsMethod(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+
+  if (!ctx_) {
+    Napi::Error::New(env, "FormatContext not allocated").ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+
+  // Iterate through all arguments and OR them together
+  for (size_t i = 0; i < info.Length(); i++) {
+    if (!info[i].IsNumber()) {
+      Napi::TypeError::New(env, "All arguments must be numbers (flags)").ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
+    int flag = info[i].As<Napi::Number>().Int32Value();
+    ctx_->flags |= flag;
+  }
+
+  return env.Undefined();
+}
+
+Napi::Value FormatContext::ClearFlagsMethod(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+
+  if (!ctx_) {
+    Napi::Error::New(env, "FormatContext not allocated").ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+
+  // Iterate through all arguments and clear them with AND NOT
+  for (size_t i = 0; i < info.Length(); i++) {
+    if (!info[i].IsNumber()) {
+      Napi::TypeError::New(env, "All arguments must be numbers (flags)").ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
+    int flag = info[i].As<Napi::Number>().Int32Value();
+    ctx_->flags &= ~flag;
+  }
+
+  return env.Undefined();
+}
+
 Napi::Value FormatContext::GetStreams(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
   
@@ -436,15 +497,15 @@ Napi::Value FormatContext::GetFlags(const Napi::CallbackInfo& info) {
   return Napi::Number::New(env, ctx->flags);
 }
 
-void FormatContext::SetFlags(const Napi::CallbackInfo& info, const Napi::Value& value) {
+void FormatContext::SetFlagsAccessor(const Napi::CallbackInfo& info, const Napi::Value& value) {
   Napi::Env env = info.Env();
-  
+
   AVFormatContext* ctx = ctx_;
   if (!ctx) {
     Napi::Error::New(env, "Format context not allocated").ThrowAsJavaScriptException();
     return;
   }
-  
+
   if (value.IsNumber()) {
     ctx->flags = value.As<Napi::Number>().Int32Value();
   }
@@ -733,6 +794,22 @@ Napi::Value FormatContext::DisposeAsync(const Napi::CallbackInfo& info) {
     deferred.Resolve(env.Undefined());
     return deferred.Promise();
   }
+}
+
+int FormatContext::InterruptCallback(void* opaque) {
+  // The opaque pointer might be invalid if FormatContext was destroyed
+  if (!opaque) {
+    return 0;
+  }
+
+  FormatContext* self = static_cast<FormatContext*>(opaque);
+
+  // Return 1 to interrupt FFmpeg operations, 0 to continue
+  return self->interrupt_requested_.load() ? 1 : 0;
+}
+
+void FormatContext::RequestInterrupt() {
+  interrupt_requested_.store(true);
 }
 
 } // namespace ffmpeg

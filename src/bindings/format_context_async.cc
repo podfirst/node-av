@@ -5,6 +5,8 @@
 #include "dictionary.h"
 #include "common.h"
 #include <napi.h>
+#include <thread>
+#include <chrono>
 
 extern "C" {
 #include <libavformat/avformat.h>
@@ -120,11 +122,28 @@ public:
       deferred_(Napi::Promise::Deferred::New(env)) {}
 
   void Execute() override {
-    if (parent_->ctx_ && packet_) {
-      result_ = av_read_frame(parent_->ctx_, packet_->Get());
-    } else {
+    if (!parent_->ctx_ || !packet_) {
       result_ = AVERROR(EINVAL);
+      return;
     }
+
+    // Check interrupt flag BEFORE calling av_read_frame()
+    // The interrupt callback is only invoked during blocking I/O operations.
+    // If packets are already buffered, av_read_frame() won't block and the
+    // callback won't be called. We must manually check here.
+    if (parent_->interrupt_requested_.load()) {
+      result_ = AVERROR_EXIT;
+      return;
+    }
+
+    // Increment counter to signal we're in an active read operation
+    parent_->active_read_operations_.fetch_add(1);
+
+    // Read a frame
+    result_ = av_read_frame(parent_->ctx_, packet_->Get());
+
+    // Decrement counter to signal read operation is complete
+    parent_->active_read_operations_.fetch_sub(1);
   }
 
   void OnOK() override {
@@ -474,31 +493,53 @@ public:
       deferred_(Napi::Promise::Deferred::New(env)) {}
 
   void Execute() override {
+    // Request interrupt to cancel any pending av_read_frame()
+    parent_->RequestInterrupt();
+
     AVFormatContext* ctx = parent_->ctx_;
-    parent_->ctx_ = nullptr;
-    
-    if (ctx) {
-      // Check if this is a custom IO context
-      bool is_custom_io = (ctx->flags & AVFMT_FLAG_CUSTOM_IO) != 0;
-      
-      if (ctx->pb || ctx->nb_streams > 0) {
-        // Context was successfully opened (has pb or streams), use close_input
-        // IMPORTANT: avformat_close_input will:
-        // - For AVFMT_FLAG_CUSTOM_IO: set pb to NULL but NOT free it
-        // - For non-custom IO: close and free the pb
-        avformat_close_input(&ctx);
-      } else {
-        // Context was allocated but not opened successfully
-        // Clear pb reference before calling avformat_free_context to prevent double-free
-        if (is_custom_io && ctx->pb) {
-          ctx->pb = nullptr;
-        }
-        // Use avformat_free_context to free the allocated context
-        avformat_free_context(ctx);
-      }
-      
-      parent_->is_output_ = false;
+
+    if (!ctx) {
+      return;
     }
+
+    // Now wait a short time for any in-flight av_read_frame() to return with error
+    int wait_count = 0;
+    while (parent_->active_read_operations_.load() > 0) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+      // Timeout after 1 second
+      if (wait_count > 100) {
+        break;
+      }
+    }
+
+    // Clear our references
+    parent_->ctx_ = nullptr;
+
+    if (ctx->interrupt_callback.opaque == parent_) {
+      ctx->interrupt_callback.opaque = nullptr;
+    }
+
+    // Check if this is a custom IO context
+    bool is_custom_io = (ctx->flags & AVFMT_FLAG_CUSTOM_IO) != 0;
+      
+    if (ctx->pb || ctx->nb_streams > 0) {
+      // Context was successfully opened (has pb or streams), use close_input
+      // IMPORTANT: avformat_close_input will:
+      // - For AVFMT_FLAG_CUSTOM_IO: set pb to NULL but NOT free it
+      // - For non-custom IO: close and free the pb
+      avformat_close_input(&ctx);
+    } else {
+      // Context was allocated but not opened successfully
+      // Clear pb reference before calling avformat_free_context to prevent double-free
+      if (is_custom_io && ctx->pb) {
+        ctx->pb = nullptr;
+      }
+      // Use avformat_free_context to free the allocated context
+      avformat_free_context(ctx);
+    }
+      
+    parent_->is_output_ = false;
   }
 
   void OnOK() override {

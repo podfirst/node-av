@@ -78,6 +78,8 @@ private:
   Napi::Value GetNbStreams(const Napi::CallbackInfo& info);
   Napi::Value DumpFormat(const Napi::CallbackInfo& info);
   Napi::Value FindBestStream(const Napi::CallbackInfo& info);
+  Napi::Value SetFlagsMethod(const Napi::CallbackInfo& info);
+  Napi::Value ClearFlagsMethod(const Napi::CallbackInfo& info);
   Napi::Value DisposeAsync(const Napi::CallbackInfo& info);
 
   Napi::Value GetUrl(const Napi::CallbackInfo& info);
@@ -90,8 +92,8 @@ private:
   Napi::Value GetBitRate(const Napi::CallbackInfo& info);
   
   Napi::Value GetFlags(const Napi::CallbackInfo& info);
-  void SetFlags(const Napi::CallbackInfo& info, const Napi::Value& value);
-  
+  void SetFlagsAccessor(const Napi::CallbackInfo& info, const Napi::Value& value);
+
   Napi::Value GetProbesize(const Napi::CallbackInfo& info);
   void SetProbesize(const Napi::CallbackInfo& info, const Napi::Value& value);
   
@@ -116,8 +118,16 @@ private:
   Napi::Value GetPbBytes(const Napi::CallbackInfo& info);
 
   Napi::Value GetProbeScore(const Napi::CallbackInfo& info);
-  
+
   void SetPb(const Napi::CallbackInfo& info, const Napi::Value& value);
+
+  // Interrupt callback mechanism for cancelling blocking operations
+  static int InterruptCallback(void* opaque);
+  void RequestInterrupt();
+  std::atomic<bool> interrupt_requested_{false};
+
+  // Track active read operations to prevent closing while reading
+  std::atomic<int> active_read_operations_{0};
 };
 
 } // namespace ffmpeg

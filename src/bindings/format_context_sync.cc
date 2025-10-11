@@ -4,6 +4,8 @@
 #include "dictionary.h"
 #include "common.h"
 #include <napi.h>
+#include <thread>
+#include <chrono>
 
 extern "C" {
 #include <libavformat/avformat.h>
@@ -30,8 +32,22 @@ Napi::Value FormatContext::ReadFrameSync(const Napi::CallbackInfo& info) {
     return env.Undefined();
   }
 
-  // Direct synchronous call to av_read_frame
+  // Check interrupt flag BEFORE calling av_read_frame()
+  // The interrupt callback is only invoked during blocking I/O operations.
+  // If packets are already buffered, av_read_frame() won't block and the
+  // callback won't be called. We must manually check here.
+  if (interrupt_requested_.load()) {
+    return Napi::Number::New(env, AVERROR_EXIT);
+  }
+
+  // Increment counter to signal we're in an active read operation
+  active_read_operations_.fetch_add(1);
+
+  // Read a frame
   int result = av_read_frame(ctx_, packet->Get());
+
+  // Decrement counter to signal read operation is complete
+  active_read_operations_.fetch_sub(1);
 
   return Napi::Number::New(env, result);
 }
@@ -240,9 +256,45 @@ Napi::Value FormatContext::CloseInputSync(const Napi::CallbackInfo& info) {
     return env.Undefined();
   }
 
-  // Direct synchronous call
-  avformat_close_input(&ctx_);
-  ctx_ = nullptr;
+  // Request interrupt to cancel any pending av_read_frame()
+  FormatContext::RequestInterrupt();
+
+  // Now wait a short time for any in-flight av_read_frame() to return with error
+  int wait_count = 0;
+  while (active_read_operations_.load() > 0) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+    // Timeout after 1 second
+    if (wait_count > 100) {
+      break;
+    }
+  }
+
+  // Clear our references
+  if (ctx_->interrupt_callback.opaque == this) {
+    ctx_->interrupt_callback.opaque = nullptr;
+  }
+
+  // Check if this is a custom IO context
+  bool is_custom_io = (ctx_->flags & AVFMT_FLAG_CUSTOM_IO) != 0;
+
+  if (ctx_->pb || ctx_->nb_streams > 0) {
+    // Context was successfully opened (has pb or streams), use close_input
+    // IMPORTANT: avformat_close_input will:
+    // - For AVFMT_FLAG_CUSTOM_IO: set pb to NULL but NOT free it
+    // - For non-custom IO: close and free the pb
+    avformat_close_input(&ctx_);
+  } else {
+    // Context was allocated but not opened successfully
+    // Clear pb reference before calling avformat_free_context to prevent double-free
+    if (is_custom_io && ctx_->pb) {
+      ctx_->pb = nullptr;
+    }
+    // Use avformat_free_context to free the allocated context
+    avformat_free_context(ctx_);
+  }
+
+  is_output_ = false;
 
   return env.Undefined();
 }
