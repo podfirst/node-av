@@ -53,6 +53,10 @@ private:
   Napi::Value ReceivePacketAsync(const Napi::CallbackInfo& info);
   Napi::Value ReceivePacketSync(const Napi::CallbackInfo& info);
   Napi::Value IsOpen(const Napi::CallbackInfo& info);
+  Napi::Value SetFlagsMethod(const Napi::CallbackInfo& info);
+  Napi::Value ClearFlagsMethod(const Napi::CallbackInfo& info);
+  Napi::Value SetFlags2Method(const Napi::CallbackInfo& info);
+  Napi::Value ClearFlags2Method(const Napi::CallbackInfo& info);
   Napi::Value Dispose(const Napi::CallbackInfo& info);
 
   Napi::Value GetCodecType(const Napi::CallbackInfo& info);
@@ -73,10 +77,10 @@ private:
   Napi::Value GetDelay(const Napi::CallbackInfo& info);
 
   Napi::Value GetFlags(const Napi::CallbackInfo& info);
-  void SetFlags(const Napi::CallbackInfo& info, const Napi::Value& value);
+  void SetFlagsAccessor(const Napi::CallbackInfo& info, const Napi::Value& value);
 
   Napi::Value GetFlags2(const Napi::CallbackInfo& info);
-  void SetFlags2(const Napi::CallbackInfo& info, const Napi::Value& value);
+  void SetFlags2Accessor(const Napi::CallbackInfo& info, const Napi::Value& value);
 
   Napi::Value GetExtraData(const Napi::CallbackInfo& info);
   void SetExtraData(const Napi::CallbackInfo& info, const Napi::Value& value);

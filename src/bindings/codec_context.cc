@@ -35,6 +35,10 @@ Napi::Object CodecContext::Init(Napi::Env env, Napi::Object exports) {
     InstanceMethod<&CodecContext::ReceivePacketAsync>("receivePacket"),
     InstanceMethod<&CodecContext::ReceivePacketSync>("receivePacketSync"),
     InstanceMethod<&CodecContext::SetHardwarePixelFormat>("setHardwarePixelFormat"),
+    InstanceMethod<&CodecContext::SetFlagsMethod>("setFlags"),
+    InstanceMethod<&CodecContext::ClearFlagsMethod>("clearFlags"),
+    InstanceMethod<&CodecContext::SetFlags2Method>("setFlags2"),
+    InstanceMethod<&CodecContext::ClearFlags2Method>("clearFlags2"),
     InstanceMethod<&CodecContext::Dispose>(Napi::Symbol::WellKnown(env, "dispose")),
 
     InstanceAccessor<&CodecContext::GetCodecType, &CodecContext::SetCodecType>("codecType"),
@@ -43,8 +47,8 @@ Napi::Object CodecContext::Init(Napi::Env env, Napi::Object exports) {
     InstanceAccessor<&CodecContext::GetTimeBase, &CodecContext::SetTimeBase>("timeBase"),
     InstanceAccessor<&CodecContext::GetPktTimebase, &CodecContext::SetPktTimebase>("pktTimebase"),
     InstanceAccessor<&CodecContext::GetDelay>("delay"),
-    InstanceAccessor<&CodecContext::GetFlags, &CodecContext::SetFlags>("flags"),
-    InstanceAccessor<&CodecContext::GetFlags2, &CodecContext::SetFlags2>("flags2"),
+    InstanceAccessor<&CodecContext::GetFlags, &CodecContext::SetFlagsAccessor>("flags"),
+    InstanceAccessor<&CodecContext::GetFlags2, &CodecContext::SetFlags2Accessor>("flags2"),
     InstanceAccessor<&CodecContext::GetExtraData, &CodecContext::SetExtraData>("extraData"),
     InstanceAccessor<&CodecContext::GetProfile, &CodecContext::SetProfile>("profile"),
     InstanceAccessor<&CodecContext::GetLevel, &CodecContext::SetLevel>("level"),
@@ -287,7 +291,7 @@ Napi::Value CodecContext::GetFlags(const Napi::CallbackInfo& info) {
   return Napi::Number::New(env, context_->flags);
 }
 
-void CodecContext::SetFlags(const Napi::CallbackInfo& info, const Napi::Value& value) {
+void CodecContext::SetFlagsAccessor(const Napi::CallbackInfo& info, const Napi::Value& value) {
   if (context_) {
     context_->flags = value.As<Napi::Number>().Int32Value();
   }
@@ -301,7 +305,7 @@ Napi::Value CodecContext::GetFlags2(const Napi::CallbackInfo& info) {
   return Napi::Number::New(env, context_->flags2);
 }
 
-void CodecContext::SetFlags2(const Napi::CallbackInfo& info, const Napi::Value& value) {
+void CodecContext::SetFlags2Accessor(const Napi::CallbackInfo& info, const Napi::Value& value) {
   if (context_) {
     context_->flags2 = value.As<Napi::Number>().Int32Value();
   }
@@ -905,6 +909,90 @@ Napi::Value CodecContext::SetHardwarePixelFormat(const Napi::CallbackInfo& info)
   // Set the static callback function
   context_->get_format = CodecContext::GetFormatCallback;
   
+  return env.Undefined();
+}
+
+Napi::Value CodecContext::SetFlagsMethod(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+
+  if (!context_) {
+    Napi::Error::New(env, "CodecContext not allocated").ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+
+  // Iterate through all arguments and OR them together
+  for (size_t i = 0; i < info.Length(); i++) {
+    if (!info[i].IsNumber()) {
+      Napi::TypeError::New(env, "All arguments must be numbers (flags)").ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
+    int flag = info[i].As<Napi::Number>().Int32Value();
+    context_->flags |= flag;
+  }
+
+  return env.Undefined();
+}
+
+Napi::Value CodecContext::ClearFlagsMethod(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+
+  if (!context_) {
+    Napi::Error::New(env, "CodecContext not allocated").ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+
+  // Iterate through all arguments and clear them with AND NOT
+  for (size_t i = 0; i < info.Length(); i++) {
+    if (!info[i].IsNumber()) {
+      Napi::TypeError::New(env, "All arguments must be numbers (flags)").ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
+    int flag = info[i].As<Napi::Number>().Int32Value();
+    context_->flags &= ~flag;
+  }
+
+  return env.Undefined();
+}
+
+Napi::Value CodecContext::SetFlags2Method(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+
+  if (!context_) {
+    Napi::Error::New(env, "CodecContext not allocated").ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+
+  // Iterate through all arguments and OR them together
+  for (size_t i = 0; i < info.Length(); i++) {
+    if (!info[i].IsNumber()) {
+      Napi::TypeError::New(env, "All arguments must be numbers (flags)").ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
+    int flag = info[i].As<Napi::Number>().Int32Value();
+    context_->flags2 |= flag;
+  }
+
+  return env.Undefined();
+}
+
+Napi::Value CodecContext::ClearFlags2Method(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+
+  if (!context_) {
+    Napi::Error::New(env, "CodecContext not allocated").ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+
+  // Iterate through all arguments and clear them with AND NOT
+  for (size_t i = 0; i < info.Length(); i++) {
+    if (!info[i].IsNumber()) {
+      Napi::TypeError::New(env, "All arguments must be numbers (flags)").ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
+    int flag = info[i].As<Napi::Number>().Int32Value();
+    context_->flags2 &= ~flag;
+  }
+
   return env.Undefined();
 }
 
