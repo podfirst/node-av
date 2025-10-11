@@ -2,7 +2,7 @@ import { closeSync, openSync, readSync } from 'fs';
 import { open } from 'fs/promises';
 import { resolve } from 'path';
 
-import { AVFLAG_NONE, AVMEDIA_TYPE_AUDIO, AVMEDIA_TYPE_VIDEO } from '../constants/constants.js';
+import { AVFLAG_NONE, AVFMT_FLAG_NONBLOCK, AVMEDIA_TYPE_AUDIO, AVMEDIA_TYPE_VIDEO } from '../constants/constants.js';
 import { avGetPixFmtName, avGetSampleFmtName, Dictionary, FFmpegError, FormatContext, InputFormat, Packet, Rational } from '../lib/index.js';
 import { IOStream } from './io-stream.js';
 
@@ -58,10 +58,14 @@ export class MediaInput implements AsyncDisposable, Disposable {
   /**
    * @param formatContext - Opened format context
    *
+   * @param ioContext - Optional IO context for custom I/O (e.g., from Buffer)
+   *
    * @internal
    */
-  private constructor(formatContext: FormatContext) {
+  private constructor(formatContext: FormatContext, ioContext?: IOContext) {
     this.formatContext = formatContext;
+    this.ioContext = ioContext;
+    this._streams = formatContext.streams ?? [];
   }
 
   /**
@@ -362,6 +366,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
 
         const ret = await formatContext.openInput(resolvedInput, inputFormat, optionsDict);
         FFmpegError.throwIfError(ret, 'Failed to open input');
+        formatContext.setFlags(AVFMT_FLAG_NONBLOCK);
       } else if (Buffer.isBuffer(input)) {
         // Validate buffer is not empty
         if (input.length === 0) {
@@ -381,11 +386,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
       const ret = await formatContext.findStreamInfo(null);
       FFmpegError.throwIfError(ret, 'Failed to find stream info');
 
-      const mediaInput = new MediaInput(formatContext);
-      mediaInput.ioContext = ioContext;
-
-      // After successful creation, streams should be available
-      mediaInput._streams = formatContext.streams ?? [];
+      const mediaInput = new MediaInput(formatContext, ioContext);
 
       return mediaInput;
     } catch (error) {
@@ -514,6 +515,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
 
         const ret = formatContext.openInputSync(resolvedInput, inputFormat, optionsDict);
         FFmpegError.throwIfError(ret, 'Failed to open input');
+        formatContext.setFlags(AVFMT_FLAG_NONBLOCK);
       } else {
         throw new TypeError('Invalid input type. Expected file path, URL, or Buffer');
       }
@@ -522,11 +524,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
       const ret = formatContext.findStreamInfoSync(null);
       FFmpegError.throwIfError(ret, 'Failed to find stream info');
 
-      const mediaInput = new MediaInput(formatContext);
-      mediaInput.ioContext = ioContext;
-
-      // After successful creation, streams should be available
-      mediaInput._streams = formatContext.streams ?? [];
+      const mediaInput = new MediaInput(formatContext, ioContext);
 
       return mediaInput;
     } catch (error) {
