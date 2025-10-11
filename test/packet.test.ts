@@ -454,4 +454,62 @@ describe('Packet', () => {
       assert.deepEqual(extra, extraData, 'Extra data should match');
     });
   });
+
+  describe('Flag Operations', () => {
+    beforeEach(() => {
+      packet.alloc();
+    });
+
+    it('should set single flag using setFlags', () => {
+      packet.flags = AVFLAG_NONE;
+      assert.equal(packet.flags, AVFLAG_NONE);
+
+      packet.setFlags(AV_PKT_FLAG_KEY);
+      assert.equal(packet.flags, AV_PKT_FLAG_KEY);
+      assert.equal(packet.isKeyframe, true);
+    });
+
+    it('should set multiple flags using setFlags', () => {
+      packet.flags = AVFLAG_NONE;
+      assert.equal(packet.flags, AVFLAG_NONE);
+
+      packet.setFlags(AV_PKT_FLAG_KEY, AV_PKT_FLAG_CORRUPT);
+      assert.equal(packet.flags, (AV_PKT_FLAG_KEY | AV_PKT_FLAG_CORRUPT) as AVPacketFlag);
+      assert.equal(packet.isKeyframe, true);
+    });
+
+    it('should clear single flag using clearFlags', () => {
+      packet.setFlags(AV_PKT_FLAG_KEY, AV_PKT_FLAG_CORRUPT);
+      assert.equal(packet.flags, (AV_PKT_FLAG_KEY | AV_PKT_FLAG_CORRUPT) as AVPacketFlag);
+
+      packet.clearFlags(AV_PKT_FLAG_CORRUPT);
+      assert.equal(packet.flags, AV_PKT_FLAG_KEY);
+      assert.equal(packet.isKeyframe, true);
+    });
+
+    it('should clear multiple flags using clearFlags', () => {
+      packet.setFlags(AV_PKT_FLAG_KEY, AV_PKT_FLAG_CORRUPT, AV_PKT_FLAG_DISCARD);
+      assert.equal(packet.flags, (AV_PKT_FLAG_KEY | AV_PKT_FLAG_CORRUPT | AV_PKT_FLAG_DISCARD) as AVPacketFlag);
+
+      packet.clearFlags(AV_PKT_FLAG_CORRUPT, AV_PKT_FLAG_DISCARD);
+      assert.equal(packet.flags, AV_PKT_FLAG_KEY);
+      assert.equal(packet.isKeyframe, true);
+    });
+
+    it('should preserve existing flags when setting new flags', () => {
+      packet.setFlags(AV_PKT_FLAG_KEY);
+      assert.equal(packet.flags, AV_PKT_FLAG_KEY);
+
+      packet.setFlags(AV_PKT_FLAG_DISCARD);
+      assert.equal(packet.flags, (AV_PKT_FLAG_KEY | AV_PKT_FLAG_DISCARD) as AVPacketFlag);
+    });
+
+    it('should support direct flag assignment (backward compatibility)', () => {
+      packet.flags = (AV_PKT_FLAG_KEY | AV_PKT_FLAG_CORRUPT) as AVPacketFlag;
+      assert.equal(packet.flags, (AV_PKT_FLAG_KEY | AV_PKT_FLAG_CORRUPT) as AVPacketFlag);
+
+      packet.flags = AVFLAG_NONE;
+      assert.equal(packet.flags, AVFLAG_NONE);
+    });
+  });
 });

@@ -8,6 +8,7 @@ import {
   AV_SAMPLE_FMT_S16,
   AVFLAG_NONE,
   AVFMT_FLAG_GENPTS,
+  AVFMT_FLAG_IGNIDX,
   AVIO_FLAG_WRITE,
   AVMEDIA_TYPE_AUDIO,
   AVMEDIA_TYPE_VIDEO,
@@ -19,6 +20,8 @@ import {
   Packet,
   Rational,
 } from '../src/index.js';
+
+import type { AVFormatFlag } from '../src/index.js';
 import { getInputFile, getOutputFile, prepareTestEnvironment } from './index.js';
 
 prepareTestEnvironment();
@@ -823,6 +826,54 @@ describe('FormatContext', () => {
 
       // ctx.closeOutput();
       packet.free();
+    });
+  });
+
+  describe('Flag Operations', () => {
+    beforeEach(() => {
+      ctx.allocContext();
+    });
+
+    it('should set single flag using setFlags', () => {
+      ctx.setFlags(AVFMT_FLAG_GENPTS);
+      assert.equal(ctx.flags & AVFMT_FLAG_GENPTS, AVFMT_FLAG_GENPTS);
+    });
+
+    it('should set multiple flags using setFlags', () => {
+      ctx.setFlags(AVFMT_FLAG_GENPTS, AVFMT_FLAG_IGNIDX);
+      assert.equal(ctx.flags & AVFMT_FLAG_GENPTS, AVFMT_FLAG_GENPTS);
+      assert.equal(ctx.flags & AVFMT_FLAG_IGNIDX, AVFMT_FLAG_IGNIDX);
+    });
+
+    it('should clear single flag using clearFlags', () => {
+      ctx.setFlags(AVFMT_FLAG_GENPTS, AVFMT_FLAG_IGNIDX);
+
+      ctx.clearFlags(AVFMT_FLAG_IGNIDX);
+      assert.equal(ctx.flags & AVFMT_FLAG_GENPTS, AVFMT_FLAG_GENPTS);
+      assert.equal(ctx.flags & AVFMT_FLAG_IGNIDX, 0);
+    });
+
+    it('should clear multiple flags using clearFlags', () => {
+      ctx.setFlags(AVFMT_FLAG_GENPTS, AVFMT_FLAG_IGNIDX);
+
+      ctx.clearFlags(AVFMT_FLAG_GENPTS, AVFMT_FLAG_IGNIDX);
+      assert.equal(ctx.flags & AVFMT_FLAG_GENPTS, 0);
+      assert.equal(ctx.flags & AVFMT_FLAG_IGNIDX, 0);
+    });
+
+    it('should preserve existing flags when setting new flags', () => {
+      ctx.setFlags(AVFMT_FLAG_GENPTS);
+      assert.equal(ctx.flags & AVFMT_FLAG_GENPTS, AVFMT_FLAG_GENPTS);
+
+      ctx.setFlags(AVFMT_FLAG_IGNIDX);
+      assert.equal(ctx.flags & AVFMT_FLAG_GENPTS, AVFMT_FLAG_GENPTS);
+      assert.equal(ctx.flags & AVFMT_FLAG_IGNIDX, AVFMT_FLAG_IGNIDX);
+    });
+
+    it('should support direct flag assignment (backward compatibility)', () => {
+      ctx.flags = (AVFMT_FLAG_GENPTS | AVFMT_FLAG_IGNIDX) as AVFormatFlag;
+      assert.equal(ctx.flags & AVFMT_FLAG_GENPTS, AVFMT_FLAG_GENPTS);
+      assert.equal(ctx.flags & AVFMT_FLAG_IGNIDX, AVFMT_FLAG_IGNIDX);
     });
   });
 });

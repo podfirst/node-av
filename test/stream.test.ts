@@ -11,13 +11,15 @@ import {
   AVFLAG_NONE,
   AVMEDIA_TYPE_AUDIO,
   AVMEDIA_TYPE_VIDEO,
+  AVSTREAM_EVENT_FLAG_METADATA_UPDATED,
+  AVSTREAM_EVENT_FLAG_NEW_PACKETS,
   CodecParameters,
   Dictionary,
   FormatContext,
   Rational,
 } from '../src/index.js';
 
-import type { Stream } from '../src/index.js';
+import type { AVStreamEventFlag, Stream } from '../src/index.js';
 
 describe('Stream', () => {
   let ctx: FormatContext;
@@ -332,6 +334,56 @@ describe('Stream', () => {
     it('should handle negative id', () => {
       stream.id = -1;
       assert.equal(stream.id, -1);
+    });
+  });
+
+  describe('Event Flag Operations', () => {
+    it('should set single event flag using setEventFlags', () => {
+      stream.eventFlags = 0 as AVStreamEventFlag;
+      assert.equal(stream.eventFlags, 0);
+
+      stream.setEventFlags(AVSTREAM_EVENT_FLAG_METADATA_UPDATED);
+      assert.equal(stream.eventFlags, AVSTREAM_EVENT_FLAG_METADATA_UPDATED);
+    });
+
+    it('should set multiple event flags using setEventFlags', () => {
+      stream.eventFlags = 0 as AVStreamEventFlag;
+      assert.equal(stream.eventFlags, 0);
+
+      stream.setEventFlags(AVSTREAM_EVENT_FLAG_METADATA_UPDATED, AVSTREAM_EVENT_FLAG_NEW_PACKETS);
+      assert.equal(stream.eventFlags, (AVSTREAM_EVENT_FLAG_METADATA_UPDATED | AVSTREAM_EVENT_FLAG_NEW_PACKETS) as AVStreamEventFlag);
+    });
+
+    it('should clear single event flag using clearEventFlags', () => {
+      stream.setEventFlags(AVSTREAM_EVENT_FLAG_METADATA_UPDATED, AVSTREAM_EVENT_FLAG_NEW_PACKETS);
+      assert.equal(stream.eventFlags, (AVSTREAM_EVENT_FLAG_METADATA_UPDATED | AVSTREAM_EVENT_FLAG_NEW_PACKETS) as AVStreamEventFlag);
+
+      stream.clearEventFlags(AVSTREAM_EVENT_FLAG_NEW_PACKETS);
+      assert.equal(stream.eventFlags, AVSTREAM_EVENT_FLAG_METADATA_UPDATED);
+    });
+
+    it('should clear multiple event flags using clearEventFlags', () => {
+      stream.setEventFlags(AVSTREAM_EVENT_FLAG_METADATA_UPDATED, AVSTREAM_EVENT_FLAG_NEW_PACKETS);
+      assert.equal(stream.eventFlags, (AVSTREAM_EVENT_FLAG_METADATA_UPDATED | AVSTREAM_EVENT_FLAG_NEW_PACKETS) as AVStreamEventFlag);
+
+      stream.clearEventFlags(AVSTREAM_EVENT_FLAG_METADATA_UPDATED, AVSTREAM_EVENT_FLAG_NEW_PACKETS);
+      assert.equal(stream.eventFlags, 0);
+    });
+
+    it('should preserve existing event flags when setting new flags', () => {
+      stream.setEventFlags(AVSTREAM_EVENT_FLAG_METADATA_UPDATED);
+      assert.equal(stream.eventFlags, AVSTREAM_EVENT_FLAG_METADATA_UPDATED);
+
+      stream.setEventFlags(AVSTREAM_EVENT_FLAG_NEW_PACKETS);
+      assert.equal(stream.eventFlags, (AVSTREAM_EVENT_FLAG_METADATA_UPDATED | AVSTREAM_EVENT_FLAG_NEW_PACKETS) as AVStreamEventFlag);
+    });
+
+    it('should support direct event flag assignment (backward compatibility)', () => {
+      stream.eventFlags = (AVSTREAM_EVENT_FLAG_METADATA_UPDATED | AVSTREAM_EVENT_FLAG_NEW_PACKETS) as AVStreamEventFlag;
+      assert.equal(stream.eventFlags, (AVSTREAM_EVENT_FLAG_METADATA_UPDATED | AVSTREAM_EVENT_FLAG_NEW_PACKETS) as AVStreamEventFlag);
+
+      stream.eventFlags = 0 as AVStreamEventFlag;
+      assert.equal(stream.eventFlags, 0);
     });
   });
 });

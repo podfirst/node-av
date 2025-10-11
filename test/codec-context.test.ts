@@ -2,6 +2,8 @@ import assert from 'node:assert';
 import { afterEach, beforeEach, describe, it } from 'node:test';
 
 import {
+  AV_CODEC_FLAG_PSNR,
+  AV_CODEC_FLAG_QSCALE,
   AV_CODEC_ID_AAC,
   AV_CODEC_ID_H264,
   AV_CODEC_ID_MJPEG,
@@ -24,7 +26,7 @@ import {
   Rational,
 } from '../src/index.js';
 
-import type { AVCodecFlag2 } from '../src/index.js';
+import type { AVCodecFlag, AVCodecFlag2 } from '../src/index.js';
 
 describe('CodecContext', () => {
   let ctx: CodecContext;
@@ -798,6 +800,114 @@ describe('CodecContext', () => {
 
       assert.equal(ctx.width, 0);
       assert.equal(ctx.height, 0);
+    });
+  });
+
+  describe('Flag Operations', () => {
+    beforeEach(() => {
+      const codec = Codec.findDecoder(AV_CODEC_ID_H264);
+      assert.ok(codec);
+      ctx.allocContext3(codec);
+    });
+
+    describe('flags', () => {
+      it('should set single flag using setFlags', () => {
+        ctx.flags = AVFLAG_NONE;
+        assert.equal(ctx.flags, AVFLAG_NONE);
+
+        ctx.setFlags(AV_CODEC_FLAG_QSCALE);
+        assert.equal(ctx.flags, AV_CODEC_FLAG_QSCALE);
+      });
+
+      it('should set multiple flags using setFlags', () => {
+        ctx.flags = AVFLAG_NONE;
+        assert.equal(ctx.flags, AVFLAG_NONE);
+
+        ctx.setFlags(AV_CODEC_FLAG_QSCALE, AV_CODEC_FLAG_PSNR);
+        assert.equal(ctx.flags, (AV_CODEC_FLAG_QSCALE | AV_CODEC_FLAG_PSNR) as AVCodecFlag);
+      });
+
+      it('should clear single flag using clearFlags', () => {
+        ctx.setFlags(AV_CODEC_FLAG_QSCALE, AV_CODEC_FLAG_PSNR);
+        assert.equal(ctx.flags, (AV_CODEC_FLAG_QSCALE | AV_CODEC_FLAG_PSNR) as AVCodecFlag);
+
+        ctx.clearFlags(AV_CODEC_FLAG_PSNR);
+        assert.equal(ctx.flags, AV_CODEC_FLAG_QSCALE);
+      });
+
+      it('should clear multiple flags using clearFlags', () => {
+        ctx.setFlags(AV_CODEC_FLAG_QSCALE, AV_CODEC_FLAG_PSNR);
+        assert.equal(ctx.flags, (AV_CODEC_FLAG_QSCALE | AV_CODEC_FLAG_PSNR) as AVCodecFlag);
+
+        ctx.clearFlags(AV_CODEC_FLAG_QSCALE, AV_CODEC_FLAG_PSNR);
+        assert.equal(ctx.flags, AVFLAG_NONE);
+      });
+
+      it('should preserve existing flags when setting new flags', () => {
+        ctx.setFlags(AV_CODEC_FLAG_QSCALE);
+        assert.equal(ctx.flags, AV_CODEC_FLAG_QSCALE);
+
+        ctx.setFlags(AV_CODEC_FLAG_PSNR);
+        assert.equal(ctx.flags, (AV_CODEC_FLAG_QSCALE | AV_CODEC_FLAG_PSNR) as AVCodecFlag);
+      });
+
+      it('should support direct flag assignment (backward compatibility)', () => {
+        ctx.flags = (AV_CODEC_FLAG_QSCALE | AV_CODEC_FLAG_PSNR) as AVCodecFlag;
+        assert.equal(ctx.flags, (AV_CODEC_FLAG_QSCALE | AV_CODEC_FLAG_PSNR) as AVCodecFlag);
+
+        ctx.flags = AVFLAG_NONE;
+        assert.equal(ctx.flags, AVFLAG_NONE);
+      });
+    });
+
+    describe('flags2', () => {
+      it('should set single flag using setFlags2', () => {
+        ctx.flags2 = 0 as AVCodecFlag2;
+        assert.equal(ctx.flags2, 0);
+
+        ctx.setFlags2(0x1 as AVCodecFlag2);
+        assert.equal(ctx.flags2, 0x1);
+      });
+
+      it('should set multiple flags using setFlags2', () => {
+        ctx.flags2 = 0 as AVCodecFlag2;
+        assert.equal(ctx.flags2, 0);
+
+        ctx.setFlags2(0x1 as AVCodecFlag2, 0x2 as AVCodecFlag2);
+        assert.equal(ctx.flags2, 0x3);
+      });
+
+      it('should clear single flag using clearFlags2', () => {
+        ctx.setFlags2(0x1 as AVCodecFlag2, 0x2 as AVCodecFlag2);
+        assert.equal(ctx.flags2, 0x3);
+
+        ctx.clearFlags2(0x1 as AVCodecFlag2);
+        assert.equal(ctx.flags2, 0x2);
+      });
+
+      it('should clear multiple flags using clearFlags2', () => {
+        ctx.setFlags2(0x1 as AVCodecFlag2, 0x2 as AVCodecFlag2);
+        assert.equal(ctx.flags2, 0x3);
+
+        ctx.clearFlags2(0x1 as AVCodecFlag2, 0x2 as AVCodecFlag2);
+        assert.equal(ctx.flags2, 0);
+      });
+
+      it('should preserve existing flags when setting new flags', () => {
+        ctx.setFlags2(0x1 as AVCodecFlag2);
+        assert.equal(ctx.flags2, 0x1);
+
+        ctx.setFlags2(0x2 as AVCodecFlag2);
+        assert.equal(ctx.flags2, 0x3);
+      });
+
+      it('should support direct flag2 assignment (backward compatibility)', () => {
+        ctx.flags2 = 0x3 as AVCodecFlag2;
+        assert.equal(ctx.flags2, 0x3);
+
+        ctx.flags2 = 0 as AVCodecFlag2;
+        assert.equal(ctx.flags2, 0);
+      });
     });
   });
 });
