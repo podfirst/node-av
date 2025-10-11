@@ -1192,6 +1192,98 @@ export class CodecContext extends OptionMember<NativeCodecContext> implements Di
   }
 
   /**
+   * Set codec flags.
+   *
+   * Sets one or more flags using bitwise OR. Allows setting multiple flags
+   * without manually performing bitwise operations.
+   *
+   * @param flags - One or more flag values to set
+   *
+   * @example
+   * ```typescript
+   * import { AV_CODEC_FLAG_QSCALE, AV_CODEC_FLAG_PSNR } from 'node-av/constants';
+   *
+   * // Set multiple flags at once
+   * codecContext.setFlags(AV_CODEC_FLAG_QSCALE, AV_CODEC_FLAG_PSNR);
+   * ```
+   *
+   * @see {@link clearFlags} To unset flags
+   * @see {@link flags} For direct flag access
+   */
+  setFlags(...flags: AVCodecFlag[]): void {
+    this.native.setFlags(...flags);
+  }
+
+  /**
+   * Clear codec flags.
+   *
+   * Clears one or more flags using bitwise AND NOT. Allows clearing multiple
+   * flags without manually performing bitwise operations.
+   *
+   * @param flags - One or more flag values to clear
+   *
+   * @example
+   * ```typescript
+   * import { AV_CODEC_FLAG_PSNR } from 'node-av/constants';
+   *
+   * // Clear specific flag
+   * codecContext.clearFlags(AV_CODEC_FLAG_PSNR);
+   * ```
+   *
+   * @see {@link setFlags} To set flags
+   * @see {@link flags} For direct flag access
+   */
+  clearFlags(...flags: AVCodecFlag[]): void {
+    this.native.clearFlags(...flags);
+  }
+
+  /**
+   * Set codec flags2.
+   *
+   * Sets one or more flags2 values using bitwise OR. Allows setting multiple flags
+   * without manually performing bitwise operations.
+   *
+   * @param flags - One or more flag2 values to set
+   *
+   * @example
+   * ```typescript
+   * import { AV_CODEC_FLAG2_FAST } from 'node-av/constants';
+   *
+   * // Set multiple flags2 at once
+   * codecContext.setFlags2(AV_CODEC_FLAG2_FAST);
+   * ```
+   *
+   * @see {@link clearFlags2} To unset flags2
+   * @see {@link flags2} For direct flag2 access
+   */
+  setFlags2(...flags: AVCodecFlag2[]): void {
+    this.native.setFlags2(...flags);
+  }
+
+  /**
+   * Clear codec flags2.
+   *
+   * Clears one or more flags2 values using bitwise AND NOT. Allows clearing multiple
+   * flags without manually performing bitwise operations.
+   *
+   * @param flags - One or more flag2 values to clear
+   *
+   * @example
+   * ```typescript
+   * import { AV_CODEC_FLAG2_FAST } from 'node-av/constants';
+   *
+   * // Clear specific flag2
+   * codecContext.clearFlags2(AV_CODEC_FLAG2_FAST);
+   * ```
+   *
+   * @see {@link setFlags2} To set flags2
+   * @see {@link flags2} For direct flag2 access
+   */
+  clearFlags2(...flags: AVCodecFlag2[]): void {
+    this.native.clearFlags2(...flags);
+  }
+
+  /**
    * Get the underlying native CodecContext object.
    *
    * @returns The native CodecContext binding object

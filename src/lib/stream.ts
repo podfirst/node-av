@@ -322,6 +322,52 @@ export class Stream implements NativeWrapper<NativeStream> {
   }
 
   /**
+   * Set stream event flags.
+   *
+   * Sets one or more event flags using bitwise OR. Allows setting multiple flags
+   * without manually performing bitwise operations.
+   *
+   * @param flags - One or more event flag values to set
+   *
+   * @example
+   * ```typescript
+   * import { AVSTREAM_EVENT_FLAG_METADATA_UPDATED, AVSTREAM_EVENT_FLAG_NEW_PACKETS } from 'node-av/constants';
+   *
+   * // Set multiple event flags at once
+   * stream.setEventFlags(AVSTREAM_EVENT_FLAG_METADATA_UPDATED, AVSTREAM_EVENT_FLAG_NEW_PACKETS);
+   * ```
+   *
+   * @see {@link clearEventFlags} To unset event flags
+   * @see {@link eventFlags} For direct event flag access
+   */
+  setEventFlags(...flags: AVStreamEventFlag[]): void {
+    this.native.setEventFlags(...flags);
+  }
+
+  /**
+   * Clear stream event flags.
+   *
+   * Clears one or more event flags using bitwise AND NOT. Allows clearing multiple
+   * flags without manually performing bitwise operations.
+   *
+   * @param flags - One or more event flag values to clear
+   *
+   * @example
+   * ```typescript
+   * import { AVSTREAM_EVENT_FLAG_METADATA_UPDATED } from 'node-av/constants';
+   *
+   * // Clear specific event flag
+   * stream.clearEventFlags(AVSTREAM_EVENT_FLAG_METADATA_UPDATED);
+   * ```
+   *
+   * @see {@link setEventFlags} To set event flags
+   * @see {@link eventFlags} For direct event flag access
+   */
+  clearEventFlags(...flags: AVStreamEventFlag[]): void {
+    this.native.clearEventFlags(...flags);
+  }
+
+  /**
    * Get the underlying native Stream object.
    *
    * @returns The native Stream binding object

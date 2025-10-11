@@ -502,6 +502,52 @@ export class Packet implements Disposable, NativeWrapper<NativePacket> {
   }
 
   /**
+   * Set packet flags.
+   *
+   * Sets one or more flags using bitwise OR. Allows setting multiple flags
+   * without manually performing bitwise operations.
+   *
+   * @param flags - One or more flag values to set
+   *
+   * @example
+   * ```typescript
+   * import { AV_PKT_FLAG_KEY, AV_PKT_FLAG_DISCARD } from 'node-av/constants';
+   *
+   * // Set multiple flags at once
+   * packet.setFlags(AV_PKT_FLAG_KEY, AV_PKT_FLAG_DISCARD);
+   * ```
+   *
+   * @see {@link clearFlags} To unset flags
+   * @see {@link flags} For direct flag access
+   */
+  setFlags(...flags: AVPacketFlag[]): void {
+    this.native.setFlags(...flags);
+  }
+
+  /**
+   * Clear packet flags.
+   *
+   * Clears one or more flags using bitwise AND NOT. Allows clearing multiple
+   * flags without manually performing bitwise operations.
+   *
+   * @param flags - One or more flag values to clear
+   *
+   * @example
+   * ```typescript
+   * import { AV_PKT_FLAG_DISCARD } from 'node-av/constants';
+   *
+   * // Clear specific flag
+   * packet.clearFlags(AV_PKT_FLAG_DISCARD);
+   * ```
+   *
+   * @see {@link setFlags} To set flags
+   * @see {@link flags} For direct flag access
+   */
+  clearFlags(...flags: AVPacketFlag[]): void {
+    this.native.clearFlags(...flags);
+  }
+
+  /**
    * Get the underlying native Packet object.
    *
    * @returns The native Packet binding object

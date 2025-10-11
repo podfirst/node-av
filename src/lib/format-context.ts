@@ -1240,6 +1240,52 @@ export class FormatContext extends OptionMember<NativeFormatContext> implements 
   }
 
   /**
+   * Set format flags.
+   *
+   * Sets one or more flags using bitwise OR. Allows setting multiple flags
+   * without manually performing bitwise operations.
+   *
+   * @param flags - One or more flag values to set
+   *
+   * @example
+   * ```typescript
+   * import { AVFMT_FLAG_GENPTS, AVFMT_FLAG_IGNIDX } from 'node-av/constants';
+   *
+   * // Set multiple flags at once
+   * formatContext.setFlags(AVFMT_FLAG_GENPTS, AVFMT_FLAG_IGNIDX);
+   * ```
+   *
+   * @see {@link clearFlags} To unset flags
+   * @see {@link flags} For direct flag access
+   */
+  setFlags(...flags: AVFormatFlag[]): void {
+    this.native.setFlags(...flags);
+  }
+
+  /**
+   * Clear format flags.
+   *
+   * Clears one or more flags using bitwise AND NOT. Allows clearing multiple
+   * flags without manually performing bitwise operations.
+   *
+   * @param flags - One or more flag values to clear
+   *
+   * @example
+   * ```typescript
+   * import { AVFMT_FLAG_IGNIDX } from 'node-av/constants';
+   *
+   * // Clear specific flag
+   * formatContext.clearFlags(AVFMT_FLAG_IGNIDX);
+   * ```
+   *
+   * @see {@link setFlags} To set flags
+   * @see {@link flags} For direct flag access
+   */
+  clearFlags(...flags: AVFormatFlag[]): void {
+    this.native.clearFlags(...flags);
+  }
+
+  /**
    * Get the underlying native FormatContext object.
    *
    * @returns The native FormatContext binding object
