@@ -69,15 +69,17 @@ const parseEnums = (headerPath) => {
   const content = readFileSync(headerPath, 'utf8');
   const enums = {};
 
-  // Find all enum blocks
-  const enumPattern = /enum\s+(\w+)\s*{([^}]+)}/gs;
+  // Find all enum blocks (including typedef enums)
+  // Matches both: enum AVFoo { ... } and typedef enum SwsFlags { ... } SwsFlags;
+  const enumPattern = /(?:typedef\s+)?enum\s+(\w+)\s*{([^}]+)}(?:\s+\w+)?;?/gs;
   let match;
 
   while ((match = enumPattern.exec(content)) !== null) {
     const enumName = match[1];
     const enumContent = match[2];
 
-    if (!enumName.startsWith('AV')) {
+    // Accept enum names starting with AV or Sws (for SwsFlags, SwsDither, etc.)
+    if (!enumName.startsWith('AV') && !enumName.startsWith('Sws')) {
       continue;
     }
 
@@ -94,9 +96,9 @@ const parseEnums = (headerPath) => {
         .trim();
       if (!cleanLine) continue;
 
-      // Match enum values (including AVCOL_*, AVDISCARD_*, AVCHROMA_LOC_*, FF_SUB_CHARENC_MODE_*)
+      // Match enum values (including AVCOL_*, AVDISCARD_*, AVCHROMA_LOC_*, FF_SUB_CHARENC_MODE_*, SWS_*)
       const valueMatch = cleanLine.match(
-        /^\s*(AV_[A-Z0-9_]+|AVMEDIA_[A-Z0-9_]+|AVCOL_[A-Z0-9_]+|AVDISCARD_[A-Z0-9_]+|FF_LEVEL_[A-Z0-9_]+|AVCHROMA_LOC_[A-Z0-9_]+|FF_SUB_CHARENC_MODE_[A-Z0-9_]+)\s*(?:=\s*(.+?))?$/,
+        /^\s*(AV_[A-Z0-9_]+|AVMEDIA_[A-Z0-9_]+|AVCOL_[A-Z0-9_]+|AVDISCARD_[A-Z0-9_]+|FF_LEVEL_[A-Z0-9_]+|AVCHROMA_LOC_[A-Z0-9_]+|FF_SUB_CHARENC_MODE_[A-Z0-9_]+|SWS_[A-Z0-9_]+|SWR_[A-Z0-9_]+)\s*(?:=\s*(.+?))?$/,
       );
       if (valueMatch) {
         let name = valueMatch[1];
@@ -147,86 +149,6 @@ const parseEnums = (headerPath) => {
   return enums;
 };
 
-// Add hardware constants from patches that aren't in the base FFmpeg
-const addPatchedHardwareConstants = (enums, constants) => {
-  // These constants are added by Jellyfin patches
-
-  // 1. Add hardware device types to enum
-  const hwDeviceEnum = enums.get('AVHWDeviceType');
-  if (hwDeviceEnum) {
-    // Check if RKMPP is already there
-    const hasRKMPP = hwDeviceEnum.values.some((v) => v.name === 'AV_HWDEVICE_TYPE_RKMPP');
-    if (!hasRKMPP) {
-      // Add RKMPP after D3D12VA (value 13)
-      hwDeviceEnum.values.push({
-        name: 'AV_HWDEVICE_TYPE_RKMPP',
-        value: 13,
-      });
-    }
-
-    // Check if NB is already there
-    const hasNB = hwDeviceEnum.values.some((v) => v.name === 'AV_HWDEVICE_TYPE_NB');
-    if (!hasNB) {
-      // Add NB as the count (value 14)
-      hwDeviceEnum.values.push({
-        name: 'AV_HWDEVICE_TYPE_NB',
-        value: 14,
-      });
-    }
-  }
-
-  // 2. Add new hardware acceleration flags
-  if (!constants.has('AV_HWACCEL_FLAG_LOW_PRIORITY')) {
-    constants.set('AV_HWACCEL_FLAG_LOW_PRIORITY', {
-      name: 'AV_HWACCEL_FLAG_LOW_PRIORITY',
-      value: '(1 << 4)',
-      source: 'patch:0052-add-vt-low-priority-keyframe-decoding.patch',
-    });
-  }
-
-  // 3. Add HDR metadata constants for QSV
-  if (!constants.has('HAL_HDR_DEFAULT_MAXCLL')) {
-    constants.set('HAL_HDR_DEFAULT_MAXCLL', {
-      name: 'HAL_HDR_DEFAULT_MAXCLL',
-      value: '4000',
-      source: 'patch:qsv-vpp-filters.patch',
-    });
-  }
-
-  if (!constants.has('HAL_HDR_DEFAULT_MAXFALL')) {
-    constants.set('HAL_HDR_DEFAULT_MAXFALL', {
-      name: 'HAL_HDR_DEFAULT_MAXFALL',
-      value: '400',
-      source: 'patch:qsv-vpp-filters.patch',
-    });
-  }
-
-  // 4. Add subtitle/overlay drawing flags
-  if (!constants.has('FF_DRAW_PROCESS_ALPHA')) {
-    constants.set('FF_DRAW_PROCESS_ALPHA', {
-      name: 'FF_DRAW_PROCESS_ALPHA',
-      value: '(1 << 0)',
-      source: 'patch:0024-add-sub2video-option-to-subtitles-filter.patch',
-    });
-  }
-
-  if (!constants.has('FF_DRAW_MASK_SRC_ALPHA_OPAQUE')) {
-    constants.set('FF_DRAW_MASK_SRC_ALPHA_OPAQUE', {
-      name: 'FF_DRAW_MASK_SRC_ALPHA_OPAQUE',
-      value: '(1 << 1)',
-      source: 'patch:0024-add-sub2video-option-to-subtitles-filter.patch',
-    });
-  }
-
-  if (!constants.has('FF_DRAW_MASK_UNPREMUL_RGB32')) {
-    constants.set('FF_DRAW_MASK_UNPREMUL_RGB32', {
-      name: 'FF_DRAW_MASK_UNPREMUL_RGB32',
-      value: '(1 << 2)',
-      source: 'patch:0024-add-sub2video-option-to-subtitles-filter.patch',
-    });
-  }
-};
-
 // Scan all FFmpeg headers
 const scanAllHeaders = () => {
   const libraries = ['libavcodec', 'libavformat', 'libavutil', 'libavfilter', 'libswscale', 'libswresample'];
@@ -261,9 +183,6 @@ const scanAllHeaders = () => {
       }
     }
   }
-
-  // Add hardware constants from patches
-  addPatchedHardwareConstants(allEnums, allConstants);
 
   return { constants: allConstants, enums: allEnums };
 };
