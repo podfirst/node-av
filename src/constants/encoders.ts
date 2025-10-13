@@ -16,7 +16,7 @@ export type FFAudioEncoder = FFEncoderCodec & { readonly __type: 'audio' };
 export type FFSubtitleEncoder = FFEncoderCodec & { readonly __type: 'subtitle' };
 
 // ============================================================================
-// VIDEO ENCODERS (128 software, 42 hardware)
+// VIDEO ENCODERS (134 software, 43 hardware)
 // ============================================================================
 
 // Software video encoders
@@ -28,6 +28,7 @@ export const FF_ENCODER_ANULL = 'anull' as FFVideoEncoder;
 export const FF_ENCODER_APNG = 'apng' as FFVideoEncoder;
 export const FF_ENCODER_ASV1 = 'asv1' as FFVideoEncoder;
 export const FF_ENCODER_ASV2 = 'asv2' as FFVideoEncoder;
+export const FF_ENCODER_AV1_VULKAN = 'av1_vulkan' as FFVideoEncoder;
 export const FF_ENCODER_AVRP = 'avrp' as FFVideoEncoder;
 export const FF_ENCODER_AVUI = 'avui' as FFVideoEncoder;
 export const FF_ENCODER_BITPACKED = 'bitpacked' as FFVideoEncoder;
@@ -41,6 +42,7 @@ export const FF_ENCODER_DVVIDEO = 'dvvideo' as FFVideoEncoder;
 export const FF_ENCODER_DXV = 'dxv' as FFVideoEncoder;
 export const FF_ENCODER_EXR = 'exr' as FFVideoEncoder;
 export const FF_ENCODER_FFV1 = 'ffv1' as FFVideoEncoder;
+export const FF_ENCODER_FFV1_VULKAN = 'ffv1_vulkan' as FFVideoEncoder;
 export const FF_ENCODER_FFVHUFF = 'ffvhuff' as FFVideoEncoder;
 export const FF_ENCODER_FITS = 'fits' as FFVideoEncoder;
 export const FF_ENCODER_FLASHSV = 'flashsv' as FFVideoEncoder;
@@ -50,9 +52,11 @@ export const FF_ENCODER_GIF = 'gif' as FFVideoEncoder;
 export const FF_ENCODER_H261 = 'h261' as FFVideoEncoder;
 export const FF_ENCODER_H263 = 'h263' as FFVideoEncoder;
 export const FF_ENCODER_H263P = 'h263p' as FFVideoEncoder;
+export const FF_ENCODER_H264_OH = 'h264_oh' as FFVideoEncoder;
 export const FF_ENCODER_H264_VULKAN = 'h264_vulkan' as FFVideoEncoder;
 export const FF_ENCODER_HAP = 'hap' as FFVideoEncoder;
 export const FF_ENCODER_HDR = 'hdr' as FFVideoEncoder;
+export const FF_ENCODER_HEVC_OH = 'hevc_oh' as FFVideoEncoder;
 export const FF_ENCODER_HEVC_VULKAN = 'hevc_vulkan' as FFVideoEncoder;
 export const FF_ENCODER_HUFFYUV = 'huffyuv' as FFVideoEncoder;
 export const FF_ENCODER_JPEG2000 = 'jpeg2000' as FFVideoEncoder;
@@ -63,8 +67,10 @@ export const FF_ENCODER_LIBGSM = 'libgsm' as FFVideoEncoder;
 export const FF_ENCODER_LIBGSM_MS = 'libgsm_ms' as FFVideoEncoder;
 export const FF_ENCODER_LIBILBC = 'libilbc' as FFVideoEncoder;
 export const FF_ENCODER_LIBJXL = 'libjxl' as FFVideoEncoder;
+export const FF_ENCODER_LIBJXL_ANIM = 'libjxl_anim' as FFVideoEncoder;
 export const FF_ENCODER_LIBKVAZAAR = 'libkvazaar' as FFVideoEncoder;
 export const FF_ENCODER_LIBLC3 = 'liblc3' as FFVideoEncoder;
+export const FF_ENCODER_LIBOAPV = 'liboapv' as FFVideoEncoder;
 export const FF_ENCODER_LIBOPENCORE_AMRNB = 'libopencore_amrnb' as FFVideoEncoder;
 export const FF_ENCODER_LIBOPENH264 = 'libopenh264' as FFVideoEncoder;
 export const FF_ENCODER_LIBOPENJPEG = 'libopenjpeg' as FFVideoEncoder;
@@ -164,6 +170,11 @@ export const FF_ENCODER_MPEG4_MEDIACODEC = 'mpeg4_mediacodec' as FFVideoEncoder;
 export const FF_ENCODER_VP8_MEDIACODEC = 'vp8_mediacodec' as FFVideoEncoder;
 export const FF_ENCODER_VP9_MEDIACODEC = 'vp9_mediacodec' as FFVideoEncoder;
 
+// Media Foundation
+export const FF_ENCODER_AV1_MF = 'av1_mf' as FFVideoEncoder;
+export const FF_ENCODER_H264_MF = 'h264_mf' as FFVideoEncoder;
+export const FF_ENCODER_HEVC_MF = 'hevc_mf' as FFVideoEncoder;
+
 // NVIDIA NVENC
 export const FF_ENCODER_AV1_NVENC = 'av1_nvenc' as FFVideoEncoder;
 export const FF_ENCODER_H264_NVENC = 'h264_nvenc' as FFVideoEncoder;
@@ -192,10 +203,6 @@ export const FF_ENCODER_H264_V4L2M2M = 'h264_v4l2m2m' as FFVideoEncoder;
 export const FF_ENCODER_HEVC_V4L2M2M = 'hevc_v4l2m2m' as FFVideoEncoder;
 export const FF_ENCODER_MPEG4_V4L2M2M = 'mpeg4_v4l2m2m' as FFVideoEncoder;
 export const FF_ENCODER_VP8_V4L2M2M = 'vp8_v4l2m2m' as FFVideoEncoder;
-
-// Media Foundation
-export const FF_ENCODER_H264_MF = 'h264_mf' as FFVideoEncoder;
-export const FF_ENCODER_HEVC_MF = 'hevc_mf' as FFVideoEncoder;
 
 // OpenMAX
 export const FF_ENCODER_H264_OMX = 'h264_omx' as FFVideoEncoder;

@@ -16,13 +16,14 @@ export type FFAudioDecoder = FFDecoderCodec & { readonly __type: 'audio' };
 export type FFSubtitleDecoder = FFDecoderCodec & { readonly __type: 'subtitle' };
 
 // ============================================================================
-// VIDEO DECODERS (341 software, 49 hardware)
+// VIDEO DECODERS (353 software, 49 hardware)
 // ============================================================================
 
 // Software video decoders
 export const FF_DECODER_AASC = 'aasc' as FFVideoDecoder;
 export const FF_DECODER_ACELP_KELVIN = 'acelp_kelvin' as FFVideoDecoder;
 export const FF_DECODER_AGM = 'agm' as FFVideoDecoder;
+export const FF_DECODER_AHX = 'ahx' as FFVideoDecoder;
 export const FF_DECODER_AIC = 'aic' as FFVideoDecoder;
 export const FF_DECODER_ALIAS_PIX = 'alias_pix' as FFVideoDecoder;
 export const FF_DECODER_ALS = 'als' as FFVideoDecoder;
@@ -33,6 +34,7 @@ export const FF_DECODER_ANULL = 'anull' as FFVideoDecoder;
 export const FF_DECODER_APAC = 'apac' as FFVideoDecoder;
 export const FF_DECODER_APE = 'ape' as FFVideoDecoder;
 export const FF_DECODER_APNG = 'apng' as FFVideoDecoder;
+export const FF_DECODER_APV = 'apv' as FFVideoDecoder;
 export const FF_DECODER_ARBC = 'arbc' as FFVideoDecoder;
 export const FF_DECODER_ARGO = 'argo' as FFVideoDecoder;
 export const FF_DECODER_ASV1 = 'asv1' as FFVideoDecoder;
@@ -40,6 +42,7 @@ export const FF_DECODER_ASV2 = 'asv2' as FFVideoDecoder;
 export const FF_DECODER_AURA = 'aura' as FFVideoDecoder;
 export const FF_DECODER_AURA2 = 'aura2' as FFVideoDecoder;
 export const FF_DECODER_AV1 = 'av1' as FFVideoDecoder;
+export const FF_DECODER_AV1_AMF = 'av1_amf' as FFVideoDecoder;
 export const FF_DECODER_AVRN = 'avrn' as FFVideoDecoder;
 export const FF_DECODER_AVRP = 'avrp' as FFVideoDecoder;
 export const FF_DECODER_AVS = 'avs' as FFVideoDecoder;
@@ -128,11 +131,15 @@ export const FF_DECODER_H263 = 'h263' as FFVideoDecoder;
 export const FF_DECODER_H263I = 'h263i' as FFVideoDecoder;
 export const FF_DECODER_H263P = 'h263p' as FFVideoDecoder;
 export const FF_DECODER_H264 = 'h264' as FFVideoDecoder;
+export const FF_DECODER_H264_AMF = 'h264_amf' as FFVideoDecoder;
+export const FF_DECODER_H264_OH = 'h264_oh' as FFVideoDecoder;
 export const FF_DECODER_HAP = 'hap' as FFVideoDecoder;
 export const FF_DECODER_HCA = 'hca' as FFVideoDecoder;
 export const FF_DECODER_HCOM = 'hcom' as FFVideoDecoder;
 export const FF_DECODER_HDR = 'hdr' as FFVideoDecoder;
 export const FF_DECODER_HEVC = 'hevc' as FFVideoDecoder;
+export const FF_DECODER_HEVC_AMF = 'hevc_amf' as FFVideoDecoder;
+export const FF_DECODER_HEVC_OH = 'hevc_oh' as FFVideoDecoder;
 export const FF_DECODER_HNM4_VIDEO = 'hnm4_video' as FFVideoDecoder;
 export const FF_DECODER_HQ_HQA = 'hq_hqa' as FFVideoDecoder;
 export const FF_DECODER_HQX = 'hqx' as FFVideoDecoder;
@@ -170,7 +177,9 @@ export const FF_DECODER_LIBGSM = 'libgsm' as FFVideoDecoder;
 export const FF_DECODER_LIBGSM_MS = 'libgsm_ms' as FFVideoDecoder;
 export const FF_DECODER_LIBILBC = 'libilbc' as FFVideoDecoder;
 export const FF_DECODER_LIBJXL = 'libjxl' as FFVideoDecoder;
+export const FF_DECODER_LIBJXL_ANIM = 'libjxl_anim' as FFVideoDecoder;
 export const FF_DECODER_LIBLC3 = 'liblc3' as FFVideoDecoder;
+export const FF_DECODER_LIBMPEGHDEC = 'libmpeghdec' as FFVideoDecoder;
 export const FF_DECODER_LIBOPENCORE_AMRNB = 'libopencore_amrnb' as FFVideoDecoder;
 export const FF_DECODER_LIBOPENCORE_AMRWB = 'libopencore_amrwb' as FFVideoDecoder;
 export const FF_DECODER_LIBOPENH264 = 'libopenh264' as FFVideoDecoder;
@@ -241,6 +250,7 @@ export const FF_DECODER_PIXLET = 'pixlet' as FFVideoDecoder;
 export const FF_DECODER_PNG = 'png' as FFVideoDecoder;
 export const FF_DECODER_PPM = 'ppm' as FFVideoDecoder;
 export const FF_DECODER_PRORES = 'prores' as FFVideoDecoder;
+export const FF_DECODER_PRORES_RAW = 'prores_raw' as FFVideoDecoder;
 export const FF_DECODER_PROSUMER = 'prosumer' as FFVideoDecoder;
 export const FF_DECODER_PSD = 'psd' as FFVideoDecoder;
 export const FF_DECODER_PTX = 'ptx' as FFVideoDecoder;
@@ -266,6 +276,7 @@ export const FF_DECODER_RV10 = 'rv10' as FFVideoDecoder;
 export const FF_DECODER_RV20 = 'rv20' as FFVideoDecoder;
 export const FF_DECODER_RV30 = 'rv30' as FFVideoDecoder;
 export const FF_DECODER_RV40 = 'rv40' as FFVideoDecoder;
+export const FF_DECODER_RV60 = 'rv60' as FFVideoDecoder;
 export const FF_DECODER_SANM = 'sanm' as FFVideoDecoder;
 export const FF_DECODER_SCPR = 'scpr' as FFVideoDecoder;
 export const FF_DECODER_SCREENPRESSO = 'screenpresso' as FFVideoDecoder;
@@ -330,6 +341,7 @@ export const FF_DECODER_VP6F = 'vp6f' as FFVideoDecoder;
 export const FF_DECODER_VP7 = 'vp7' as FFVideoDecoder;
 export const FF_DECODER_VP8 = 'vp8' as FFVideoDecoder;
 export const FF_DECODER_VP9 = 'vp9' as FFVideoDecoder;
+export const FF_DECODER_VP9_AMF = 'vp9_amf' as FFVideoDecoder;
 export const FF_DECODER_VQA = 'vqa' as FFVideoDecoder;
 export const FF_DECODER_VQC = 'vqc' as FFVideoDecoder;
 export const FF_DECODER_VVC = 'vvc' as FFVideoDecoder;
@@ -426,7 +438,7 @@ export const FF_DECODER_MPEG4_MMAL = 'mpeg4_mmal' as FFVideoDecoder;
 export const FF_DECODER_VC1_MMAL = 'vc1_mmal' as FFVideoDecoder;
 
 // ============================================================================
-// AUDIO DECODERS (163 software, 19 hardware)
+// AUDIO DECODERS (174 software, 19 hardware)
 // ============================================================================
 
 // Software audio decoders
@@ -442,6 +454,7 @@ export const FF_DECODER_ADPCM_AFC = 'adpcm_afc' as FFAudioDecoder;
 export const FF_DECODER_ADPCM_AGM = 'adpcm_agm' as FFAudioDecoder;
 export const FF_DECODER_ADPCM_AICA = 'adpcm_aica' as FFAudioDecoder;
 export const FF_DECODER_ADPCM_ARGO = 'adpcm_argo' as FFAudioDecoder;
+export const FF_DECODER_ADPCM_CIRCUS = 'adpcm_circus' as FFAudioDecoder;
 export const FF_DECODER_ADPCM_CT = 'adpcm_ct' as FFAudioDecoder;
 export const FF_DECODER_ADPCM_DTK = 'adpcm_dtk' as FFAudioDecoder;
 export const FF_DECODER_ADPCM_EA = 'adpcm_ea' as FFAudioDecoder;
@@ -464,19 +477,28 @@ export const FF_DECODER_ADPCM_IMA_DK3 = 'adpcm_ima_dk3' as FFAudioDecoder;
 export const FF_DECODER_ADPCM_IMA_DK4 = 'adpcm_ima_dk4' as FFAudioDecoder;
 export const FF_DECODER_ADPCM_IMA_EA_EACS = 'adpcm_ima_ea_eacs' as FFAudioDecoder;
 export const FF_DECODER_ADPCM_IMA_EA_SEAD = 'adpcm_ima_ea_sead' as FFAudioDecoder;
+export const FF_DECODER_ADPCM_IMA_ESCAPE = 'adpcm_ima_escape' as FFAudioDecoder;
+export const FF_DECODER_ADPCM_IMA_HVQM2 = 'adpcm_ima_hvqm2' as FFAudioDecoder;
+export const FF_DECODER_ADPCM_IMA_HVQM4 = 'adpcm_ima_hvqm4' as FFAudioDecoder;
 export const FF_DECODER_ADPCM_IMA_ISS = 'adpcm_ima_iss' as FFAudioDecoder;
+export const FF_DECODER_ADPCM_IMA_MAGIX = 'adpcm_ima_magix' as FFAudioDecoder;
 export const FF_DECODER_ADPCM_IMA_MOFLEX = 'adpcm_ima_moflex' as FFAudioDecoder;
 export const FF_DECODER_ADPCM_IMA_MTF = 'adpcm_ima_mtf' as FFAudioDecoder;
 export const FF_DECODER_ADPCM_IMA_OKI = 'adpcm_ima_oki' as FFAudioDecoder;
+export const FF_DECODER_ADPCM_IMA_PDA = 'adpcm_ima_pda' as FFAudioDecoder;
 export const FF_DECODER_ADPCM_IMA_QT = 'adpcm_ima_qt' as FFAudioDecoder;
 export const FF_DECODER_ADPCM_IMA_RAD = 'adpcm_ima_rad' as FFAudioDecoder;
 export const FF_DECODER_ADPCM_IMA_SMJPEG = 'adpcm_ima_smjpeg' as FFAudioDecoder;
 export const FF_DECODER_ADPCM_IMA_SSI = 'adpcm_ima_ssi' as FFAudioDecoder;
 export const FF_DECODER_ADPCM_IMA_WAV = 'adpcm_ima_wav' as FFAudioDecoder;
 export const FF_DECODER_ADPCM_IMA_WS = 'adpcm_ima_ws' as FFAudioDecoder;
+export const FF_DECODER_ADPCM_IMA_XBOX = 'adpcm_ima_xbox' as FFAudioDecoder;
 export const FF_DECODER_ADPCM_MS = 'adpcm_ms' as FFAudioDecoder;
 export const FF_DECODER_ADPCM_MTAF = 'adpcm_mtaf' as FFAudioDecoder;
+export const FF_DECODER_ADPCM_N64 = 'adpcm_n64' as FFAudioDecoder;
 export const FF_DECODER_ADPCM_PSX = 'adpcm_psx' as FFAudioDecoder;
+export const FF_DECODER_ADPCM_PSXC = 'adpcm_psxc' as FFAudioDecoder;
+export const FF_DECODER_ADPCM_SANYO = 'adpcm_sanyo' as FFAudioDecoder;
 export const FF_DECODER_ADPCM_SBPRO_2 = 'adpcm_sbpro_2' as FFAudioDecoder;
 export const FF_DECODER_ADPCM_SBPRO_3 = 'adpcm_sbpro_3' as FFAudioDecoder;
 export const FF_DECODER_ADPCM_SBPRO_4 = 'adpcm_sbpro_4' as FFAudioDecoder;
@@ -507,6 +529,7 @@ export const FF_DECODER_DOLBY_E = 'dolby_e' as FFAudioDecoder;
 export const FF_DECODER_EAC3 = 'eac3' as FFAudioDecoder;
 export const FF_DECODER_FLAC = 'flac' as FFAudioDecoder;
 export const FF_DECODER_G723_1 = 'g723_1' as FFAudioDecoder;
+export const FF_DECODER_G728 = 'g728' as FFAudioDecoder;
 export const FF_DECODER_G729 = 'g729' as FFAudioDecoder;
 export const FF_DECODER_GSM = 'gsm' as FFAudioDecoder;
 export const FF_DECODER_GSM_MS = 'gsm_ms' as FFAudioDecoder;
