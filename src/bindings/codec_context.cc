@@ -368,7 +368,7 @@ void CodecContext::SetExtraData(const Napi::CallbackInfo& info, const Napi::Valu
 Napi::Value CodecContext::GetProfile(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
   if (!context_) {
-    return Napi::Number::New(env, FF_PROFILE_UNKNOWN);
+    return Napi::Number::New(env, AV_PROFILE_UNKNOWN);
   }
   return Napi::Number::New(env, context_->profile);
 }
@@ -382,7 +382,7 @@ void CodecContext::SetProfile(const Napi::CallbackInfo& info, const Napi::Value&
 Napi::Value CodecContext::GetLevel(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
   if (!context_) {
-    return Napi::Number::New(env, FF_LEVEL_UNKNOWN);
+    return Napi::Number::New(env, AV_LEVEL_UNKNOWN);
   }
   return Napi::Number::New(env, context_->level);
 }

@@ -91,8 +91,6 @@ private:
 
   Napi::Value GetNbOutputs(const Napi::CallbackInfo& info);
 
-  Napi::Value GetReady(const Napi::CallbackInfo& info);
-
   Napi::Value GetHwDeviceCtx(const Napi::CallbackInfo& info);
   void SetHwDeviceCtx(const Napi::CallbackInfo& info, const Napi::Value& value);
 };

@@ -375,7 +375,7 @@ void CodecParameters::SetBitRate(const Napi::CallbackInfo& info, const Napi::Val
 Napi::Value CodecParameters::GetProfile(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
   if (!params_) {
-    return Napi::Number::New(env, FF_PROFILE_UNKNOWN);
+    return Napi::Number::New(env, AV_PROFILE_UNKNOWN);
   }
   return Napi::Number::New(env, params_->profile);
 }
@@ -389,7 +389,7 @@ void CodecParameters::SetProfile(const Napi::CallbackInfo& info, const Napi::Val
 Napi::Value CodecParameters::GetLevel(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
   if (!params_) {
-    return Napi::Number::New(env, FF_LEVEL_UNKNOWN);
+    return Napi::Number::New(env, AV_LEVEL_UNKNOWN);
   }
   return Napi::Number::New(env, params_->level);
 }

@@ -260,7 +260,7 @@ Napi::Value Codec::GetProfiles(const Napi::CallbackInfo& info) {
   uint32_t index = 0;
   
   const AVProfile* profile = codec_->profiles;
-  while (profile && profile->profile != FF_PROFILE_UNKNOWN) {
+  while (profile && profile->profile != AV_PROFILE_UNKNOWN) {
     Napi::Object prof = Napi::Object::New(env);
     prof.Set("profile", Napi::Number::New(env, profile->profile));
     if (profile->name) {

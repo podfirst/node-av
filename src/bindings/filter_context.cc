@@ -48,7 +48,6 @@ Napi::Object FilterContext::Init(Napi::Env env, Napi::Object exports) {
     InstanceAccessor<&FilterContext::GetGraph>("graph"),
     InstanceAccessor<&FilterContext::GetNbInputs>("nbInputs"),
     InstanceAccessor<&FilterContext::GetNbOutputs>("nbOutputs"),
-    InstanceAccessor<&FilterContext::GetReady>("ready"),
     InstanceAccessor<&FilterContext::GetHwDeviceCtx, &FilterContext::SetHwDeviceCtx>("hwDeviceCtx"),
   });
   
@@ -530,15 +529,6 @@ Napi::Value FilterContext::GetNbOutputs(const Napi::CallbackInfo& info) {
     return Napi::Number::New(env, 0);
   }
   return Napi::Number::New(env, ctx->nb_outputs);
-}
-
-Napi::Value FilterContext::GetReady(const Napi::CallbackInfo& info) {
-  Napi::Env env = info.Env();
-  AVFilterContext* ctx = Get();
-  if (!ctx) {
-    return Napi::Number::New(env, 0);
-  }
-  return Napi::Number::New(env, ctx->ready);
 }
 
 Napi::Value FilterContext::GetHwDeviceCtx(const Napi::CallbackInfo& info) {
