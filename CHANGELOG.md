@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+#### FFmpeg Upgrade
+- Updated FFmpeg from 7.1.2 to **8.0.0** with latest features and improvements
+
 ## [2.7.1] - 2025-10-07
 
 ### Added
