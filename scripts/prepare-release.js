@@ -44,16 +44,6 @@ console.log(`Bumping version from ${currentVersion} to ${newVersion}`);
 // Update main package version
 packageJson.version = newVersion;
 
-// Sync FFmpeg version from externals/jellyfin-ffmpeg/FFMPEG_VERSION
-const ffmpegVersionPath = join(rootDir, 'externals', 'jellyfin-ffmpeg', 'FFMPEG_VERSION');
-if (existsSync(ffmpegVersionPath)) {
-  const ffmpegVersion = readFileSync(ffmpegVersionPath, 'utf8').trim();
-  packageJson.ffmpegVersion = ffmpegVersion;
-  console.log(`Synced FFmpeg version: ${ffmpegVersion}`);
-} else {
-  console.warn('Warning: Could not find externals/jellyfin-ffmpeg/FFMPEG_VERSION');
-}
-
 // Update optionalDependencies to match main package version with caret range
 const optionalDeps = packageJson.optionalDependencies;
 for (const dep in optionalDeps) {
@@ -91,6 +81,7 @@ if (existsSync(changelogPath)) {
 
 // Stage the changes
 execSync('git add package.json', { cwd: rootDir });
+execSync('git add src/ffmpeg/version.ts', { cwd: rootDir });
 
 // Regenerate package-lock.json
 execSync('npm i --package-lock-only --ignore-scripts', { cwd: rootDir });
