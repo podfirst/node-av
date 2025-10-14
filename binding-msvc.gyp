@@ -145,6 +145,8 @@
                 "ws2_32.lib",
                 "secur32.lib",
                 "bcrypt.lib",
+                "ncrypt.lib",
+                "crypt32.lib",
                 "strmiids.lib",
                 "mfuuid.lib",
                 "psapi.lib",
