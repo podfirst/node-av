@@ -23,7 +23,6 @@ import type {
   AVPixelFormat,
   AVSeekFlag,
   AVSeekWhence,
-  SWSFlag,
 } from '../constants/constants.js';
 import type {
   AVChromaLocation,
@@ -44,6 +43,7 @@ import type {
   AVProfile,
   AVSampleFormat,
   AVStreamEventFlag,
+  SwsFlags,
 } from '../constants/index.js';
 import type { ChannelLayout, CodecProfile, FilterPad, ImageOptions, IRational } from './types.js';
 
@@ -587,7 +587,7 @@ export interface NativeSoftwareScaleContext extends Disposable {
   readonly __brand: 'NativeSoftwareScaleContext';
 
   allocContext(): void;
-  getContext(srcW: number, srcH: number, srcFormat: AVPixelFormat, dstW: number, dstH: number, dstFormat: AVPixelFormat, flags: SWSFlag): void;
+  getContext(srcW: number, srcH: number, srcFormat: AVPixelFormat, dstW: number, dstH: number, dstFormat: AVPixelFormat, flags: SwsFlags): void;
   initContext(): number;
   freeContext(): void;
   scale(srcSlice: Buffer[], srcStride: number[], srcSliceY: number, srcSliceH: number, dst: Buffer[], dstStride: number[]): Promise<number>;
@@ -685,7 +685,6 @@ export interface NativeFilterContext extends Disposable {
   readonly graph: NativeFilterGraph | null;
   readonly nbInputs: number;
   readonly nbOutputs: number;
-  readonly ready: number;
   name: string | null;
   hwDeviceCtx: NativeHardwareDeviceContext | null;
   extraHWFrames: number;

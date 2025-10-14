@@ -119,18 +119,6 @@ export class FilterContext extends OptionMember<NativeFilterContext> implements 
   }
 
   /**
-   * Filter readiness state.
-   *
-   * Indicates if the filter is ready for processing.
-   * Non-zero when ready.
-   *
-   * Direct mapping to AVFilterContext->ready.
-   */
-  get ready(): number {
-    return this.native.ready;
-  }
-
-  /**
    * Hardware device context.
    *
    * Hardware acceleration context for GPU-based filtering.
@@ -776,24 +764,6 @@ export class FilterContext extends OptionMember<NativeFilterContext> implements 
    */
   isSink(): boolean {
     return this.nbOutputs === 0;
-  }
-
-  /**
-   * Check if filter is ready.
-   *
-   * Indicates whether the filter is ready for processing.
-   *
-   * @returns True if filter is ready
-   *
-   * @example
-   * ```typescript
-   * if (context.isReady()) {
-   *   // Filter is ready for processing
-   * }
-   * ```
-   */
-  isReady(): boolean {
-    return this.ready !== 0;
   }
 
   /**
