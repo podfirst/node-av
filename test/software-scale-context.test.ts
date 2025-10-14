@@ -21,7 +21,7 @@ import {
   SWS_SPLINE,
 } from '../src/index.js';
 
-import type { SWSFlag } from '../src/index.js';
+import type { SwsFlags } from '../src/index.js';
 
 describe('SoftwareScaleContext', () => {
   describe('Creation and Lifecycle', () => {
@@ -600,7 +600,7 @@ describe('SoftwareScaleContext', () => {
       const sws = new SoftwareScaleContext();
 
       // High quality algorithm for offline processing
-      sws.getContext(1920, 1080, AV_PIX_FMT_YUV420P, 3840, 2160, AV_PIX_FMT_YUV420P, (SWS_LANCZOS | SWS_ACCURATE_RND) as SWSFlag);
+      sws.getContext(1920, 1080, AV_PIX_FMT_YUV420P, 3840, 2160, AV_PIX_FMT_YUV420P, (SWS_LANCZOS | SWS_ACCURATE_RND) as SwsFlags);
 
       assert.ok(sws, 'Should configure for high-quality scaling');
       sws.freeContext();

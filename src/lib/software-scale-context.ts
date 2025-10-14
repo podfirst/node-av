@@ -2,7 +2,7 @@ import { SWS_BILINEAR } from '../constants/constants.js';
 import { bindings } from './binding.js';
 import { OptionMember } from './option.js';
 
-import type { AVPixelFormat, SWSFlag } from '../constants/constants.js';
+import type { AVPixelFormat, SwsFlags } from '../constants/constants.js';
 import type { Frame } from './frame.js';
 import type { NativeSoftwareScaleContext, NativeWrapper } from './native-types.js';
 
@@ -121,7 +121,7 @@ export class SoftwareScaleContext extends OptionMember<NativeSoftwareScaleContex
    *
    * @see {@link initContext} Must be called after configuration
    */
-  getContext(srcW: number, srcH: number, srcFormat: AVPixelFormat, dstW: number, dstH: number, dstFormat: AVPixelFormat, flags: SWSFlag = SWS_BILINEAR): void {
+  getContext(srcW: number, srcH: number, srcFormat: AVPixelFormat, dstW: number, dstH: number, dstFormat: AVPixelFormat, flags: SwsFlags = SWS_BILINEAR): void {
     this.native.getContext(srcW, srcH, srcFormat, dstW, dstH, dstFormat, flags);
   }
 
