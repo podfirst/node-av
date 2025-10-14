@@ -7,10 +7,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- ⚠️ **Version 3.x is NOT compatible with version 2.x** due to FFmpeg major version upgrade
+  - Native bindings rebuilt against FFmpeg 8.0.0 (was 7.1.2 in v2.x)
+
 ### Changed
 
-#### FFmpeg Upgrade
-- Updated FFmpeg from 7.1.2 to **8.0.0** with latest features and improvements
+- Updated FFmpeg from 7.1.2 to **8.0.0**
+
+### Removed
+
+- Deprecated FFmpeg 7.x APIs and constants that were removed in FFmpeg 8.0
+
+### FFmpeg 8.0 Changelog
+
+version `<next>`:
+- ffprobe -codec option
+- EXIF Metadata Parsing
+- gfxcapture: Windows.Graphics.Capture based window/monitor capture
+- hxvs demuxer for HXVS/HXVT IP camera format
+- MPEG-H 3D Audio decoding via mpeghdec
+
+
+version 8.0:
+- Whisper filter
+- Drop support for OpenSSL < 1.1.0
+- Enable TLS peer certificate verification by default (on next major version bump)
+- Drop support for OpenSSL < 1.1.1
+- yasm support dropped, users need to use nasm
+- VVC VAAPI decoder
+- RealVideo 6.0 decoder
+- OpenMAX encoders deprecated
+- libx265 alpha layer encoding
+- ADPCM IMA Xbox decoder
+- Enhanced FLV v2: Multitrack audio/video, modern codec support
+- Animated JPEG XL encoding (via libjxl)
+- VVC in Matroska
+- CENC AV1 support in MP4 muxer
+- pngenc: set default prediction method to PAETH
+- APV decoder and APV raw bitstream muxing and demuxing
+- APV parser
+- APV encoding support through a libopenapv wrapper
+- VVC decoder supports all content of SCC (Screen Content Coding):
+  IBC (Inter Block Copy), Palette Mode and ACT (Adaptive Color Transform
+- G.728 decoder
+- pad_cuda filter
+- Sanyo LD-ADPCM decoder
+- APV in MP4/ISOBMFF muxing and demuxing
+- OpenHarmony hardware decoder/encoder
+- Colordetect filter
+- Add vf_scale_d3d11 filter
+- No longer disabling GCC autovectorization, on X86, ARM and AArch64
+- VP9 Vulkan hwaccel
+- AV1 Vulkan encoder
+- ProRes RAW decoder
+- ProRes RAW Vulkan hwaccel
+- ffprobe -codec option
+- HDR10+ metadata passthrough when decoding/encoding with libaom-av1
+
+### Note
+
+- The Whisper filter from FFmpeg 8.0 is not yet available in this release and will be implemented in a future update
 
 ## [2.7.1] - 2025-10-07
 
