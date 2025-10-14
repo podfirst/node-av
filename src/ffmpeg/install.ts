@@ -26,8 +26,8 @@ const __dirname = dirname(__filename);
 const __require = createRequire(import.meta.url);
 
 const releasesUrl = 'https://api.github.com/repos/seydx/node-av/releases';
-const ffmpegVersion = 'v7.1.2';
 const pJson = __require('../../package.json');
+const ffmpegVersion = `v${pJson.ffmpegVersion}`;
 
 const binaries: FFMPEG_BINARIES = {
   darwin: {

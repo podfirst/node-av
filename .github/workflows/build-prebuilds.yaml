@@ -8,7 +8,6 @@ env:
   CACHE_VERSION_WINDOWS: "v14"
   CACHE_VERSION_LINUX: "v27"
   CACHE_VERSION_MACOS: "v12"
-  FFMPEG_VERSION: "8.0.0"
   # JELLYFIN_FFMPEG_HASH: "21198ee5630df2b0dabe4bb416e6c9c4a32522ed"
   UPLOAD_CACHES: false
 
@@ -86,6 +85,14 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: "24"
+
+      - name: Read FFmpeg version
+        id: ffmpeg-version
+        shell: bash
+        run: |
+          FFMPEG_VERSION=$(cat externals/jellyfin-ffmpeg/FFMPEG_VERSION)
+          echo "version=$FFMPEG_VERSION" >> $GITHUB_OUTPUT
+          echo "FFmpeg version: $FFMPEG_VERSION"
 
       - name: Get Jellyfin FFmpeg commit hash
         id: ffmpeg-hash
@@ -318,7 +325,7 @@ jobs:
       - name: Upload FFmpeg binary
         uses: actions/upload-artifact@v4
         with:
-          name: ffmpeg-v${{ env.FFMPEG_VERSION }}-win-${{ matrix.os.arch }}-jellyfin.zip
+          name: ffmpeg-v${{ steps.ffmpeg-version.outputs.version }}-win-${{ matrix.os.arch }}-jellyfin.zip
           path: ffmpeg-binary-win-${{ matrix.os.arch }}-jellyfin/
 
   build_windows_msvc:
@@ -341,6 +348,14 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: "24"
+
+      - name: Read FFmpeg version
+        id: ffmpeg-version
+        shell: bash
+        run: |
+          FFMPEG_VERSION=$(cat externals/jellyfin-ffmpeg/FFMPEG_VERSION)
+          echo "version=$FFMPEG_VERSION" >> $GITHUB_OUTPUT
+          echo "FFmpeg version: $FFMPEG_VERSION"
 
       - name: Prepare directories
         shell: bash
@@ -434,7 +449,7 @@ jobs:
       - name: Upload FFmpeg binary
         uses: actions/upload-artifact@v4
         with:
-          name: ffmpeg-v${{ env.FFMPEG_VERSION }}-win-${{ matrix.os.arch }}.zip
+          name: ffmpeg-v${{ steps.ffmpeg-version.outputs.version }}-win-${{ matrix.os.arch }}.zip
           path: ffmpeg-binary-win-${{ matrix.os.arch }}/
 
   build_linux:
@@ -458,6 +473,13 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: "24"
+
+      - name: Read FFmpeg version
+        id: ffmpeg-version
+        run: |
+          FFMPEG_VERSION=$(cat externals/jellyfin-ffmpeg/FFMPEG_VERSION)
+          echo "version=$FFMPEG_VERSION" >> $GITHUB_OUTPUT
+          echo "FFmpeg version: $FFMPEG_VERSION"
 
       - name: Get Jellyfin FFmpeg commit hash
         id: ffmpeg-hash
@@ -667,7 +689,7 @@ jobs:
       - name: Upload FFmpeg binary
         uses: actions/upload-artifact@v4
         with:
-          name: ffmpeg-v${{ env.FFMPEG_VERSION }}-linux-${{ matrix.arch }}-jellyfin.zip
+          name: ffmpeg-v${{ steps.ffmpeg-version.outputs.version }}-linux-${{ matrix.arch }}-jellyfin.zip
           path: ffmpeg-binary-linux-${{ matrix.arch }}-jellyfin/
 
   build_macos:
@@ -688,6 +710,13 @@ jobs:
 
       - name: Set up Homebrew
         uses: Homebrew/actions/setup-homebrew@master
+
+      - name: Read FFmpeg version
+        id: ffmpeg-version
+        run: |
+          FFMPEG_VERSION=$(cat externals/jellyfin-ffmpeg/FFMPEG_VERSION)
+          echo "version=$FFMPEG_VERSION" >> $GITHUB_OUTPUT
+          echo "FFmpeg version: $FFMPEG_VERSION"
 
       - name: Get Jellyfin FFmpeg commit hash
         id: ffmpeg-hash
@@ -833,5 +862,5 @@ jobs:
       - name: Upload FFmpeg binary
         uses: actions/upload-artifact@v4
         with:
-          name: ffmpeg-v${{ env.FFMPEG_VERSION }}-macos-${{ matrix.arch }}-jellyfin.zip
+          name: ffmpeg-v${{ steps.ffmpeg-version.outputs.version }}-macos-${{ matrix.arch }}-jellyfin.zip
           path: ffmpeg-binary-macos-${{ matrix.arch }}-jellyfin/
