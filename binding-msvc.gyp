@@ -134,11 +134,8 @@
                 "glslang.lib",
                 "MachineIndependent.lib",
                 "GenericCodeGen.lib",
-                "SPVRemapper.lib",
                 "SPIRV.lib",
                 "OSDependent.lib",
-                "HLSL.lib",
-                "OGLCompiler.lib",
                 "SPIRV-Tools-opt.lib",
                 "SPIRV-Tools.lib",
                 # Windows system libraries
