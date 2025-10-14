@@ -85,13 +85,13 @@
             },
             "libraries": [
                 # FFmpeg core libraries
-                "libavformat.a",
-                "libavcodec.a",
-                "libavfilter.a",
-                "libavdevice.a",
-                "libavutil.a",
-                "libswscale.a",
-                "libswresample.a",
+                "avformat.a",
+                "avcodec.a",
+                "avfilter.a",
+                "avdevice.a",
+                "avutil.a",
+                "swscale.a",
+                "swresample.a",
                 # Codec libraries (from ffmpeg-msvc build)
                 "libx264.lib",
                 "x265-static.lib",
