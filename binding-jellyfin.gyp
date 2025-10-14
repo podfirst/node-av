@@ -356,6 +356,8 @@
                             "-lws2_32",
                             "-lsecur32",
                             "-lbcrypt",
+                            "-lncrypt",
+                            "-lcrypt32",
                             "-lstrmiids",
                             "-lmfuuid",
                             "-lpsapi",
