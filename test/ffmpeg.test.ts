@@ -171,28 +171,49 @@ describe('FFmpeg Binary Access', () => {
 
       console.log(`FFmpeg version output: ${output}`);
 
-      // Check for FFmpeg version - supports both semantic versioning (7.1.2) and specific git hash (f893221)
-      const semanticVersionMatch = /ffmpeg version (\d+)\.(\d+)\.(\d+)/i.exec(output);
-      const expectedGitHash = 'f893221'; // https://github.com/FFmpeg/FFmpeg/releases/tag/n7.1.2
-      const hasExpectedGitVersion = output.includes(`ffmpeg version ${expectedGitHash}`);
+      // Extract version string (supports semantic, git-based, and Jellyfin versions)
+      const versionMatch = /ffmpeg version ([^\s]+)/i.exec(output);
 
-      if (semanticVersionMatch) {
-        const majorVersion = parseInt(semanticVersionMatch[1]);
-        const minorVersion = parseInt(semanticVersionMatch[2]);
-        const patchVersion = parseInt(semanticVersionMatch[3]);
+      if (!versionMatch) {
+        assert.fail('Could not parse FFmpeg version from output');
+      }
 
-        console.log(`Found FFmpeg semantic version: ${majorVersion}.${minorVersion}.${patchVersion}`);
+      const versionString = versionMatch[1];
+      console.log(`Found FFmpeg version: ${versionString}`);
 
-        // Should be FFmpeg 7.x (compatible with library)
-        assert.strictEqual(majorVersion, 7, 'Should be FFmpeg version 7.x');
-        assert.ok(minorVersion >= 1, 'Should be at least version 7.1.x');
-      } else if (hasExpectedGitVersion) {
-        console.log(`Found FFmpeg git version: ${expectedGitHash}`);
+      // Try to parse as semantic version with optional suffix
+      // Matches: 7.1.2, 8.0.0, 8.0.0-Jellyfin, 8.0.git, etc.
+      const semanticMatch = /^(\d+)\.(\d+)(?:\.(\d+))?(?:-(.+))?$/.exec(versionString);
 
-        // Verify it's the expected git version for MSVC builds
-        assert.ok(output.includes(`ffmpeg version ${expectedGitHash}`), `Should be FFmpeg version ${expectedGitHash}`);
+      if (semanticMatch) {
+        const major = parseInt(semanticMatch[1]);
+        const minor = parseInt(semanticMatch[2]);
+        const patch = semanticMatch[3] ? parseInt(semanticMatch[3]) : 0;
+        const suffix = semanticMatch[4] || '';
+
+        console.log(`Parsed as semantic version: ${major}.${minor}.${patch}${suffix ? `-${suffix}` : ''}`);
+
+        // Accept FFmpeg 7.x or 8.x (both are compatible with library)
+        assert.ok(major === 7 || major === 8, `Should be FFmpeg version 7.x or 8.x, got ${major}.x`);
+
+        if (major === 7) {
+          assert.ok(minor >= 1, 'FFmpeg 7.x should be at least version 7.1.x');
+        }
+
+        // Suffix is optional (e.g., -Jellyfin, -git, or empty)
+        console.log(suffix ? `With suffix: ${suffix}` : 'No suffix');
       } else {
-        assert.fail(`Should contain either semantic version (7.x.x) or git version ${expectedGitHash}`);
+        // Not semantic versioning - might be pure git hash (e.g., 'f893221')
+        console.log(`Parsed as non-semantic version (git-based): ${versionString}`);
+
+        // Accept git-based versions: pure git hash or contains 'git'
+        const isGitHash = /^[a-f0-9]{7,}$/i.test(versionString);
+        const containsGit = versionString.toLowerCase().includes('git');
+
+        assert.ok(
+          isGitHash || containsGit,
+          `Should be either semantic version (7.x/8.x) or git-based version, got: ${versionString}`,
+        );
       }
     });
 

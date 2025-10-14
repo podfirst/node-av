@@ -85,11 +85,27 @@ describe('Utilities', () => {
       assert.match(info.libraries.avutil, /^\d+\.\s*\d+\.\d+$/, 'avutil version should match format');
       assert.match(info.libraries.avcodec, /^\d+\.\s*\d+\.\d+$/, 'avcodec version should match format');
 
-      // FFmpeg version check - supports both semantic versioning (7.1.2) and git hash (f893221)
-      assert.ok(
-        /\d+\.\d+/.exec(info.version) ?? /^[a-f0-9]{7}/.exec(info.version),
-        'Version should contain either semantic version (e.g. 7.1.2) or git hash (e.g. f893221)',
-      );
+      // FFmpeg version check - supports semantic (7.1.2, 8.0.0, 8.0.0-Jellyfin, 8.0.git) and git hash (f893221)
+      const versionString = info.version;
+
+      // Try to parse as semantic version with optional suffix
+      const semanticMatch = /^(\d+)\.(\d+)(?:\.(\d+))?(?:-(.+))?$/.exec(versionString);
+
+      if (semanticMatch) {
+        const major = parseInt(semanticMatch[1]);
+
+        // Accept FFmpeg 7.x or 8.x (both are compatible with library)
+        assert.ok(major === 7 || major === 8, `Should be FFmpeg version 7.x or 8.x, got ${major}.x`);
+      } else {
+        // Not semantic versioning - might be pure git hash (e.g., 'f893221')
+        const isGitHash = /^[a-f0-9]{7,}$/i.test(versionString);
+        const containsGit = versionString.toLowerCase().includes('git');
+
+        assert.ok(
+          isGitHash || containsGit,
+          `Should be either semantic version (7.x/8.x) or git-based version, got: ${versionString}`,
+        );
+      }
 
       console.log('FFmpeg version:', info.version);
       console.log('libavfilter:', info.libraries.avfilter);
