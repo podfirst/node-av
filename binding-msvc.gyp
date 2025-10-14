@@ -92,7 +92,6 @@
                 "libavutil.a",
                 "libswscale.a",
                 "libswresample.a",
-                "libpostproc.a",
                 # Codec libraries (from ffmpeg-msvc build)
                 "libx264.lib",
                 "x265-static.lib",

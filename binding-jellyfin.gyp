@@ -75,7 +75,6 @@
                             "-Wl,-force_load,/opt/ffbuild/prefix/lib/libavutil.a",
                             "-Wl,-force_load,/opt/ffbuild/prefix/lib/libswscale.a",
                             "-Wl,-force_load,/opt/ffbuild/prefix/lib/libswresample.a",
-                            "-Wl,-force_load,/opt/ffbuild/prefix/lib/libpostproc.a",
                             "-Wl,-force_load,/opt/ffbuild/prefix/lib/libavdevice.a",
                             "-L/opt/ffbuild/prefix/lib",
                             "/opt/ffbuild/prefix/lib/libx264.a",
@@ -168,7 +167,6 @@
                             "/opt/ffbuild/prefix/lib/libswscale.a",
                             "/opt/ffbuild/prefix/lib/libswresample.a",
                             "/opt/ffbuild/prefix/lib/libavutil.a",
-                            "/opt/ffbuild/prefix/lib/libpostproc.a",
                             "-Wl,--end-group",
                             "-Wl,--no-whole-archive",
                             "<!@(ls /opt/ffbuild/prefix/lib/libx264.a 2>/dev/null || echo '')",
@@ -281,7 +279,7 @@
                     },
                 ],
                 [
-                    "OS=='win' or (OS!='mac' and OS!='linux')", #Mingw
+                    "OS=='win' or (OS!='mac' and OS!='linux')",  # Mingw
                     {
                         "conditions": [
                             [
@@ -309,7 +307,6 @@
                             "-l:libavutil.a",
                             "-l:libswscale.a",
                             "-l:libswresample.a",
-                            "-l:libpostproc.a",
                             "-l:libx264.a",
                             "-l:libx265.a",
                             "-l:libvpx.a",
