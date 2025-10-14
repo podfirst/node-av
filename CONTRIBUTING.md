@@ -14,17 +14,6 @@ Thank you for your interest in contributing to node-av! This guide will help you
 
 ## Getting Started
 
-### Prerequisites
-
-For contributing to node-av, you'll need a development environment with:
-- Node.js 22.18.0+ (LTS recommended)
-- FFmpeg 7.1+ with development headers
-- Python 3.x (for node-gyp)
-- C++ compiler with C++17 support
-- pkg-config (for finding FFmpeg libraries)
-
-For detailed setup instructions by platform, see the **[Installation Guide](INSTALLATION.md)**.
-
 ### Before Contributing
 
 1. Check the [issue tracker](https://github.com/seydx/av/issues) for existing issues or feature requests
