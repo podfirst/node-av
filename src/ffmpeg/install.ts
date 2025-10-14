@@ -9,6 +9,7 @@ import { Open } from 'unzipper';
 
 import { ffmpegPath } from './index.js';
 import { getArchitecture, getPlatform, getPlatformType } from './utils.js';
+import { FFMPEG_VERSION } from './version.js';
 
 import type { ARCH } from './utils.js';
 
@@ -27,7 +28,7 @@ const __require = createRequire(import.meta.url);
 
 const releasesUrl = 'https://api.github.com/repos/seydx/node-av/releases';
 const pJson = __require('../../package.json');
-const ffmpegVersion = `v${pJson.ffmpegVersion}`;
+const ffmpegVersion = `v${FFMPEG_VERSION}`;
 
 const binaries: FFMPEG_BINARIES = {
   darwin: {

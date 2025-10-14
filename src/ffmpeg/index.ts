@@ -3,6 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { getPlatform } from './utils.js';
+import { FFMPEG_VERSION } from './version.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -100,4 +101,21 @@ export function ffmpegPath(): string {
  */
 export function isFfmpegAvailable(): boolean {
   return existsSync(ffmpegExtractedFilePath);
+}
+
+/**
+ * Get the FFmpeg version used by the binary.
+ *
+ * @returns {string} FFmpeg version string (e.g. "8.0")
+ *
+ * @example
+ * ```typescript
+ * import { ffmpegVersion } from 'node-av/ffmpeg';
+ *
+ * console.log('FFmpeg version:', ffmpegVersion());
+ * // Output: FFmpeg version: 8.0
+ * ```
+ */
+export function ffmpegVersion(): string {
+  return FFMPEG_VERSION;
 }
