@@ -9,10 +9,15 @@ env:
   CACHE_VERSION_LINUX: "v27"
   CACHE_VERSION_MACOS: "v12"
   # JELLYFIN_FFMPEG_HASH: "21198ee5630df2b0dabe4bb416e6c9c4a32522ed"
-  UPLOAD_CACHES: false
 
 on:
   workflow_dispatch:
+    inputs:
+      upload_caches:
+        description: "Upload FFmpeg caches as artifacts for debugging"
+        required: false
+        default: false
+        type: boolean
   workflow_call:
     secrets:
       NPM_TOKEN:
@@ -200,7 +205,7 @@ jobs:
           key: ffmpeg-windows-${{ matrix.os.arch }}-${{ env.CACHE_VERSION_WINDOWS }}-${{ steps.ffmpeg-hash.outputs.hash }}
 
       - name: Upload FFmpeg cache as artifact
-        if: env.UPLOAD_CACHES == 'true'
+        if: inputs.upload_caches == true
         uses: actions/upload-artifact@v4
         with:
           name: ffmpeg-cache-windows-${{ matrix.os.arch }}
@@ -583,7 +588,7 @@ jobs:
           key: ffmpeg-linux-${{ matrix.arch }}-${{ env.CACHE_VERSION_LINUX }}-${{ steps.ffmpeg-hash.outputs.hash }}
 
       - name: Upload FFmpeg cache as artifact
-        if: env.UPLOAD_CACHES == 'true'
+        if: inputs.upload_caches == true
         uses: actions/upload-artifact@v4
         with:
           name: ffmpeg-cache-linux-${{ matrix.arch }}
@@ -784,7 +789,7 @@ jobs:
           key: ffmpeg-macos-${{ matrix.arch }}-${{ env.CACHE_VERSION_MACOS }}-${{ steps.ffmpeg-hash.outputs.hash }}
 
       - name: Upload FFmpeg cache as artifact
-        if: env.UPLOAD_CACHES == 'true'
+        if: inputs.upload_caches == true
         uses: actions/upload-artifact@v4
         with:
           name: ffmpeg-cache-macos-${{ matrix.arch }}
