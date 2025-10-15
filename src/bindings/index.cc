@@ -20,6 +20,7 @@
 #include "filter.h"
 #include "filter_context.h"
 #include "filter_graph.h"
+#include "filter_graph_segment.h"
 #include "filter_inout.h"
 #include "bitstream_filter.h"
 #include "bitstream_filter_context.h"
@@ -65,6 +66,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   Filter::Init(env, exports);
   FilterContext::Init(env, exports);
   FilterGraph::Init(env, exports);
+  FilterGraphSegment::Init(env, exports);
   FilterInOut::Init(env, exports);
   
   // Bitstream Filters

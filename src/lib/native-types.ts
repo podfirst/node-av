@@ -749,12 +749,32 @@ export interface NativeFilterGraph extends Disposable {
   parse(filters: string, inputs: NativeFilterInOut | null, outputs: NativeFilterInOut | null): number;
   parse2(filters: string): number;
   parsePtr(filters: string, inputs?: NativeFilterInOut | null, outputs?: NativeFilterInOut | null): number;
+  segmentParse(filters: string, flags?: number): NativeFilterGraphSegment | null;
   validate(): number;
   requestOldest(): Promise<number>;
   requestOldestSync(): number;
   dump(): string | null;
   sendCommand(target: string, cmd: string, arg: string, flags?: AVFilterCmdFlag): number | { response: string | null };
   queueCommand(target: string, cmd: string, arg: string, ts: number, flags?: AVFilterCmdFlag): number;
+
+  [Symbol.dispose](): void;
+}
+
+/**
+ * Native AVFilterGraphSegment binding interface
+ *
+ * Represents a parsed filtergraph segment.
+ * Separates filter parsing from initialization.
+ *
+ * @internal
+ */
+export interface NativeFilterGraphSegment extends Disposable {
+  readonly __brand: 'NativeFilterGraphSegment';
+
+  free(): void;
+  createFilters(flags?: number): number;
+  applyOpts(flags?: number): number;
+  apply(inputs: NativeFilterInOut, outputs: NativeFilterInOut, flags?: number): number;
 
   [Symbol.dispose](): void;
 }
