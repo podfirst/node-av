@@ -968,30 +968,12 @@ export class FilterAPI implements Disposable {
    * @internal
    */
   private async initialize(frame: Frame): Promise<void> {
-    // Create buffer source
+    // Create buffer source and sink
     this.createBufferSource(frame);
-
-    // Create buffer sink
     this.createBufferSink(frame);
 
     // Parse filter description
-    this.parseFilterDescription(this.description);
-
-    // Set hw_device_ctx on hardware filters
-    const filters = this.graph.filters;
-    if (filters) {
-      for (const filterCtx of filters) {
-        const filter = filterCtx.filter;
-        if (filter && (filter.flags & AVFILTER_FLAG_HWDEVICE) !== 0) {
-          filterCtx.hwDeviceCtx = frame.hwFramesCtx?.deviceRef ?? this.options.hardware?.deviceContext ?? null;
-
-          // Set extra_hw_frames if specified
-          if (this.options.extraHWFrames !== undefined && this.options.extraHWFrames > 0) {
-            filterCtx.extraHWFrames = this.options.extraHWFrames;
-          }
-        }
-      }
-    }
+    this.parseFilterDescription(frame);
 
     // Configure the graph
     const ret = await this.graph.config();
@@ -1019,30 +1001,12 @@ export class FilterAPI implements Disposable {
    * @see {@link initialize} For async version
    */
   private initializeSync(frame: Frame): void {
-    // Create buffer source
+    // Create buffer source and sink
     this.createBufferSource(frame);
-
-    // Create buffer sink
     this.createBufferSink(frame);
 
     // Parse filter description
-    this.parseFilterDescription(this.description);
-
-    // Set hw_device_ctx on hardware filters
-    const filters = this.graph.filters;
-    if (filters) {
-      for (const filterCtx of filters) {
-        const filter = filterCtx.filter;
-        if (filter && (filter.flags & AVFILTER_FLAG_HWDEVICE) !== 0) {
-          filterCtx.hwDeviceCtx = frame.hwFramesCtx?.deviceRef ?? this.options.hardware?.deviceContext ?? null;
-
-          // Set extra_hw_frames if specified
-          if (this.options.extraHWFrames !== undefined && this.options.extraHWFrames > 0) {
-            filterCtx.extraHWFrames = this.options.extraHWFrames;
-          }
-        }
-      }
-    }
+    this.parseFilterDescription(frame);
 
     // Configure the graph
     const ret = this.graph.configSync();
@@ -1134,7 +1098,10 @@ export class FilterAPI implements Disposable {
   /**
    * Parse filter description and build graph.
    *
-   * @param description - Filter description string
+   * Uses the Segment API to parse filters, which allows setting hw_device_ctx
+   * before filter initialization when needed. Works for both hardware and software filters.
+   *
+   * @param frame - First frame to process, provides hw_frames_ctx if any
    *
    * @throws {Error} If parsing fails
    *
@@ -1142,39 +1109,93 @@ export class FilterAPI implements Disposable {
    *
    * @internal
    */
-  private parseFilterDescription(description: string): void {
+  private parseFilterDescription(frame: Frame): void {
     if (!this.buffersrcCtx || !this.buffersinkCtx) {
       throw new Error('Buffer filters not initialized');
     }
 
     // Handle empty or simple passthrough
-    if (!description || description === 'null' || description === 'anull') {
+    if (!this.description || this.description === 'null' || this.description === 'anull') {
       // Direct connection for null filters
       const ret = this.buffersrcCtx.link(0, this.buffersinkCtx, 0);
       FFmpegError.throwIfError(ret, 'Failed to link buffer filters');
       return;
     }
 
-    // Set up inputs and outputs for parsing
-    const outputs = new FilterInOut();
-    outputs.alloc();
-    outputs.name = 'in';
-    outputs.filterCtx = this.buffersrcCtx;
-    outputs.padIdx = 0;
+    // Step 1: Parse the filter description into a segment
+    const segment = this.graph.segmentParse(this.description);
+    if (!segment) {
+      throw new Error('Failed to parse filter segment');
+    }
 
-    const inputs = new FilterInOut();
-    inputs.alloc();
-    inputs.name = 'out';
-    inputs.filterCtx = this.buffersinkCtx;
-    inputs.padIdx = 0;
+    try {
+      // Step 2: Create filter instances (but don't initialize yet)
+      let ret = segment.createFilters();
+      FFmpegError.throwIfError(ret, 'Failed to create filters in segment');
 
-    // Parse the filter graph
-    const ret = this.graph.parsePtr(description, inputs, outputs);
-    FFmpegError.throwIfError(ret, 'Failed to parse filter description');
+      // Step 3: Set hw_device_ctx on filters that need it BEFORE initialization (if provided)
+      const filters = this.graph.filters;
+      if (filters) {
+        for (const filterCtx of filters) {
+          const filter = filterCtx.filter;
+          if (filter && (filter.flags & AVFILTER_FLAG_HWDEVICE) !== 0) {
+            filterCtx.hwDeviceCtx = frame.hwFramesCtx?.deviceRef ?? this.options.hardware?.deviceContext ?? null;
 
-    // Clean up
-    inputs.free();
-    outputs.free();
+            // Set extra_hw_frames if specified
+            if (this.options.extraHWFrames !== undefined && this.options.extraHWFrames > 0) {
+              filterCtx.extraHWFrames = this.options.extraHWFrames;
+            }
+          }
+        }
+      }
+
+      // Step 4: Apply options to filters
+      ret = segment.applyOpts();
+      FFmpegError.throwIfError(ret, 'Failed to apply options to segment');
+
+      // Step 5: Initialize and link filters in the segment
+      // Create empty FilterInOut objects - segment.apply() will populate them with
+      // the segment's unconnected input/output pads
+      const inputs = new FilterInOut();
+      const outputs = new FilterInOut();
+
+      // Apply the segment - this initializes and links all filters within the segment,
+      // and returns the segment's unconnected pads in inputs/outputs
+      ret = segment.apply(inputs, outputs);
+      FFmpegError.throwIfError(ret, 'Failed to apply segment');
+
+      // Step 6: Manually link buffersrc/buffersink to the segment's unconnected pads
+      // After segment.apply():
+      //   - inputs contains the segment's free INPUT pads (where buffersrc connects TO)
+      //   - outputs contains the segment's free OUTPUT pads (where buffersink connects FROM)
+
+      // Link buffersrc -> first segment input (if any)
+      const segmentInput = inputs.filterCtx;
+      if (segmentInput) {
+        ret = this.buffersrcCtx.link(0, segmentInput, inputs.padIdx);
+        FFmpegError.throwIfError(ret, 'Failed to link buffersrc to segment');
+      } else {
+        // No segment inputs means the filter doesn't accept input
+        throw new Error('Segment has no input pads - cannot connect buffersrc');
+      }
+
+      // Link last segment output -> buffersink (if any)
+      const segmentOutput = outputs.filterCtx;
+      if (segmentOutput) {
+        ret = segmentOutput.link(outputs.padIdx, this.buffersinkCtx, 0);
+        FFmpegError.throwIfError(ret, 'Failed to link segment to buffersink');
+      } else {
+        // No segment outputs means the filter doesn't produce output
+        throw new Error('Segment has no output pads - cannot connect buffersink');
+      }
+
+      // Clean up FilterInOut structures
+      inputs.free();
+      outputs.free();
+    } finally {
+      // Always free the segment
+      segment.free();
+    }
   }
 
   /**
