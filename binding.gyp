@@ -40,6 +40,7 @@
                 "src/bindings/filter_graph.cc",
                 "src/bindings/filter_graph_async.cc",
                 "src/bindings/filter_graph_sync.cc",
+                "src/bindings/filter_graph_segment.cc",
                 "src/bindings/filter_inout.cc",
                 "src/bindings/hardware_device_context.cc",
                 "src/bindings/hardware_frames_context.cc",
