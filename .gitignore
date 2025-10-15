@@ -72,3 +72,4 @@ ffmpeg_examples
 /*.txt
 /list.ts
 /caches
+/crash-dumps
