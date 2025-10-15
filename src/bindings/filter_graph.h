@@ -65,6 +65,7 @@ private:
   Napi::Value Parse(const Napi::CallbackInfo& info);
   Napi::Value Parse2(const Napi::CallbackInfo& info);
   Napi::Value ParsePtr(const Napi::CallbackInfo& info);
+  Napi::Value SegmentParse(const Napi::CallbackInfo& info);
   Napi::Value Validate(const Napi::CallbackInfo& info);
   Napi::Value RequestOldestAsync(const Napi::CallbackInfo& info);
   Napi::Value RequestOldestSync(const Napi::CallbackInfo& info);

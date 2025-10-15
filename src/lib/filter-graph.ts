@@ -1,5 +1,6 @@
 import { bindings } from './binding.js';
 import { FilterContext } from './filter-context.js';
+import { FilterGraphSegment } from './filter-graph-segment.js';
 import { OptionMember } from './option.js';
 
 import type { AVFilterCmdFlag, AVFilterConstants } from '../constants/constants.js';
@@ -453,6 +454,46 @@ export class FilterGraph extends OptionMember<NativeFilterGraph> implements Disp
    */
   parsePtr(filters: string, inputs?: FilterInOut | null, outputs?: FilterInOut | null): number {
     return this.native.parsePtr(filters, inputs ? inputs.getNative() : null, outputs ? outputs.getNative() : null);
+  }
+
+  /**
+   * Parse a filter graph into a segment.
+   *
+   * Parses a textual filter description and returns a segment object.
+   * The segment separates parsing from initialization, allowing filter
+   * contexts to be configured before initialization.
+   *
+   * Direct mapping to avfilter_graph_segment_parse().
+   *
+   * @param filters - Filter graph description string
+   *
+   * @param flags - Parsing flags (default: 0)
+   *
+   * @returns FilterGraphSegment instance or null on error
+   *
+   * @example
+   * ```typescript
+   * import { FFmpegError } from 'node-av';
+   *
+   * const segment = graph.segmentParse('scale=640:480');
+   * if (!segment) {
+   *   throw new Error('Failed to parse filter');
+   * }
+   *
+   * // Create and configure filters
+   * FFmpegError.throwIfError(segment.createFilters(), 'createFilters');
+   * FFmpegError.throwIfError(segment.applyOpts(), 'applyOpts');
+   * FFmpegError.throwIfError(segment.apply(inputs, outputs), 'apply');
+   *
+   * segment.free();
+   * ```
+   *
+   * @see {@link FilterGraphSegment} For segment operations
+   * @see {@link parse} For standard parsing
+   */
+  segmentParse(filters: string, flags = 0): FilterGraphSegment | null {
+    const native = this.native.segmentParse(filters, flags);
+    return native ? new FilterGraphSegment(native) : null;
   }
 
   /**

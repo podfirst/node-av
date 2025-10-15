@@ -56,6 +56,7 @@ export { Option, OptionInfo, type OptionMember } from './option.js';
 // Filter related classes
 export { FilterContext } from './filter-context.js';
 export { FilterGraph } from './filter-graph.js';
+export { FilterGraphSegment } from './filter-graph-segment.js';
 export { FilterInOut } from './filter-inout.js';
 export { Filter } from './filter.js';
 

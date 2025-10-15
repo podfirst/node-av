@@ -2,6 +2,7 @@
 #include "filter.h"
 #include "filter_context.h"
 #include "filter_inout.h"
+#include "filter_graph_segment.h"
 #include "common.h"
 #include <cstring>
 
@@ -25,6 +26,7 @@ Napi::Object FilterGraph::Init(Napi::Env env, Napi::Object exports) {
     InstanceMethod<&FilterGraph::Parse>("parse"),
     InstanceMethod<&FilterGraph::Parse2>("parse2"),
     InstanceMethod<&FilterGraph::ParsePtr>("parsePtr"),
+    InstanceMethod<&FilterGraph::SegmentParse>("segmentParse"),
     InstanceMethod<&FilterGraph::Validate>("validate"),
     InstanceMethod<&FilterGraph::RequestOldestAsync>("requestOldest"),
     InstanceMethod<&FilterGraph::RequestOldestSync>("requestOldestSync"),
@@ -361,6 +363,42 @@ Napi::Value FilterGraph::ParsePtr(const Napi::CallbackInfo& info) {
   return Napi::Number::New(env, ret);
 }
 
+Napi::Value FilterGraph::SegmentParse(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+
+  AVFilterGraph* graph = Get();
+  if (!graph) {
+    Napi::Error::New(env, "FilterGraph not allocated").ThrowAsJavaScriptException();
+    return env.Null();
+  }
+
+  if (info.Length() < 1 || !info[0].IsString()) {
+    Napi::TypeError::New(env, "Expected string argument (filters)").ThrowAsJavaScriptException();
+    return env.Null();
+  }
+
+  std::string filters = info[0].As<Napi::String>().Utf8Value();
+
+  int flags = 0;
+  if (info.Length() > 1 && info[1].IsNumber()) {
+    flags = info[1].As<Napi::Number>().Int32Value();
+  }
+
+  AVFilterGraphSegment* segment = nullptr;
+  int ret = avfilter_graph_segment_parse(graph, filters.c_str(), flags, &segment);
+
+  if (ret < 0) {
+    return env.Null();
+  }
+
+  // Wrap the segment
+  Napi::Object segmentObj = FilterGraphSegment::constructor.New({});
+  FilterGraphSegment* wrapper = Napi::ObjectWrap<FilterGraphSegment>::Unwrap(segmentObj);
+  wrapper->SetSegment(segment);
+
+  return segmentObj;
+}
+
 Napi::Value FilterGraph::Validate(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
   
@@ -475,7 +513,7 @@ void FilterGraph::SetScaleSwsOpts(const Napi::CallbackInfo& info, const Napi::Va
   if (!graph) {
     return;
   }
-  
+
   if (value.IsString()) {
     std::string opts = value.As<Napi::String>().Utf8Value();
     av_freep(&graph->scale_sws_opts);
