@@ -82,7 +82,7 @@ jobs:
         with:
           submodules: true
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v6
         with:
           node-version: "24"
 
@@ -347,7 +347,7 @@ jobs:
         with:
           submodules: true
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v6
         with:
           node-version: "24"
 
@@ -472,7 +472,7 @@ jobs:
         with:
           submodules: true
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v6
         with:
           node-version: "24"
 
@@ -706,7 +706,7 @@ jobs:
         with:
           submodules: true
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v6
         with:
           node-version: "24"
 
