@@ -403,6 +403,14 @@ jobs:
           echo "FFmpeg MSVC prebuilt extracted to ffmpeg-msvc/"
           ls -la ffmpeg-msvc/
 
+      - name: Upload FFmpeg cache as artifact
+        if: inputs.upload_caches == true
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-cache-windows-msvc-${{ matrix.os.arch }}
+          path: ffmpeg-msvc/
+          retention-days: 7
+
       - name: Install Node dependencies
         run: npm install --ignore-scripts
 
