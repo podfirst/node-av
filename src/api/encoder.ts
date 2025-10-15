@@ -1,4 +1,4 @@
-import { AVERROR_EAGAIN, AVERROR_EOF } from '../constants/constants.js';
+import { AVERROR_EAGAIN, AVERROR_EOF, AVMEDIA_TYPE_AUDIO } from '../constants/constants.js';
 import { Codec, CodecContext, Dictionary, FFmpegError, Packet, Rational } from '../lib/index.js';
 import { parseBitrate } from './utils.js';
 
@@ -180,11 +180,15 @@ export class Encoder implements Disposable {
       codecContext.maxBFrames = options.maxBFrames;
     }
 
-    // Apply common options
-    if (options.bitrate !== undefined) {
-      const bitrate = typeof options.bitrate === 'string' ? parseBitrate(options.bitrate) : BigInt(options.bitrate);
-      codecContext.bitRate = bitrate;
+    // Apply common options with codec-type-specific defaults
+    if (options.bitrate === undefined) {
+      // Set codec-type-specific default bitrate
+      const isAudio = codec.type === AVMEDIA_TYPE_AUDIO;
+      options.bitrate = isAudio ? 128_000 : 1_000_000;
     }
+
+    const bitrate = typeof options.bitrate === 'string' ? parseBitrate(options.bitrate) : BigInt(options.bitrate);
+    codecContext.bitRate = bitrate;
 
     if (options.minRate !== undefined) {
       const minRate = typeof options.minRate === 'string' ? parseBitrate(options.minRate) : BigInt(options.minRate);
@@ -297,9 +301,13 @@ export class Encoder implements Disposable {
     const codecContext = new CodecContext();
     codecContext.allocContext3(codec);
 
-    // Apply options
+    // Apply common options with codec-type-specific defaults
+    if (options.bitrate === undefined) {
+      // Set codec-type-specific default bitrate
+      const isAudio = codec.type === AVMEDIA_TYPE_AUDIO;
+      options.bitrate = isAudio ? 128_000 : 1_000_000;
+    }
 
-    options.bitrate = options.bitrate ?? 1_000_000; // Default bitrate if not provided
     const bitrate = typeof options.bitrate === 'string' ? parseBitrate(options.bitrate) : BigInt(options.bitrate);
     codecContext.bitRate = bitrate;
 

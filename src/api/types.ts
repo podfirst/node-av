@@ -148,7 +148,7 @@ export interface DecoderOptions {
  * Stream parameters (width, height, format, etc.) are taken from the provided stream.
  */
 export interface EncoderOptions {
-  /** Target bitrate (number, bigint, or string like '5M') */
+  /** Target bitrate (number, bigint, or string like '5M', default: 128k for audio, 1M for video) */
   bitrate?: number | bigint | string;
 
   /** Minimum bitrate (number, bigint, or string like '5M') */
