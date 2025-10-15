@@ -246,6 +246,7 @@
                             "<!@(ls /opt/ffbuild/prefix/lib/librga.a 2>/dev/null || echo '')",
                             "<!@(ls /opt/ffbuild/prefix/lib/libNE10.a 2>/dev/null || echo '')",
                             "-ldrm",
+                            "-lvulkan",
                             "-lpthread",
                             "-lm",
                             "-ldl",
