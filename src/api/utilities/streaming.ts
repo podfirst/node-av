@@ -54,7 +54,7 @@ export class StreamingUtils {
    * ```
    */
   static createSdp(inouts: MediaInput[] | MediaOutput[]): string | null {
-    if (!inouts || inouts.length === 0) {
+    if (inouts?.length === 0) {
       return null;
     }
 

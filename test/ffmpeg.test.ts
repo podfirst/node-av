@@ -210,10 +210,7 @@ describe('FFmpeg Binary Access', () => {
         const isGitHash = /^[a-f0-9]{7,}$/i.test(versionString);
         const containsGit = versionString.toLowerCase().includes('git');
 
-        assert.ok(
-          isGitHash || containsGit,
-          `Should be either semantic version (7.x/8.x) or git-based version, got: ${versionString}`,
-        );
+        assert.ok(isGitHash || containsGit, `Should be either semantic version (7.x/8.x) or git-based version, got: ${versionString}`);
       }
     });
 

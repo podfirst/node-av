@@ -1079,7 +1079,7 @@ export class FilterPreset {
    * @see {@link https://ffmpeg.org/ffmpeg-filters.html#pad | FFmpeg pad filter}
    */
   pad(width: string | number, height: string | number, x?: string, y?: string, color = 'black'): FilterPreset {
-    if (this.hardware && this.hardware.deviceType === AV_HWDEVICE_TYPE_VULKAN) {
+    if (this.hardware?.deviceType === AV_HWDEVICE_TYPE_VULKAN) {
       // Vulkan uses libplacebo with pos_x/y/w/h and fillcolor
       let filter = `libplacebo=w=${width}:h=${height}`;
       if (x !== undefined) filter += `:pos_x=${x}`;

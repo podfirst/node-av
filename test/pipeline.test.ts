@@ -200,7 +200,7 @@ describe('Pipeline - Comprehensive Tests', () => {
         await using input = await MediaInput.open(inputFile);
         const videoStream = input.video();
 
-        if (!videoStream || videoStream.codecpar.codecId !== AV_CODEC_ID_H264) {
+        if (videoStream?.codecpar.codecId !== AV_CODEC_ID_H264) {
           t.skip();
           return;
         }

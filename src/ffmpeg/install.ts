@@ -135,7 +135,7 @@ const downloadFile = async (url: string): Promise<void> => {
     try {
       const directory = await Open.file(ffmpegFilePath);
 
-      if (!directory.files || directory.files.length === 0) {
+      if (directory.files?.length === 0) {
         throw new Error('No files found in ZIP archive');
       }
 

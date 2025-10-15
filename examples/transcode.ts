@@ -213,7 +213,7 @@ async function open_output_file(filename: string): Promise<number> {
 
       out_stream.timeBase = enc_ctx.timeBase;
       stream_ctx[i].enc_ctx = enc_ctx;
-    } else if (dec_ctx && dec_ctx.codecType === AVMEDIA_TYPE_UNKNOWN) {
+    } else if (dec_ctx?.codecType === AVMEDIA_TYPE_UNKNOWN) {
       console.error(`Elementary stream #${i} is of unknown type, cannot proceed`);
       return -1;
     } else {

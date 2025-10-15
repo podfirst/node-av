@@ -250,7 +250,7 @@ describe('BitStreamFilterAPI', () => {
       await using media = await MediaInput.open(inputFile);
       const stream = media.video();
 
-      if (!stream || stream.codecpar.codecId !== AV_CODEC_ID_H264) {
+      if (stream?.codecpar.codecId !== AV_CODEC_ID_H264) {
         t.skip();
         return;
       }
@@ -288,7 +288,7 @@ describe('BitStreamFilterAPI', () => {
       using media = MediaInput.openSync(inputFile);
       const stream = media.video();
 
-      if (!stream || stream.codecpar.codecId !== AV_CODEC_ID_H264) {
+      if (stream?.codecpar.codecId !== AV_CODEC_ID_H264) {
         t.skip();
         return;
       }
