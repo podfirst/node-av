@@ -38,6 +38,7 @@ Native Node.js bindings for FFmpeg with full TypeScript support. Provides direct
 - [Memory Safety Considerations](#memory-safety-considerations)
 - [Examples](#examples)
 - [Prebuilt Binaries](#prebuilt-binaries)
+- [Troubleshooting](#troubleshooting)
 - [License](#license)
 - [Contributing](#contributing)
 - [Support](#support)
@@ -444,6 +445,41 @@ Prebuilt binaries are available for multiple platforms:
 - **macOS**: x64, ARM64
 - **Linux**: x64, ARM64
 - **Windows**: x64, ARM64 (automatic MSVC/MinGW selection)
+
+## Troubleshooting
+
+### Hardware Acceleration on Linux (Intel)
+
+For hardware-accelerated video processing with Intel GPUs on Linux, you need to install specific system packages. The FFmpeg binaries included with this library are built with **libva 2.14**, which requires **Ubuntu 22.04+** or **Debian 12+** as minimum OS versions.
+
+#### Installation Steps
+
+1. **Add Kisak-Mesa PPA** (recommended for newer Mesa versions with better hardware support):
+
+```bash
+sudo add-apt-repository ppa:kisak/kisak-mesa
+sudo apt update
+```
+
+2. **Install required packages**:
+
+```bash
+sudo apt install libmfx-gen1.2 mesa-va-drivers mesa-vulkan-drivers libva2 libva-drm2 vainfo libvulkan1 vulkan-tools
+```
+
+After installation, verify hardware acceleration is working:
+
+```bash
+# Check VAAPI support
+vainfo
+
+# Check Vulkan support
+vulkaninfo
+
+# Should show available profiles and entrypoints for your Intel GPU
+```
+
+**Note**: If you're running an older Ubuntu version (< 22.04) or Debian version (< 12), you'll need to upgrade your OS to use hardware acceleration with this library.
 
 ## License
 
