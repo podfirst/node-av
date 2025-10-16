@@ -300,10 +300,10 @@ jobs:
           if [ -n "$NODE_FILE" ]; then
             cp "$NODE_FILE" "$PREBUILD_DIR/node-av.node"
             echo "Copied $(basename $NODE_FILE) -> node-av.node"
-            
+
             # Strip the binary
             llvm-strip "$PREBUILD_DIR/node-av.node"
-            
+
             # Copy binary for tests
             mkdir -p binary
             cp "$PREBUILD_DIR/node-av.node" binary/node-av.node
