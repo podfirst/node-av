@@ -320,6 +320,8 @@ jobs:
           fi
 
       - name: Run Tests
+        env:
+          AV_FROM_SOURCE: 1
         run: npm run test:all
 
       - name: Upload Prebuild
@@ -454,6 +456,8 @@ jobs:
           }
 
       - name: Run Tests
+        env:
+          AV_FROM_SOURCE: 1
         run: npm run test:all
 
       - name: Upload prebuilds
@@ -690,6 +694,8 @@ jobs:
           fi
 
       - name: Run Tests
+        env:
+          AV_FROM_SOURCE: 1
         run: npm run test:all
 
       - name: Upload Prebuild
@@ -863,6 +869,8 @@ jobs:
 
       - name: Run Tests
         if: matrix.arch == 'arm64'
+        env:
+          AV_FROM_SOURCE: 1
         run: npm run test:all
 
       - name: Upload Prebuild
