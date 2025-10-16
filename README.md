@@ -448,9 +448,9 @@ Prebuilt binaries are available for multiple platforms:
 
 ## Troubleshooting
 
-### Hardware Acceleration on Linux (Intel)
+### Hardware Acceleration on Linux (Intel/VAAPI)
 
-For hardware-accelerated video processing with Intel GPUs on Linux, you need to install specific system packages. The FFmpeg binaries included with this library are built with **libva 2.14**, which requires **Ubuntu 22.04+** or **Debian 12+** as minimum OS versions.
+For hardware-accelerated video processing with Intel GPUs on Linux, you need to install specific system packages. The FFmpeg binaries included with this library are built with **libva 2.20**, which requires **Ubuntu 24.04+** or **Debian 13+** as minimum OS versions.
 
 #### Installation Steps
 
@@ -479,7 +479,7 @@ vulkaninfo
 # Should show available profiles and entrypoints for your Intel GPU
 ```
 
-**Note**: If you're running an older Ubuntu version (< 22.04) or Debian version (< 12), you'll need to upgrade your OS to use hardware acceleration with this library.
+**Note**: If you're running an older Ubuntu version (< 24.04) or Debian version (< 13), you'll need to upgrade your OS to use hardware acceleration with this library.
 
 ## License
 
