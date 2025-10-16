@@ -9,7 +9,7 @@ env:
   CACHE_VERSION_LINUX: "v28"
   CACHE_VERSION_MACOS: "v12"
   # JELLYFIN_FFMPEG_HASH: "21198ee5630df2b0dabe4bb416e6c9c4a32522ed"
-  DOCKER_REPO: "ghcr.io/seydx/jellyfin-ffmpeg"
+  GITHUB_REPOSITORY: "seydx/jellyfin-ffmpeg"
 
 on:
   workflow_dispatch:
@@ -546,7 +546,7 @@ jobs:
           fi
 
           # Determine Docker image to use
-          IMAGE="${{ env.DOCKER_REPO }}/${TARGET}-gpl:latest"
+          IMAGE="ghcr.io/${{ env.GITHUB_REPOSITORY }}/${TARGET}-gpl:latest"
 
           # Try to pull image from registry first
           if docker pull "${IMAGE}" 2>/dev/null; then
@@ -608,7 +608,7 @@ jobs:
             
             # Also check if codec libraries are in /opt/ffbuild inside container
             # We might need to extract them from our Docker image
-            CONTAINER_ID=$(docker create "${{ env.DOCKER_REPO }}/${TARGET}-gpl:latest")
+            CONTAINER_ID=$(docker create "ghcr.io/${{ env.GITHUB_REPOSITORY }}/${TARGET}-gpl:latest")
             # Try to copy codec libraries if they exist
             docker cp "${CONTAINER_ID}:/opt/ffbuild/lib" /tmp/codec-libs 2>/dev/null && {
               sudo cp -n /tmp/codec-libs/*.a /opt/ffbuild/prefix/lib/ 2>/dev/null || true
@@ -670,7 +670,7 @@ jobs:
           fi
 
           # Determine Docker image to use
-          IMAGE="${{ env.DOCKER_REPO }}/${TARGET}-gpl:latest"
+          IMAGE="ghcr.io/${{ env.GITHUB_REPOSITORY }}/${TARGET}-gpl:latest"
 
           # Pull image if not already cached locally
           if ! docker image inspect "${IMAGE}" > /dev/null 2>&1; then
