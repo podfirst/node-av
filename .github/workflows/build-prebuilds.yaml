@@ -6,7 +6,7 @@ concurrency:
 
 env:
   CACHE_VERSION_WINDOWS: "v14"
-  CACHE_VERSION_LINUX: "v27"
+  CACHE_VERSION_LINUX: "v28"
   CACHE_VERSION_MACOS: "v12"
   # JELLYFIN_FFMPEG_HASH: "21198ee5630df2b0dabe4bb416e6c9c4a32522ed"
   DOCKER_REPO: "ghcr.io/seydx/jellyfin-ffmpeg"
@@ -556,6 +556,34 @@ jobs:
             echo "Docker image not in registry, building locally..."
             ./makeimage.sh "${TARGET}" gpl
           fi
+
+          # Debug: Check which libva headers will be used by FFmpeg
+          echo "=== Debugging libva header detection ==="
+          docker run --rm "${IMAGE}" bash -c "
+            echo '--- libva headers in /opt/ffbuild/include/va/ ---'
+            if [ -d /opt/ffbuild/include/va ]; then
+              ls -la /opt/ffbuild/include/va/ | head -20
+              echo '--- libva version from /opt/ffbuild/include/va/va_version.h ---'
+              grep 'VA_MINOR_VERSION' /opt/ffbuild/include/va/va_version.h || echo 'va_version.h not found'
+              echo '--- Check for vaMapBuffer2 in va.h ---'
+              grep -c 'vaMapBuffer2' /opt/ffbuild/include/va/va.h || echo 'vaMapBuffer2 not found (expected for libva 1.14)'
+            else
+              echo '/opt/ffbuild/include/va/ does not exist!'
+            fi
+
+            echo '--- System libva-dev packages ---'
+            dpkg -l | grep libva || echo 'No system libva packages installed'
+
+            echo '--- GCC include search paths (crosstool-ng toolchain) ---'
+            echo | x86_64-ffbuild-linux-gnu-gcc -E -Wp,-v - 2>&1 | grep '^ ' | head -15
+
+            echo '--- Which va.h will GCC find? ---'
+            echo '#include <va/va.h>' | x86_64-ffbuild-linux-gnu-gcc -E -x c - 2>&1 | grep 'va/va.h' | head -3 || echo 'va.h not found by GCC'
+
+            echo '--- CFLAGS from environment ---'
+            echo \$CFLAGS
+          "
+          echo "=== End of libva debugging ==="
 
           # Run Jellyfin build script
           ./build.sh "${TARGET}" gpl
