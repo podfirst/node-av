@@ -328,8 +328,7 @@ function loadBinding(): NativeBinding {
   const platform = process.platform;
   const arch = process.arch;
   const platformArch = `${platform}-${arch}`;
-
-  console.log(`[binding.ts] Loading native binding for ${platformArch}`);
+  const loadLocal = process.env.AV_FROM_SOURCE === '1';
 
   // Local build directory (--build-from-source)
   try {
@@ -338,62 +337,46 @@ function loadBinding(): NativeBinding {
     const rootPath = resolve(__dirname, '..', '..', 'node-av.node');
     const localPath = [releasePath, binaryPath, rootPath];
     for (const path of localPath) {
-      console.log(`[binding.ts] Checking local path: ${path} (exists: ${existsSync(path)})`);
       if (existsSync(path)) {
-        console.log(`[binding.ts] ✓ Loading from local path: ${path}`);
-        const binding = require(path);
-        console.log(`[binding.ts] ✓ Successfully loaded from: ${path}`);
-        return binding;
+        return require(path);
       }
     }
   } catch (err) {
-    console.log(`[binding.ts] ✗ Local build loading failed: ${err}`);
     errors.push(new Error(`Local build loading failed: ${err}`));
   }
 
-  // For Windows, detect MinGW vs MSVC environment
-  if (platform === 'win32') {
-    const useMingW = type() !== 'Windows_NT';
-    if (useMingW) {
-      try {
-        const packageName = `@seydx/node-av-${platformArch}-mingw`;
-        console.log(`[binding.ts] Trying MinGW package: ${packageName}`);
-        const binding = require(`${packageName}/node-av.node`);
-        console.log(`[binding.ts] ✓ Successfully loaded from MinGW package: ${packageName}`);
-        return binding;
-      } catch (err) {
-        console.log(`[binding.ts] ✗ MinGW package loading failed: ${err}`);
-        errors.push(new Error(`MinGW package not found or loading failed: ${err}`));
+  if (!loadLocal) {
+    // For Windows, detect MinGW vs MSVC environment
+    if (platform === 'win32') {
+      const useMingW = type() !== 'Windows_NT';
+      if (useMingW) {
+        try {
+          const packageName = `@seydx/node-av-${platformArch}-mingw`;
+          return require(`${packageName}/node-av.node`);
+        } catch (err) {
+          errors.push(new Error(`MinGW package not found or loading failed: ${err}`));
+        }
       }
-    }
 
-    // Fallback to MSVC
-    try {
-      const packageName = `@seydx/node-av-${platformArch}-msvc`;
-      console.log(`[binding.ts] Trying MSVC package: ${packageName}`);
-      const binding = require(`${packageName}/node-av.node`);
-      console.log(`[binding.ts] ✓ Successfully loaded from MSVC package: ${packageName}`);
-      return binding;
-    } catch (err) {
-      console.log(`[binding.ts] ✗ MSVC package loading failed: ${err}`);
-      errors.push(new Error(`MSVC package not found or loading failed: ${err}`));
-    }
-  } else {
-    // Non-Windows platforms
-    try {
-      const packageName = `@seydx/node-av-${platformArch}`;
-      console.log(`[binding.ts] Trying platform package: ${packageName}`);
-      const binding = require(`${packageName}/node-av.node`);
-      console.log(`[binding.ts] ✓ Successfully loaded from platform package: ${packageName}`);
-      return binding;
-    } catch (err) {
-      console.log(`[binding.ts] ✗ Platform package loading failed: ${err}`);
-      errors.push(new Error(`Platform package not found or loading failed: ${err}`));
+      // Fallback to MSVC
+      try {
+        const packageName = `@seydx/node-av-${platformArch}-msvc`;
+        return require(`${packageName}/node-av.node`);
+      } catch (err) {
+        errors.push(new Error(`MSVC package not found or loading failed: ${err}`));
+      }
+    } else {
+      // Non-Windows platforms
+      try {
+        const packageName = `@seydx/node-av-${platformArch}`;
+        return require(`${packageName}/node-av.node`);
+      } catch (err) {
+        errors.push(new Error(`Platform package not found or loading failed: ${err}`));
+      }
     }
   }
 
   // All attempts failed
-  console.log(`[binding.ts] ✗ All binding loading attempts failed!`);
   const errorMessages = errors.map((e) => e.message).join('\n  ');
   // prettier-ignore
   throw new Error(
