@@ -493,15 +493,6 @@ export class HardwareContext implements Disposable {
         encoderSuffix = getAlternativeEncoder() ?? '';
         break;
 
-      case AV_HWDEVICE_TYPE_D3D12VA:
-        // D3D12VA currently only supports HEVC encoding
-        if (codecBaseName === 'hevc') {
-          encoderSuffix = 'd3d12va';
-        } else {
-          encoderSuffix = getAlternativeEncoder() ?? '';
-        }
-        break;
-
       case AV_HWDEVICE_TYPE_OPENCL:
       case AV_HWDEVICE_TYPE_VDPAU:
       case AV_HWDEVICE_TYPE_DRM:
