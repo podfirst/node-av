@@ -557,47 +557,6 @@ jobs:
             ./makeimage.sh "${TARGET}" gpl
           fi
 
-          # Debug: Check which libva headers will be used by FFmpeg
-          echo "=== Debugging libva header detection ==="
-          docker run --rm "${IMAGE}" bash -c "
-            echo '--- libva headers in /opt/ffbuild/include/va/ ---'
-            if [ -d /opt/ffbuild/include/va ]; then
-              ls -la /opt/ffbuild/include/va/ | head -20
-              echo '--- libva version from /opt/ffbuild/include/va/va_version.h ---'
-              grep 'VA_MINOR_VERSION' /opt/ffbuild/include/va/va_version.h || echo 'va_version.h not found'
-              echo '--- Check for vaMapBuffer2 in va.h ---'
-              grep -c 'vaMapBuffer2' /opt/ffbuild/include/va/va.h || echo 'vaMapBuffer2 not found (expected for libva 1.14)'
-            else
-              echo '/opt/ffbuild/include/va/ does not exist!'
-            fi
-
-            echo '--- System libva-dev packages ---'
-            dpkg -l | grep libva || echo 'No system libva packages installed'
-
-            echo '--- GCC include search paths (crosstool-ng toolchain) ---'
-            echo | x86_64-ffbuild-linux-gnu-gcc -E -Wp,-v - 2>&1 | grep '^ ' | head -15
-
-            echo '--- Which va.h will GCC find? ---'
-            echo '#include <va/va.h>' | x86_64-ffbuild-linux-gnu-gcc -E -x c - 2>&1 | grep 'va/va.h' | head -3 || echo 'va.h not found by GCC'
-
-            echo '--- CFLAGS from environment ---'
-            echo \$CFLAGS
-
-            echo '--- Check libva pkg-config files ---'
-            ls -la /opt/ffbuild/lib/pkgconfig/*.pc 2>/dev/null | grep -E 'libva|libdrm' || echo 'No libva/libdrm .pc files found'
-
-            echo '--- libva.pc contents ---'
-            cat /opt/ffbuild/lib/pkgconfig/libva.pc 2>/dev/null || echo 'libva.pc not found!'
-
-            echo '--- libva-drm.pc contents ---'
-            cat /opt/ffbuild/lib/pkgconfig/libva-drm.pc 2>/dev/null || echo 'libva-drm.pc not found!'
-
-            echo '--- Test pkg-config libva ---'
-            PKG_CONFIG_PATH=/opt/ffbuild/lib/pkgconfig pkg-config --cflags libva 2>&1 || echo 'pkg-config libva failed'
-            PKG_CONFIG_PATH=/opt/ffbuild/lib/pkgconfig pkg-config --libs libva 2>&1 || echo 'pkg-config libva --libs failed'
-          "
-          echo "=== End of libva debugging ==="
-
           # Run Jellyfin build script
           ./build.sh "${TARGET}" gpl
 
