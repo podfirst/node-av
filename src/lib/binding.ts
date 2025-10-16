@@ -329,6 +329,8 @@ function loadBinding(): NativeBinding {
   const arch = process.arch;
   const platformArch = `${platform}-${arch}`;
 
+  console.log(`[binding.ts] Loading native binding for ${platformArch}`);
+
   // Local build directory (--build-from-source)
   try {
     const releasePath = resolve(__dirname, '..', '..', 'build', 'Release', 'node-av.node');
@@ -336,11 +338,16 @@ function loadBinding(): NativeBinding {
     const rootPath = resolve(__dirname, '..', '..', 'node-av.node');
     const localPath = [releasePath, binaryPath, rootPath];
     for (const path of localPath) {
+      console.log(`[binding.ts] Checking local path: ${path} (exists: ${existsSync(path)})`);
       if (existsSync(path)) {
-        return require(path);
+        console.log(`[binding.ts] ✓ Loading from local path: ${path}`);
+        const binding = require(path);
+        console.log(`[binding.ts] ✓ Successfully loaded from: ${path}`);
+        return binding;
       }
     }
   } catch (err) {
+    console.log(`[binding.ts] ✗ Local build loading failed: ${err}`);
     errors.push(new Error(`Local build loading failed: ${err}`));
   }
 
@@ -350,8 +357,12 @@ function loadBinding(): NativeBinding {
     if (useMingW) {
       try {
         const packageName = `@seydx/node-av-${platformArch}-mingw`;
-        return require(`${packageName}/node-av.node`);
+        console.log(`[binding.ts] Trying MinGW package: ${packageName}`);
+        const binding = require(`${packageName}/node-av.node`);
+        console.log(`[binding.ts] ✓ Successfully loaded from MinGW package: ${packageName}`);
+        return binding;
       } catch (err) {
+        console.log(`[binding.ts] ✗ MinGW package loading failed: ${err}`);
         errors.push(new Error(`MinGW package not found or loading failed: ${err}`));
       }
     }
@@ -359,21 +370,30 @@ function loadBinding(): NativeBinding {
     // Fallback to MSVC
     try {
       const packageName = `@seydx/node-av-${platformArch}-msvc`;
-      return require(`${packageName}/node-av.node`);
+      console.log(`[binding.ts] Trying MSVC package: ${packageName}`);
+      const binding = require(`${packageName}/node-av.node`);
+      console.log(`[binding.ts] ✓ Successfully loaded from MSVC package: ${packageName}`);
+      return binding;
     } catch (err) {
+      console.log(`[binding.ts] ✗ MSVC package loading failed: ${err}`);
       errors.push(new Error(`MSVC package not found or loading failed: ${err}`));
     }
   } else {
     // Non-Windows platforms
     try {
       const packageName = `@seydx/node-av-${platformArch}`;
-      return require(`${packageName}/node-av.node`);
+      console.log(`[binding.ts] Trying platform package: ${packageName}`);
+      const binding = require(`${packageName}/node-av.node`);
+      console.log(`[binding.ts] ✓ Successfully loaded from platform package: ${packageName}`);
+      return binding;
     } catch (err) {
+      console.log(`[binding.ts] ✗ Platform package loading failed: ${err}`);
       errors.push(new Error(`Platform package not found or loading failed: ${err}`));
     }
   }
 
   // All attempts failed
+  console.log(`[binding.ts] ✗ All binding loading attempts failed!`);
   const errorMessages = errors.map((e) => e.message).join('\n  ');
   // prettier-ignore
   throw new Error(
