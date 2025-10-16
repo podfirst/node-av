@@ -615,6 +615,8 @@ jobs:
 
       - name: Build Native Addon in Docker
         run: |
+          cp binding-jellyfin.gyp binding.gyp
+
           # Determine target based on architecture
           if [ "${{ matrix.target }}" = "amd64" ]; then
             TARGET="linux64"
@@ -653,9 +655,6 @@ jobs:
 
               # Install dependencies
               npm install --ignore-scripts
-
-              # Copy binding configuration
-              cp binding-jellyfin.gyp binding.gyp
 
               # Build with GCC from crosstool-ng (native GCC 15.2.0)
               npx prebuildify \
