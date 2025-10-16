@@ -233,9 +233,6 @@ export class FilterPreset {
       } else if (this.hardware.deviceType === AV_HWDEVICE_TYPE_QSV) {
         filterName = 'vpp_qsv'; // QSV uses vpp_qsv for scaling with w= and h= parameters
         filter = `${filterName}=w=${width}:h=${height}`;
-      } else if (this.hardware.deviceType === AV_HWDEVICE_TYPE_VULKAN) {
-        filterName = 'libplacebo'; // Vulkan uses libplacebo for advanced GPU processing
-        filter = `${filterName}=w=${width}:h=${height}`;
       } else {
         filterName = `scale_${this.hardware.deviceTypeName}`;
         filter = `${filterName}=${width}:${height}`;
@@ -305,8 +302,6 @@ export class FilterPreset {
       filterName = 'scale_vt';
     } else if (this.hardware.deviceType === AV_HWDEVICE_TYPE_QSV) {
       filterName = 'vpp_qsv';
-    } else if (this.hardware.deviceType === AV_HWDEVICE_TYPE_VULKAN) {
-      filterName = 'libplacebo';
     } else {
       filterName = `scale_${this.hardware.deviceTypeName}`;
     }
@@ -457,7 +452,7 @@ export class FilterPreset {
           filter = `vpp_qsv=detail=${detail}`;
           break;
         case AV_HWDEVICE_TYPE_VULKAN:
-          // libplacebo contrast parameter (>1 increases sharpness)
+          // libplacebo contrast parameter (>1 increases sharpness, no native sharpen_vulkan available)
           const contrast = amount ? Math.max(1, 1 + amount) : 1.5;
           filter = `libplacebo=contrast=${contrast}`;
           break;
@@ -746,7 +741,7 @@ export class FilterPreset {
     }
 
     if (this.hardware) {
-      // Vulkan uses libplacebo for comprehensive HDR tone-mapping
+      // Vulkan uses libplacebo for comprehensive HDR tone-mapping (no native tonemap_vulkan available)
       if (this.hardware.deviceType === AV_HWDEVICE_TYPE_VULKAN) {
         let filter = `libplacebo=tonemapping=${alg}`;
 
@@ -841,31 +836,18 @@ export class FilterPreset {
     }
 
     if (this.hardware) {
-      // Vulkan uses libplacebo with multiple inputs support
-      if (this.hardware.deviceType === AV_HWDEVICE_TYPE_VULKAN) {
-        let filter = `libplacebo=x=${x}:y=${y}`;
+      // Special handling for RKMPP which uses RGA
+      const filterName = this.hardware.deviceType === AV_HWDEVICE_TYPE_RKMPP ? 'overlay_rkrga' : `overlay_${this.hardware.deviceTypeName}`;
 
-        if (options) {
-          for (const [key, value] of Object.entries(options)) {
-            filter += `:${key}=${value}`;
-          }
+      let filter = `${filterName}=${x}:${y}`;
+
+      if (options) {
+        for (const [key, value] of Object.entries(options)) {
+          filter += `:${key}=${value}`;
         }
-
-        this.add(filter);
-      } else {
-        // Special handling for RKMPP which uses RGA
-        const filterName = this.hardware.deviceType === AV_HWDEVICE_TYPE_RKMPP ? 'overlay_rkrga' : `overlay_${this.hardware.deviceTypeName}`;
-
-        let filter = `${filterName}=${x}:${y}`;
-
-        if (options) {
-          for (const [key, value] of Object.entries(options)) {
-            filter += `:${key}=${value}`;
-          }
-        }
-
-        this.add(filter);
       }
+
+      this.add(filter);
     } else {
       let filter = `overlay=${x}:${y}`;
       if (options) {
@@ -1080,7 +1062,7 @@ export class FilterPreset {
    */
   pad(width: string | number, height: string | number, x?: string, y?: string, color = 'black'): FilterPreset {
     if (this.hardware?.deviceType === AV_HWDEVICE_TYPE_VULKAN) {
-      // Vulkan uses libplacebo with pos_x/y/w/h and fillcolor
+      // Vulkan uses libplacebo (no native pad_vulkan available)
       let filter = `libplacebo=w=${width}:h=${height}`;
       if (x !== undefined) filter += `:pos_x=${x}`;
       if (y !== undefined) filter += `:pos_y=${y}`;
@@ -2044,20 +2026,20 @@ export class FilterPreset {
 
       case AV_HWDEVICE_TYPE_VULKAN:
         return {
-          scale: true, // libplacebo (w/h/format/crop params)
-          overlay: true, // libplacebo (multiple inputs support)
-          transpose: true, // libplacebo (rotate via pos_x/y/w/h transformations)
-          tonemap: true, // libplacebo (comprehensive HDR tone-mapping)
-          deinterlace: true, // bwdif_vulkan (libplacebo doesn't have deinterlace)
-          denoise: true, // libplacebo (deband for banding artifacts)
-          flip: true, // libplacebo (via transformations)
-          blur: true, // libplacebo (via custom shaders or avgblur_vulkan fallback)
-          sharpen: true, // libplacebo (contrast/sharpness adjustments)
-          sobel: false, // Not available in libplacebo or vulkan
-          chromakey: false, // Not available in libplacebo
-          colorspace: true, // libplacebo (comprehensive color management)
-          pad: true, // libplacebo (via pos_x/y/w/h and fillcolor)
-          stack: false, // Not available (use overlay with positioning)
+          scale: true, // scale_vulkan (native Vulkan scaler)
+          overlay: true, // overlay_vulkan (native Vulkan overlay)
+          transpose: true, // transpose_vulkan (native Vulkan transpose)
+          tonemap: true, // libplacebo (comprehensive HDR tone-mapping, no native alternative)
+          deinterlace: true, // bwdif_vulkan (native Vulkan deinterlacer)
+          denoise: true, // nlmeans_vulkan (native Vulkan denoiser)
+          flip: true, // hflip_vulkan/vflip_vulkan (native Vulkan flip)
+          blur: true, // avgblur_vulkan/gblur_vulkan (native Vulkan blur)
+          sharpen: true, // libplacebo (contrast/sharpness adjustments, no native alternative)
+          sobel: false, // Not available
+          chromakey: false, // chromaber_vulkan exists but different purpose (chromatic aberration)
+          colorspace: true, // libplacebo (comprehensive color management, no native alternative)
+          pad: true, // libplacebo (via pos_x/y/w/h and fillcolor, no native alternative)
+          stack: false, // Not available
         };
 
       case AV_HWDEVICE_TYPE_OPENCL:
