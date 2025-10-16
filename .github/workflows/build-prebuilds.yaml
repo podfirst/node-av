@@ -582,6 +582,19 @@ jobs:
 
             echo '--- CFLAGS from environment ---'
             echo \$CFLAGS
+
+            echo '--- Check libva pkg-config files ---'
+            ls -la /opt/ffbuild/lib/pkgconfig/*.pc 2>/dev/null | grep -E 'libva|libdrm' || echo 'No libva/libdrm .pc files found'
+
+            echo '--- libva.pc contents ---'
+            cat /opt/ffbuild/lib/pkgconfig/libva.pc 2>/dev/null || echo 'libva.pc not found!'
+
+            echo '--- libva-drm.pc contents ---'
+            cat /opt/ffbuild/lib/pkgconfig/libva-drm.pc 2>/dev/null || echo 'libva-drm.pc not found!'
+
+            echo '--- Test pkg-config libva ---'
+            PKG_CONFIG_PATH=/opt/ffbuild/lib/pkgconfig pkg-config --cflags libva 2>&1 || echo 'pkg-config libva failed'
+            PKG_CONFIG_PATH=/opt/ffbuild/lib/pkgconfig pkg-config --libs libva 2>&1 || echo 'pkg-config libva --libs failed'
           "
           echo "=== End of libva debugging ==="
 
