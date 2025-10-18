@@ -82,7 +82,7 @@ export interface MediaInputOptions {
   /**
    * FFmpeg format options passed directly to the input.
    */
-  options?: Record<string, string | number>;
+  options?: Record<string, string | number | undefined | null>;
 }
 
 /**
@@ -115,7 +115,7 @@ export interface MediaOutputOptions {
   /**
    * FFmpeg format options passed directly to the output.
    */
-  options?: Record<string, string | number>;
+  options?: Record<string, string | number | undefined | null>;
 }
 
 /**
@@ -131,17 +131,16 @@ export interface DecoderOptions {
   /** Exit immediately on first decode error (default: true) */
   exitOnError?: boolean;
 
-  /** Additional codec-specific options (passed to AVOptions) */
-  options?: Record<string, string | number>;
-
   /** Hardware acceleration: Pass a HardwareContext instance */
   hardware?: HardwareContext | null;
 
   /**
-   * Number of extra hardware frames to allocate.
-   * Useful for hardware decoders requiring frame buffering.
+   * Number of extra hardware frames to allocate. Useful for hardware decoders requiring frame buffering.
    */
   extraHWFrames?: number;
+
+  /** Additional codec-specific options (passed to AVOptions) */
+  options?: Record<string, string | number | undefined | null>;
 }
 
 /**
@@ -179,7 +178,7 @@ export interface EncoderOptions {
   frameRate?: IRational;
 
   /** Additional codec-specific options (passed to AVOptions) */
-  options?: Record<string, string | number>;
+  options?: Record<string, string | number | undefined | null>;
 }
 
 /**
