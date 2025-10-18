@@ -2,10 +2,11 @@ import { mkdirSync } from 'fs';
 import { mkdir } from 'fs/promises';
 import { dirname, resolve } from 'path';
 
-import { AVFMT_FLAG_CUSTOM_IO, AVFMT_NOFILE, AVIO_FLAG_WRITE } from '../constants/constants.js';
+import { AV_CODEC_FLAG_GLOBAL_HEADER, AVFMT_FLAG_CUSTOM_IO, AVFMT_GLOBALHEADER, AVFMT_NOFILE, AVIO_FLAG_WRITE } from '../constants/constants.js';
 import { FFmpegError, FormatContext, IOContext, Rational } from '../lib/index.js';
 import { Encoder } from './encoder.js';
 
+import type { AVCodecFlag } from '../constants/constants.js';
 import type { IRational, Packet, Stream } from '../lib/index.js';
 import type { IOOutputCallbacks, MediaOutputOptions } from './types.js';
 
@@ -161,6 +162,10 @@ export class MediaOutput implements AsyncDisposable, Disposable {
         // Set format options if provided
         if (options?.options) {
           for (const [key, value] of Object.entries(options.options)) {
+            if (value === undefined || value === null) {
+              continue;
+            }
+
             output.formatContext.setOption(key, typeof value === 'number' ? value.toString() : value);
           }
         }
@@ -187,6 +192,10 @@ export class MediaOutput implements AsyncDisposable, Disposable {
         // Set format options if provided
         if (options?.options) {
           for (const [key, value] of Object.entries(options.options)) {
+            if (value === undefined || value === null) {
+              continue;
+            }
+
             output.formatContext.setOption(key, typeof value === 'number' ? value.toString() : value);
           }
         }
@@ -287,6 +296,10 @@ export class MediaOutput implements AsyncDisposable, Disposable {
         // Set format options if provided
         if (options?.options) {
           for (const [key, value] of Object.entries(options.options)) {
+            if (value === undefined || value === null) {
+              continue;
+            }
+
             output.formatContext.setOption(key, typeof value === 'number' ? value.toString() : value);
           }
         }
@@ -313,6 +326,10 @@ export class MediaOutput implements AsyncDisposable, Disposable {
         // Set format options if provided
         if (options?.options) {
           for (const [key, value] of Object.entries(options.options)) {
+            if (value === undefined || value === null) {
+              continue;
+            }
+
             output.formatContext.setOption(key, typeof value === 'number' ? value.toString() : value);
           }
         }
@@ -417,6 +434,18 @@ export class MediaOutput implements AsyncDisposable, Disposable {
 
     const isStreamCopy = !(source instanceof Encoder);
 
+    // Auto-set GLOBAL_HEADER flag if format requires it
+    if (!isStreamCopy) {
+      const encoder = source;
+      const oformat = this.formatContext.oformat;
+      if (oformat && oformat.flags & AVFMT_GLOBALHEADER) {
+        // Get current flags and add GLOBAL_HEADER flag
+        const currentFlags = encoder.getCodecFlags();
+        const newFlags = (currentFlags | AV_CODEC_FLAG_GLOBAL_HEADER) as AVCodecFlag;
+        encoder.setCodecFlags(newFlags);
+      }
+    }
+
     // For stream copy, initialize immediately since we have all the info
     if (isStreamCopy) {
       const inputStream = source;
@@ -425,7 +454,10 @@ export class MediaOutput implements AsyncDisposable, Disposable {
 
       // Set the timebases
       const sourceTimeBase = inputStream.timeBase;
-      stream.timeBase = options?.timeBase ? new Rational(options.timeBase.num, options.timeBase.den) : inputStream.timeBase;
+
+      if (options?.timeBase) {
+        stream.timeBase = new Rational(options.timeBase.num, options.timeBase.den);
+      }
 
       this.streams.set(stream.index, {
         initialized: true,
@@ -528,8 +560,19 @@ export class MediaOutput implements AsyncDisposable, Disposable {
         // Update the timebase from the encoder
         streamInfo.sourceTimeBase = codecContext.timeBase;
 
-        // Output stream uses encoder's timebase (or custom if specified)
-        streamInfo.stream.timeBase = streamInfo.timeBase ? new Rational(streamInfo.timeBase.num, streamInfo.timeBase.den) : codecContext.timeBase;
+        // Set frame rate from encoder
+        const fr = codecContext.framerate;
+        streamInfo.stream.avgFrameRate = new Rational(fr.num, fr.den);
+
+        // Set output stream timebase
+        if (streamInfo.timeBase) {
+          // User specified custom timebase
+          streamInfo.stream.timeBase = new Rational(streamInfo.timeBase.num, streamInfo.timeBase.den);
+        } else {
+          // Default: 1/framerate (MP4/DASH muxer will multiply by 2 until >= 10000)
+          const fps = codecContext.framerate.num / codecContext.framerate.den;
+          streamInfo.stream.timeBase = new Rational(1, Math.round(fps));
+        }
 
         // Mark as initialized
         streamInfo.initialized = true;
@@ -673,8 +716,19 @@ export class MediaOutput implements AsyncDisposable, Disposable {
         // Update the timebase from the encoder
         streamInfo.sourceTimeBase = codecContext.timeBase;
 
-        // Output stream uses encoder's timebase (or custom if specified)
-        streamInfo.stream.timeBase = streamInfo.timeBase ? new Rational(streamInfo.timeBase.num, streamInfo.timeBase.den) : codecContext.timeBase;
+        // Set frame rate from encoder
+        const fr = codecContext.framerate;
+        streamInfo.stream.avgFrameRate = new Rational(fr.num, fr.den);
+
+        // Set output stream timebase
+        if (streamInfo.timeBase) {
+          // User specified custom timebase
+          streamInfo.stream.timeBase = new Rational(streamInfo.timeBase.num, streamInfo.timeBase.den);
+        } else {
+          // Default: 1/framerate (MP4/DASH muxer will multiply by 2 until >= 10000)
+          const fps = codecContext.framerate.num / codecContext.framerate.den;
+          streamInfo.stream.timeBase = new Rational(1, Math.round(fps));
+        }
 
         // Mark as initialized
         streamInfo.initialized = true;
