@@ -158,6 +158,13 @@ export class MediaOutput implements AsyncDisposable, Disposable {
         const ret = output.formatContext.allocOutputContext2(null, options?.format ?? null, resolvedTarget === '' ? null : resolvedTarget);
         FFmpegError.throwIfError(ret, 'Failed to allocate output context');
 
+        // Set format options if provided
+        if (options?.options) {
+          for (const [key, value] of Object.entries(options.options)) {
+            output.formatContext.setOption(key, typeof value === 'number' ? value.toString() : value);
+          }
+        }
+
         // Check if we need to open IO
         const oformat = output.formatContext.oformat;
         if (resolvedTarget && oformat && !(oformat.flags & AVFMT_NOFILE)) {
@@ -176,6 +183,13 @@ export class MediaOutput implements AsyncDisposable, Disposable {
 
         const ret = output.formatContext.allocOutputContext2(null, options.format, null);
         FFmpegError.throwIfError(ret, 'Failed to allocate output context');
+
+        // Set format options if provided
+        if (options?.options) {
+          for (const [key, value] of Object.entries(options.options)) {
+            output.formatContext.setOption(key, typeof value === 'number' ? value.toString() : value);
+          }
+        }
 
         // Setup custom IO with callbacks
         output.ioContext = new IOContext();
@@ -270,6 +284,13 @@ export class MediaOutput implements AsyncDisposable, Disposable {
         const ret = output.formatContext.allocOutputContext2(null, options?.format ?? null, resolvedTarget === '' ? null : resolvedTarget);
         FFmpegError.throwIfError(ret, 'Failed to allocate output context');
 
+        // Set format options if provided
+        if (options?.options) {
+          for (const [key, value] of Object.entries(options.options)) {
+            output.formatContext.setOption(key, typeof value === 'number' ? value.toString() : value);
+          }
+        }
+
         // Check if we need to open IO
         const oformat = output.formatContext.oformat;
         if (resolvedTarget && oformat && !(oformat.flags & AVFMT_NOFILE)) {
@@ -288,6 +309,13 @@ export class MediaOutput implements AsyncDisposable, Disposable {
 
         const ret = output.formatContext.allocOutputContext2(null, options.format, null);
         FFmpegError.throwIfError(ret, 'Failed to allocate output context');
+
+        // Set format options if provided
+        if (options?.options) {
+          for (const [key, value] of Object.entries(options.options)) {
+            output.formatContext.setOption(key, typeof value === 'number' ? value.toString() : value);
+          }
+        }
 
         // Setup custom IO with callbacks
         output.ioContext = new IOContext();

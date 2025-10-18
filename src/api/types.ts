@@ -81,8 +81,6 @@ export interface MediaInputOptions {
 
   /**
    * FFmpeg format options passed directly to the input.
-   * These are equivalent to options specified before -i in ffmpeg CLI.
-   *
    */
   options?: Record<string, string | number>;
 }
@@ -113,6 +111,11 @@ export interface MediaOutputOptions {
    * @default 4096
    */
   bufferSize?: number;
+
+  /**
+   * FFmpeg format options passed directly to the output.
+   */
+  options?: Record<string, string | number>;
 }
 
 /**
