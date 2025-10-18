@@ -63,9 +63,10 @@ export class Rational {
     public readonly num: number,
     public readonly den: number,
   ) {
-    if (den === 0) {
-      throw new Error('Denominator cannot be zero');
-    }
+    // Note: FFmpeg allows den = 0 as a special value:
+    // - { 0, 0 } = undefined/not set
+    // - { num, 0 } = infinity
+    // We allow it for FFmpeg compatibility, but operations may fail.
   }
 
   /**
@@ -153,6 +154,30 @@ export class Rational {
   }
 
   /**
+   * Check if this rational is valid (both num and den are positive).
+   *
+   * FFmpeg uses { 0, 0 } as "undefined" and { num, 0 } as infinity.
+   * This method returns true only if both values are positive.
+   *
+   * @returns true if num > 0 and den > 0
+   *
+   * @example
+   * ```typescript
+   * const valid = new Rational(25, 1);
+   * console.log(valid.isValid()); // true
+   *
+   * const undefined = new Rational(0, 0);
+   * console.log(undefined.isValid()); // false
+   *
+   * const infinity = new Rational(1, 0);
+   * console.log(infinity.isValid()); // false
+   * ```
+   */
+  isValid(): boolean {
+    return this.num > 0 && this.den > 0;
+  }
+
+  /**
    * Invert the rational number (reciprocal).
    *
    * Returns the reciprocal: 1/(a/b) = b/a
@@ -177,7 +202,7 @@ export class Rational {
    * Calculates the decimal value: num / den
    * Note: This may lose precision for some rational values.
    *
-   * @returns The floating point representation
+   * @returns The floating point representation (Infinity if den = 0, NaN if both = 0)
    *
    * @example
    * ```typescript
@@ -186,10 +211,13 @@ export class Rational {
    *
    * const half = new Rational(1, 2);
    * console.log(half.toDouble()); // 0.5
+   *
+   * const infinity = new Rational(1, 0);
+   * console.log(infinity.toDouble()); // Infinity
    * ```
    */
   toDouble(): number {
-    return this.num / this.den;
+    return this.num / this.den; // JavaScript handles division by zero correctly (Infinity/NaN)
   }
 
   /**

@@ -25,16 +25,18 @@ describe('Rational', () => {
       assert.equal(r3.den, -2);
     });
 
-    it('should throw error for zero denominator', () => {
-      assert.throws(
-        () => {
-          new Rational(1, 0);
-        },
-        {
-          name: 'Error',
-          message: 'Denominator cannot be zero',
-        },
-      );
+    it('should allow zero denominator (FFmpeg compatibility)', () => {
+      // FFmpeg uses { num, 0 } for infinity
+      const infinity = new Rational(1, 0);
+      assert.equal(infinity.num, 1);
+      assert.equal(infinity.den, 0);
+    });
+
+    it('should allow { 0, 0 } (FFmpeg undefined value)', () => {
+      // FFmpeg uses { 0, 0 } for undefined/not set
+      const notDefined = new Rational(0, 0);
+      assert.equal(notDefined.num, 0);
+      assert.equal(notDefined.den, 0);
     });
 
     it('should handle zero numerator', () => {
@@ -191,18 +193,14 @@ describe('Rational', () => {
         assert.equal(result.den, 12); // 3*4 = 12
       });
 
-      it('should throw when dividing by zero', () => {
+      it('should result in infinity when dividing by zero', () => {
         const r1 = new Rational(1, 2);
         const r2 = new Rational(0, 1);
-        assert.throws(
-          () => {
-            r1.div(r2);
-          },
-          {
-            name: 'Error',
-            message: 'Denominator cannot be zero',
-          },
-        );
+        const result = r1.div(r2);
+        // 1/2 ÷ 0/1 = 1/2 * 1/0 = 1/0 (infinity)
+        assert.equal(result.num, 1);
+        assert.equal(result.den, 0);
+        assert.equal(result.toDouble(), Infinity);
       });
     });
 
@@ -228,17 +226,13 @@ describe('Rational', () => {
         assert.equal(result.den, -2);
       });
 
-      it('should throw when inverting zero', () => {
+      it('should result in infinity when inverting zero', () => {
         const r = new Rational(0, 1);
-        assert.throws(
-          () => {
-            r.inv();
-          },
-          {
-            name: 'Error',
-            message: 'Denominator cannot be zero',
-          },
-        );
+        const result = r.inv();
+        // inv(0/1) = 1/0 (infinity)
+        assert.equal(result.num, 1);
+        assert.equal(result.den, 0);
+        assert.equal(result.toDouble(), Infinity);
       });
     });
   });
@@ -256,6 +250,19 @@ describe('Rational', () => {
 
       const r4 = new Rational(-1, 2);
       assert.equal(r4.toDouble(), -0.5);
+    });
+
+    it('should convert { 0, 0 } to NaN', () => {
+      const r = new Rational(0, 0);
+      assert.ok(Number.isNaN(r.toDouble()));
+    });
+
+    it('should convert { num, 0 } to Infinity', () => {
+      const posInf = new Rational(1, 0);
+      assert.equal(posInf.toDouble(), Infinity);
+
+      const negInf = new Rational(-1, 0);
+      assert.equal(negInf.toDouble(), -Infinity);
     });
 
     it('should handle zero conversion', () => {
@@ -280,6 +287,48 @@ describe('Rational', () => {
 
       const r4 = new Rational(10, 1);
       assert.equal(r4.toString(), '10/1');
+    });
+  });
+
+  describe('Validation', () => {
+    it('should identify valid rationals', () => {
+      const r1 = new Rational(1, 2);
+      assert.ok(r1.isValid());
+
+      const r2 = new Rational(25, 1);
+      assert.ok(r2.isValid());
+
+      const r3 = new Rational(30000, 1001);
+      assert.ok(r3.isValid());
+    });
+
+    it('should identify { 0, 0 } as invalid', () => {
+      const r = new Rational(0, 0);
+      assert.ok(!r.isValid());
+    });
+
+    it('should identify { num, 0 } as invalid', () => {
+      const posInf = new Rational(1, 0);
+      assert.ok(!posInf.isValid());
+
+      const negInf = new Rational(-1, 0);
+      assert.ok(!negInf.isValid());
+    });
+
+    it('should identify { 0, den } as invalid (num must be > 0)', () => {
+      const r = new Rational(0, 5);
+      assert.ok(!r.isValid());
+    });
+
+    it('should identify negative values as invalid (both must be > 0)', () => {
+      const r1 = new Rational(-1, 2);
+      assert.ok(!r1.isValid());
+
+      const r2 = new Rational(1, -2);
+      assert.ok(!r2.isValid());
+
+      const r3 = new Rational(-1, -2);
+      assert.ok(!r3.isValid());
     });
   });
 
