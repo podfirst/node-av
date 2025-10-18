@@ -2,7 +2,7 @@ import { AVERROR_EAGAIN, AVERROR_EOF, AVMEDIA_TYPE_AUDIO } from '../constants/co
 import { Codec, CodecContext, Dictionary, FFmpegError, Packet, Rational } from '../lib/index.js';
 import { parseBitrate } from './utils.js';
 
-import type { AVCodecID, AVPixelFormat, AVSampleFormat } from '../constants/constants.js';
+import type { AVCodecFlag, AVCodecID, AVPixelFormat, AVSampleFormat } from '../constants/constants.js';
 import type { FFEncoderCodec } from '../constants/encoders.js';
 import type { Frame } from '../lib/index.js';
 import type { EncoderOptions } from './types.js';
@@ -1121,6 +1121,46 @@ export class Encoder implements Disposable {
    */
   getCodecContext(): CodecContext | null {
     return !this.isClosed && this.initialized ? this.codecContext : null;
+  }
+
+  /**
+   * Get codec flags even before encoder initialization.
+   *
+   * Unlike getCodecContext(), this works before initialization.
+   *
+   * @returns Current codec flags
+   *
+   * @throws {Error} If encoder is closed
+   *
+   * @internal
+   */
+  getCodecFlags(): AVCodecFlag {
+    if (this.isClosed) {
+      throw new Error('Cannot get flags on closed encoder');
+    }
+    return this.codecContext.flags;
+  }
+
+  /**
+   * Set codec flags before encoder initialization.
+   *
+   * This allows setting flags on the codec context before the encoder is opened,
+   * which is necessary for flags that affect initialization behavior (like GLOBAL_HEADER).
+   *
+   * @param flags - The flags to set
+   *
+   * @throws {Error} If encoder is already initialized or closed
+   *
+   * @internal
+   */
+  setCodecFlags(flags: AVCodecFlag): void {
+    if (this.isClosed) {
+      throw new Error('Cannot set flags on closed encoder');
+    }
+    if (this.initialized) {
+      throw new Error('Cannot set flags on already initialized encoder');
+    }
+    this.codecContext.flags = flags;
   }
 
   /**
