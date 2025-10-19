@@ -2,12 +2,20 @@ import { mkdirSync } from 'fs';
 import { mkdir } from 'fs/promises';
 import { dirname, resolve } from 'path';
 
-import { AV_CODEC_FLAG_GLOBAL_HEADER, AVFMT_FLAG_CUSTOM_IO, AVFMT_GLOBALHEADER, AVFMT_NOFILE, AVIO_FLAG_WRITE } from '../constants/constants.js';
+import {
+  AV_CODEC_FLAG_GLOBAL_HEADER,
+  AVFMT_FLAG_CUSTOM_IO,
+  AVFMT_GLOBALHEADER,
+  AVFMT_NOFILE,
+  AVIO_FLAG_WRITE,
+  AVMEDIA_TYPE_AUDIO,
+  AVMEDIA_TYPE_VIDEO,
+} from '../constants/constants.js';
 import { FFmpegError, FormatContext, IOContext, Rational } from '../lib/index.js';
 import { Encoder } from './encoder.js';
 
 import type { AVCodecFlag } from '../constants/constants.js';
-import type { IRational, Packet, Stream } from '../lib/index.js';
+import type { IRational, OutputFormat, Packet, Stream } from '../lib/index.js';
 import type { IOOutputCallbacks, MediaOutputOptions } from './types.js';
 
 export interface StreamDescription {
@@ -70,7 +78,7 @@ export interface StreamDescription {
  */
 export class MediaOutput implements AsyncDisposable, Disposable {
   private formatContext: FormatContext;
-  private streams = new Map<number, StreamDescription>();
+  private _streams = new Map<number, StreamDescription>();
   private ioContext?: IOContext;
   private headerWritten = false;
   private trailerWritten = false;
@@ -373,6 +381,120 @@ export class MediaOutput implements AsyncDisposable, Disposable {
   }
 
   /**
+   * Check if output is open.
+   *
+   * @example
+   * ```typescript
+   * if (!output.isOutputOpen) {
+   *   console.log('Output is not open');
+   * }
+   * ```
+   */
+  get isOutputOpen(): boolean {
+    return !this.isClosed;
+  }
+
+  /**
+   * Check if output is initialized.
+   *
+   * All streams have been initialized.
+   * This occurs after the first packet has been written to each stream.
+   *
+   * @example
+   * ```typescript
+   * if (!output.isOutputInitialized) {
+   *   console.log('Output is not initialized');
+   * }
+   * ```
+   */
+  get isOutputInitialized(): boolean {
+    if (this._streams.size === 0) {
+      return false;
+    }
+
+    if (this.isClosed) {
+      return false;
+    }
+
+    return Array.from(this._streams).every(([_, stream]) => stream.initialized);
+  }
+
+  /**
+   * Get all streams in the media.
+   *
+   * @example
+   * ```typescript
+   * for (const stream of output.streams) {
+   *   console.log(`Stream ${stream.index}: ${stream.codecpar.codecType}`);
+   * }
+   * ```
+   */
+  get streams(): Stream[] | null {
+    return this.formatContext.streams;
+  }
+
+  /**
+   * Get format name.
+   *
+   * Returns 'unknown' if output is closed or format is not available.
+   *
+   * @example
+   * ```typescript
+   * console.log(`Format: ${output.formatName}`); // "mov,mp4,m4a,3gp,3g2,mj2"
+   * ```
+   */
+  get formatName(): string {
+    if (this.isClosed) {
+      return 'unknown';
+    }
+
+    return this.formatContext.oformat?.name ?? 'unknown';
+  }
+
+  /**
+   * Get format long name.
+   *
+   * Returns 'Unknown Format' if output is closed or format is not available.
+   *
+   * @example
+   * ```typescript
+   * console.log(`Format: ${output.formatLongName}`); // "QuickTime / MOV"
+   * ```
+   */
+  get formatLongName(): string {
+    if (this.isClosed) {
+      return 'Unknown Format';
+    }
+
+    return this.formatContext.oformat?.longName ?? 'Unknown Format';
+  }
+
+  /**
+   * Get MIME type of the output format.
+   *
+   * Returns format's native MIME type.
+   * For DASH/HLS formats, use {@link getStreamMimeType} for stream-specific MIME types.
+   *
+   * Returns null if output is closed or format is not available.
+   *
+   * @example
+   * ```typescript
+   * console.log(mp4Output.mimeType); // "video/mp4"
+   * console.log(dashOutput.mimeType); // null (DASH has no global MIME type)
+   *
+   * // For DASH/HLS, get MIME type per stream:
+   * console.log(dashOutput.getStreamMimeType(0)); // "video/mp4"
+   * ```
+   */
+  get mimeType(): string | null {
+    if (this.isClosed) {
+      return null;
+    }
+
+    return this.formatContext.oformat?.mimeType ?? null;
+  }
+
+  /**
    * Add a stream to the output.
    *
    * Configures output stream from encoder or input stream.
@@ -459,7 +581,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
         stream.timeBase = new Rational(options.timeBase.num, options.timeBase.den);
       }
 
-      this.streams.set(stream.index, {
+      this._streams.set(stream.index, {
         initialized: true,
         stream,
         source,
@@ -469,7 +591,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
         bufferedPackets: [],
       });
     } else {
-      this.streams.set(stream.index, {
+      this._streams.set(stream.index, {
         initialized: false,
         stream,
         source,
@@ -481,6 +603,127 @@ export class MediaOutput implements AsyncDisposable, Disposable {
     }
 
     return stream.index;
+  }
+
+  /**
+   * Get output stream by index.
+   *
+   * Returns the stream at the specified index.
+   * Use the stream index returned by addStream().
+   *
+   * @param index - Stream index (returned by addStream)
+   *
+   * @returns Stream or undefined if index is invalid
+   *
+   * @example
+   * ```typescript
+   * const output = await MediaOutput.open('output.mp4');
+   * const videoIdx = output.addStream(encoder);
+   *
+   * // Get the output stream to inspect codec parameters
+   * const stream = output.getStream(videoIdx);
+   * if (stream) {
+   *   console.log(`Output codec: ${stream.codecpar.codecId}`);
+   * }
+   * ```
+   *
+   * @see {@link addStream} For adding streams
+   * @see {@link video} For getting video streams
+   * @see {@link audio} For getting audio streams
+   */
+  getStream(index: number): Stream | undefined {
+    const streams = this.formatContext.streams;
+    if (!streams || index < 0 || index >= streams.length) {
+      return undefined;
+    }
+    return streams[index];
+  }
+
+  /**
+   * Get video stream by index.
+   *
+   * Returns the nth video stream (0-based index).
+   * Returns undefined if stream doesn't exist.
+   *
+   * @param index - Video stream index (default: 0)
+   *
+   * @returns Video stream or undefined
+   *
+   * @example
+   * ```typescript
+   * const output = await MediaOutput.open('output.mp4');
+   * output.addStream(videoEncoder);
+   *
+   * // Get first video stream
+   * const videoStream = output.video();
+   * if (videoStream) {
+   *   console.log(`Video output: ${videoStream.codecpar.width}x${videoStream.codecpar.height}`);
+   * }
+   * ```
+   *
+   * @see {@link audio} For audio streams
+   * @see {@link getStream} For direct stream access
+   */
+  video(index = 0): Stream | undefined {
+    const streams = this.formatContext.streams;
+    if (!streams) return undefined;
+    const videoStreams = streams.filter((s) => s.codecpar.codecType === AVMEDIA_TYPE_VIDEO);
+    return videoStreams[index];
+  }
+
+  /**
+   * Get audio stream by index.
+   *
+   * Returns the nth audio stream (0-based index).
+   * Returns undefined if stream doesn't exist.
+   *
+   * @param index - Audio stream index (default: 0)
+   *
+   * @returns Audio stream or undefined
+   *
+   * @example
+   * ```typescript
+   * const output = await MediaOutput.open('output.mp4');
+   * output.addStream(audioEncoder);
+   *
+   * // Get first audio stream
+   * const audioStream = output.audio();
+   * if (audioStream) {
+   *   console.log(`Audio output: ${audioStream.codecpar.sampleRate}Hz`);
+   * }
+   * ```
+   *
+   * @see {@link video} For video streams
+   * @see {@link getStream} For direct stream access
+   */
+  audio(index = 0): Stream | undefined {
+    const streams = this.formatContext.streams;
+    if (!streams) return undefined;
+    const audioStreams = streams.filter((s) => s.codecpar.codecType === AVMEDIA_TYPE_AUDIO);
+    return audioStreams[index];
+  }
+
+  /**
+   * Get output format.
+   *
+   * Returns the output format used for muxing.
+   * May be null if format context not initialized.
+   *
+   * @returns Output format or null
+   *
+   * @example
+   * ```typescript
+   * const output = await MediaOutput.open('output.mp4');
+   * const format = output.outputFormat();
+   * if (format) {
+   *   console.log(`Output format: ${format.name}`);
+   * }
+   * ```
+   *
+   * @see {@link OutputFormat} For format details
+   */
+  outputFormat(): OutputFormat | null {
+    return this.formatContext.oformat;
   }
 
   /**
@@ -538,12 +781,12 @@ export class MediaOutput implements AsyncDisposable, Disposable {
       throw new Error('Cannot write packets after output is finalized');
     }
 
-    if (!this.streams.get(streamIndex)) {
+    if (!this._streams.get(streamIndex)) {
       throw new Error(`Invalid stream index: ${streamIndex}`);
     }
 
     // Initialize any encoder streams that are ready
-    for (const streamInfo of this.streams.values()) {
+    for (const streamInfo of this._streams.values()) {
       if (!streamInfo.initialized && streamInfo.source instanceof Encoder) {
         const encoder = streamInfo.source;
         const codecContext = encoder.getCodecContext();
@@ -579,10 +822,10 @@ export class MediaOutput implements AsyncDisposable, Disposable {
       }
     }
 
-    const streamInfo = this.streams.get(streamIndex)!;
+    const streamInfo = this._streams.get(streamIndex)!;
 
     // Check if any streams are still uninitialized
-    const uninitialized = Array.from(this.streams.values()).some((s) => !s.initialized);
+    const uninitialized = Array.from(this._streams.values()).some((s) => !s.initialized);
     if (uninitialized) {
       const clonedPacket = packet.clone();
       packet.free();
@@ -694,12 +937,12 @@ export class MediaOutput implements AsyncDisposable, Disposable {
       throw new Error('Cannot write packets after output is finalized');
     }
 
-    if (!this.streams.get(streamIndex)) {
+    if (!this._streams.get(streamIndex)) {
       throw new Error(`Invalid stream index: ${streamIndex}`);
     }
 
     // Initialize any encoder streams that are ready
-    for (const streamInfo of this.streams.values()) {
+    for (const streamInfo of this._streams.values()) {
       if (!streamInfo.initialized && streamInfo.source instanceof Encoder) {
         const encoder = streamInfo.source;
         const codecContext = encoder.getCodecContext();
@@ -735,10 +978,10 @@ export class MediaOutput implements AsyncDisposable, Disposable {
       }
     }
 
-    const streamInfo = this.streams.get(streamIndex)!;
+    const streamInfo = this._streams.get(streamIndex)!;
 
     // Check if any streams are still uninitialized
-    const uninitialized = Array.from(this.streams.values()).some((s) => !s.initialized);
+    const uninitialized = Array.from(this._streams.values()).some((s) => !s.initialized);
     if (uninitialized) {
       const clonedPacket = packet.clone();
       packet.free();
@@ -817,7 +1060,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
     this.isClosed = true;
 
     // Free any buffered packets
-    for (const streamInfo of this.streams.values()) {
+    for (const streamInfo of this._streams.values()) {
       // Free any buffered packets
       for (const pkt of streamInfo.bufferedPackets) {
         pkt.free();
@@ -901,7 +1144,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
     this.isClosed = true;
 
     // Free any buffered packets
-    for (const streamInfo of this.streams.values()) {
+    for (const streamInfo of this._streams.values()) {
       // Free any buffered packets
       for (const pkt of streamInfo.bufferedPackets) {
         pkt.free();
