@@ -105,6 +105,31 @@ describe('CodecParameters', () => {
       assert.equal(params.codecTag, 0xffffffff);
     });
 
+    it('should get codec tag as string (FourCC)', () => {
+      params.alloc();
+
+      // Test common FourCC codes (little-endian byte order)
+      params.codecTag = 0x31637661; // 'avc1' = 0x61766331 reversed (828601953)
+      assert.equal(params.codecTagString, 'avc1');
+
+      params.codecTag = 0x6134706d; // 'mp4a' = 0x6D703461 reversed (1630826605)
+      assert.equal(params.codecTagString, 'mp4a');
+
+      params.codecTag = 0x31766568; // 'hev1' = 0x68657631 reversed
+      assert.equal(params.codecTagString, 'hev1');
+
+      params.codecTag = 0x31637668; // 'hvc1' = 0x68766331 reversed
+      assert.equal(params.codecTagString, 'hvc1');
+
+      params.codecTag = 0x31307661; // 'av01' = 0x61763031 reversed
+      assert.equal(params.codecTagString, 'av01');
+
+      // Test zero codec tag
+      params.codecTag = 0;
+      const zeroTag = params.codecTagString;
+      assert.ok(zeroTag !== null, 'Should return string for zero tag');
+    });
+
     it('should get and set bitrate', () => {
       params.bitRate = 1000000n;
       assert.equal(params.bitRate, 1000000n);

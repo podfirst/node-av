@@ -1,6 +1,10 @@
 #include "codec_parameters.h"
 #include "codec_context.h"
 
+extern "C" {
+#include <libavutil/avutil.h>
+}
+
 namespace ffmpeg {
 
 Napi::FunctionReference CodecParameters::constructor;
@@ -18,6 +22,7 @@ Napi::Object CodecParameters::Init(Napi::Env env, Napi::Object exports) {
     InstanceAccessor<&CodecParameters::GetCodecType, &CodecParameters::SetCodecType>("codecType"),
     InstanceAccessor<&CodecParameters::GetCodecId, &CodecParameters::SetCodecId>("codecId"),
     InstanceAccessor<&CodecParameters::GetCodecTag, &CodecParameters::SetCodecTag>("codecTag"),
+    InstanceAccessor<&CodecParameters::GetCodecTagString>("codecTagString"),
     InstanceAccessor<&CodecParameters::GetExtradata, &CodecParameters::SetExtradata>("extradata"),
     InstanceAccessor<&CodecParameters::GetExtradataSize>("extradataSize"),
     InstanceAccessor<&CodecParameters::GetFormat, &CodecParameters::SetFormat>("format"),
@@ -288,6 +293,18 @@ void CodecParameters::SetCodecTag(const Napi::CallbackInfo& info, const Napi::Va
   if (params_) {
     params_->codec_tag = value.As<Napi::Number>().Uint32Value();
   }
+}
+
+Napi::Value CodecParameters::GetCodecTagString(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (!params_) {
+    return env.Null();
+  }
+
+  char buf[AV_FOURCC_MAX_STRING_SIZE] = {0};
+  av_fourcc_make_string(buf, params_->codec_tag);
+
+  return Napi::String::New(env, buf);
 }
 
 Napi::Value CodecParameters::GetExtradata(const Napi::CallbackInfo& info) {

@@ -56,7 +56,8 @@ private:
   
   Napi::Value GetCodecTag(const Napi::CallbackInfo& info);
   void SetCodecTag(const Napi::CallbackInfo& info, const Napi::Value& value);
-  
+  Napi::Value GetCodecTagString(const Napi::CallbackInfo& info);
+
   Napi::Value GetExtradata(const Napi::CallbackInfo& info);
   void SetExtradata(const Napi::CallbackInfo& info, const Napi::Value& value);
   
