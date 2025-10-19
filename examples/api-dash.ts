@@ -22,18 +22,7 @@
 
 import fs from 'fs/promises';
 
-import {
-  AV_PIX_FMT_YUV420P,
-  avGetCodecStringDash,
-  avGetMimeTypeDash,
-  Decoder,
-  Encoder,
-  FF_ENCODER_LIBX265,
-  FilterAPI,
-  FilterPreset,
-  MediaInput,
-  MediaOutput,
-} from '../src/index.js';
+import { AV_PIX_FMT_YUV420P, Decoder, Encoder, FF_ENCODER_LIBX265, FilterAPI, FilterPreset, MediaInput, MediaOutput } from '../src/index.js';
 import { prepareTestEnvironment } from './index.js';
 
 // Parse command line arguments
@@ -178,24 +167,6 @@ try {
     await dashOutput.writePacket(packet, dashVideoStreamIndex);
     packetsWritten++;
     framesProcessed++;
-
-    // After first packet, output stream codecpar is initialized
-    if (packetsWritten === 1) {
-      const outputStream = dashOutput.video();
-      if (outputStream) {
-        console.log('Output Stream Info:');
-        console.log(`  Codec ID: ${outputStream.codecpar.codecId}`);
-        console.log(`  Codec Tag: ${outputStream.codecpar.codecTag}`);
-        console.log(`  Extradata size: ${outputStream.codecpar.extradata?.length ?? 0}`);
-        console.log(`  Framerate: ${outputStream.codecpar.frameRate?.num}/${outputStream.codecpar.frameRate?.den}`);
-
-        // Use MediaOutput methods for codec strings and MIME type
-        const mimeType = avGetMimeTypeDash(outputStream.codecpar);
-        const codecString = avGetCodecStringDash(outputStream.codecpar); // Auto-detects DASH
-
-        console.log(`Output Codec String: ${mimeType}; codecs="${codecString}"`);
-      }
-    }
 
     // Progress indicator
     if (packetsWritten % 30 === 0) {
