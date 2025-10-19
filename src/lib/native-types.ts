@@ -281,6 +281,7 @@ export interface NativeCodecParser {
 export interface NativeCodecParameters extends Disposable {
   readonly __brand: 'NativeCodecParameters';
 
+  readonly codecTagString: string | null;
   readonly extradataSize: number;
   codecType: AVMediaType;
   codecId: AVCodecID;
