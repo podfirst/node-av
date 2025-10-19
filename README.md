@@ -396,6 +396,7 @@ NodeAV provides direct bindings to FFmpeg's C APIs, which work with raw memory p
 
 | Example | FFmpeg | Low-Level API | High-Level API |
 |---------|--------|---------------|----------------|
+| `browser-fmp4` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/browser/fmp4) |
 | `api-dash` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-dash.ts) |
 | `api-encode-decode` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-encode-decode.ts) |
 | `api-frame-extract` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-frame-extract.ts) |
