@@ -19,9 +19,11 @@ import { createServer } from 'http';
 import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { WebSocket, WebSocketServer } from 'ws';
+
 import {
   AV_SAMPLE_FMT_FLTP,
   Decoder,
+  Encoder,
   FF_ENCODER_AAC,
   FilterAPI,
   FilterPreset,
@@ -31,7 +33,7 @@ import {
   avGetMimeTypeDash,
 } from '../../../src/index.js';
 
-import { Encoder, IOOutputCallbacks } from '../../../src/index.js';
+import type { IOOutputCallbacks } from '../../../src/index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -260,29 +262,29 @@ wss.on('connection', async (ws: WebSocket) => {
       }
     }
 
-    console.log(`[Server] Streaming complete, flushing...`);
+    console.log('[Server] Streaming complete, flushing...');
 
     if (audioDecoder && audioFilter && audioEncoder) {
-      for await (using packet of audioDecoder!.flushFrames()) {
-        using filteredFrame = await audioFilter!.process(packet);
+      for await (using packet of audioDecoder.flushFrames()) {
+        using filteredFrame = await audioFilter.process(packet);
         if (!filteredFrame) {
           continue;
         }
 
-        using encodedPacket = await audioEncoder!.encode(filteredFrame);
+        using encodedPacket = await audioEncoder.encode(filteredFrame);
         if (encodedPacket) {
           await output.writePacket(encodedPacket, audioStreamIndex!);
         }
       }
 
-      for await (using frame of audioFilter!.flushFrames()) {
-        using encodedPacket = await audioEncoder!.encode(frame);
+      for await (using frame of audioFilter.flushFrames()) {
+        using encodedPacket = await audioEncoder.encode(frame);
         if (encodedPacket) {
           await output.writePacket(encodedPacket, audioStreamIndex!);
         }
       }
 
-      for await (using packet of audioEncoder!.flushPackets()) {
+      for await (using packet of audioEncoder.flushPackets()) {
         await output.writePacket(packet, audioStreamIndex!);
       }
     }
