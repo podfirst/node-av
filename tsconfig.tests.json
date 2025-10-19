@@ -33,5 +33,6 @@
     "scripts",
     "examples",
     "externals",
+    "projects",
   ]
 }

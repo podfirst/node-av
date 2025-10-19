@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "rootDir": ".",
     "outDir": "./dist",
     "target": "ESNext",
     "moduleResolution": "NodeNext",
@@ -25,7 +26,7 @@
   "include": [
     "src",
     "test",
-    "examples",
+    "examples/*.ts",
     "scripts",
     "install",
     "docs/.vitepress/config.ts",
@@ -35,6 +36,7 @@
     "dist",
     "projects",
     ".tmp",
+    "projects",
     "externals",
   ]
 }

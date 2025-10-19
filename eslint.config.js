@@ -20,6 +20,7 @@ export default [
       '**/wasm/**',
       '**/.tmp/**',
       '**/externals/**',
+      '**/examples/tests/**',
       '**/projects/**',
       '**/testdata/**',
       'script.ts',

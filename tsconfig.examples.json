@@ -23,7 +23,7 @@
     "noImplicitAny": true,
   },
   "include": [
-    "examples",
+    "examples/*.ts",
   ],
   "exclude": [
     "src",
