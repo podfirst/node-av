@@ -14,15 +14,26 @@
  *   --preset <preset>    Encoder preset (default: ultrafast)
  *
  * Examples:
+ *   tsx examples/api-dash.ts testdata/video.mp4 examples/.tmp/dash --bitrate 2M --segment 4
  *   tsx examples/api-dash.ts rtsp://camera.local/stream examples/.tmp/dash
- *   tsx examples/api-dash.ts rtsp://admin:pass@192.168.1.100/ch1 output/dash --duration 30
- *   tsx examples/api-dash.ts input.mp4 dash-output --bitrate 2M --segment 4
- *   tsx examples/api-dash.ts rtsp://server/live output --preset medium --window-size 20
+ *   tsx examples/api-dash.ts rtsp://admin:pass@192.168.1.100/ch1 examples/.tmp/dash --duration 30
+ *   tsx examples/api-dash.ts rtsp://server/live examples/.tmp/dash --preset medium --window-size 20
  */
 
 import fs from 'fs/promises';
 
-import { AV_PIX_FMT_YUV420P, Decoder, Encoder, FF_ENCODER_LIBX264, FilterAPI, FilterPreset, MediaInput, MediaOutput } from '../src/index.js';
+import {
+  AV_PIX_FMT_YUV420P,
+  avGetCodecStringDash,
+  avGetMimeTypeDash,
+  Decoder,
+  Encoder,
+  FF_ENCODER_LIBX265,
+  FilterAPI,
+  FilterPreset,
+  MediaInput,
+  MediaOutput,
+} from '../src/index.js';
 import { prepareTestEnvironment } from './index.js';
 
 // Parse command line arguments
@@ -91,7 +102,7 @@ if (!videoStream) {
 }
 
 // Display input information
-console.log('Input Information:');
+console.log('\nInput Information:');
 console.log(`Video: ${videoStream.codecpar.width}x${videoStream.codecpar.height}`);
 console.log(`Codec: ${videoStream.codecpar.codecId}`);
 console.log(`Format: ${videoStream.codecpar.format}`);
@@ -99,20 +110,20 @@ console.log(`Time base: ${videoStream.timeBase.num}/${videoStream.timeBase.den}`
 console.log(`Frame rate: ${videoStream.avgFrameRate.num}/${videoStream.avgFrameRate.den}`);
 
 // Create decoder
-console.log('Creating video decoder...');
+console.log('\nCreating video decoder...');
 using decoder = await Decoder.create(videoStream);
 
 // Create filter (ensure YUV420P for DASH compatibility)
 const filterChain = FilterPreset.chain().format(AV_PIX_FMT_YUV420P).build();
-console.log(`Creating filter: ${filterChain}`);
+console.log(`\nCreating filter: ${filterChain}`);
 using filter = FilterAPI.create(filterChain, {
   frameRate: videoStream.avgFrameRate,
   timeBase: videoStream.timeBase,
 });
 
 // Create encoder
-console.log('Creating H.264 encoder...');
-using encoder = await Encoder.create(FF_ENCODER_LIBX264, {
+console.log('\nCreating H.265 encoder...');
+using encoder = await Encoder.create(FF_ENCODER_LIBX265, {
   frameRate: videoStream.avgFrameRate,
   timeBase: videoStream.timeBase,
   bitrate,
@@ -123,34 +134,32 @@ using encoder = await Encoder.create(FF_ENCODER_LIBX264, {
 });
 
 // Create DASH output
-console.log('Creating DASH output...');
+console.log('\nCreating DASH output...');
 await using dashOutput = await MediaOutput.open(dashManifestPath, {
-  format: 'dash',
+  options: {
+    movflags: 'frag_keyframe+empty_moov+default_base_moof',
+    seg_duration: segmentDuration,
+    window_size: windowSize,
+    extra_window_size: Math.floor(windowSize / 2),
+  },
 });
-
-// Configure DASH options
-const dashFormatContext = dashOutput.getFormatContext();
-dashFormatContext.setOption('movflags', 'frag_keyframe+empty_moov+default_base_moof');
-dashFormatContext.setOption('seg_duration', segmentDuration.toString());
-dashFormatContext.setOption('window_size', windowSize.toString());
-dashFormatContext.setOption('extra_window_size', Math.floor(windowSize / 2).toString());
 
 // Add video stream
 const dashVideoStreamIndex = dashOutput.addStream(encoder);
 
-console.log('DASH Configuration:');
+console.log('\nDASH Configuration:');
 console.log(`Segment Duration: ${segmentDuration}s`);
 console.log(`Window Size: ${windowSize} segments`);
 console.log(`Manifest: ${dashManifestPath}`);
 
 // Set up timeout for recording duration
 const timeout = setTimeout(() => {
-  console.log(`Recording duration reached (${duration}s), stopping...`);
+  console.log(`\nRecording duration reached (${duration}s), stopping...`);
   stop = true;
 }, duration * 1000);
 
 // Process streams
-console.log('Streaming started...');
+console.log('\nStreaming started...');
 const startTime = Date.now();
 let packetsWritten = 0;
 let framesProcessed = 0;
@@ -170,6 +179,24 @@ try {
     packetsWritten++;
     framesProcessed++;
 
+    // After first packet, output stream codecpar is initialized
+    if (packetsWritten === 1) {
+      const outputStream = dashOutput.video();
+      if (outputStream) {
+        console.log('Output Stream Info:');
+        console.log(`  Codec ID: ${outputStream.codecpar.codecId}`);
+        console.log(`  Codec Tag: ${outputStream.codecpar.codecTag}`);
+        console.log(`  Extradata size: ${outputStream.codecpar.extradata?.length ?? 0}`);
+        console.log(`  Framerate: ${outputStream.codecpar.frameRate?.num}/${outputStream.codecpar.frameRate?.den}`);
+
+        // Use MediaOutput methods for codec strings and MIME type
+        const mimeType = avGetMimeTypeDash(outputStream.codecpar);
+        const codecString = avGetCodecStringDash(outputStream.codecpar); // Auto-detects DASH
+
+        console.log(`Output Codec String: ${mimeType}; codecs="${codecString}"`);
+      }
+    }
+
     // Progress indicator
     if (packetsWritten % 30 === 0) {
       const elapsed = (Date.now() - startTime) / 1000;
@@ -183,7 +210,7 @@ try {
 
 const elapsed = (Date.now() - startTime) / 1000;
 
-console.log('Streaming complete!');
+console.log('\nStreaming complete!');
 console.log(`Duration: ${elapsed.toFixed(2)} seconds`);
 console.log(`Frames processed: ${framesProcessed}`);
 console.log(`Average FPS: ${(framesProcessed / elapsed).toFixed(2)}`);
