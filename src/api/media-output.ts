@@ -812,7 +812,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
           // User specified custom timebase
           streamInfo.stream.timeBase = new Rational(streamInfo.timeBase.num, streamInfo.timeBase.den);
         } else {
-          // Default: 1/framerate (MP4/DASH muxer will multiply by 2 until >= 10000)
+          // Default: 1/framerate
           const fps = codecContext.framerate.num / codecContext.framerate.den;
           streamInfo.stream.timeBase = new Rational(1, Math.round(fps));
         }

@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>fMP4 Streaming</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: system-ui, sans-serif;
+        background: #1a1a1a;
+        color: #ccc;
+        padding: 20px;
+      }
+
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+      }
+
+      .status {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 15px;
+        justify-content: space-between;
+      }
+
+      .status-left {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .status-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #dc3545;
+      }
+
+      .status-dot.connected {
+        background: #28a745;
+      }
+
+      input {
+        width: 100%;
+        padding: 10px;
+        background: #2a2a2a;
+        border: 1px solid #444;
+        border-radius: 4px;
+        color: #ccc;
+        margin-bottom: 15px;
+        font-family: monospace;
+      }
+
+      .video-container {
+        position: relative;
+        background: #000;
+        margin-bottom: 15px;
+        aspect-ratio: 16 / 9;
+      }
+
+      video {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+
+      .play-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.7);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+      }
+
+      .play-overlay.hidden {
+        display: none;
+      }
+
+      .play-button {
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.2);
+        border: 3px solid white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .play-icon {
+        width: 0;
+        height: 0;
+        margin-left: 4px;
+        border-left: 20px solid white;
+        border-top: 12px solid transparent;
+        border-bottom: 12px solid transparent;
+      }
+
+      .stop-button {
+        background: #dc3545;
+        color: white;
+        border: none;
+        padding: 6px 16px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 500;
+      }
+
+      .stop-button:hover:not(:disabled) {
+        background: #c82333;
+      }
+
+      .stop-button:disabled {
+        background: #6c757d;
+        cursor: not-allowed;
+        opacity: 0.5;
+      }
+
+      .info-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 15px;
+      }
+
+      .info-card {
+        background: #2a2a2a;
+        padding: 15px;
+        border-radius: 4px;
+      }
+
+      .info-card h3 {
+        font-size: 12px;
+        color: #888;
+        margin-bottom: 5px;
+        text-transform: uppercase;
+      }
+
+      .info-card .value {
+        font-size: 16px;
+        color: #fff;
+        font-family: monospace;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="status">
+        <div class="status-left">
+          <div class="status-dot" id="statusDot"></div>
+          <div id="statusText">Ready</div>
+        </div>
+        <button class="stop-button" id="stopButton" disabled>Stop</button>
+      </div>
+
+      <input type="text" id="urlInput" placeholder="Enter file path, RTSP URL, HTTP URL, etc." value="../../../testdata/demux.mp4" />
+
+      <div class="video-container">
+        <video id="video" controls muted></video>
+        <div class="play-overlay" id="playOverlay">
+          <div class="play-button">
+            <div class="play-icon"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="info-grid">
+        <div class="info-card">
+          <h3>Codec String</h3>
+          <div class="value" id="codecString">-</div>
+        </div>
+        <div class="info-card">
+          <h3>MIME Type</h3>
+          <div class="value" id="mimeType">-</div>
+        </div>
+        <div class="info-card">
+          <h3>Resolution</h3>
+          <div class="value" id="resolution">-</div>
+        </div>
+        <div class="info-card">
+          <h3>Packets Received</h3>
+          <div class="value" id="packetCount">0</div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const video = document.getElementById('video');
+      const playOverlay = document.getElementById('playOverlay');
+      const stopButton = document.getElementById('stopButton');
+      const urlInput = document.getElementById('urlInput');
+      const statusDot = document.getElementById('statusDot');
+      const statusText = document.getElementById('statusText');
+      const codecStringEl = document.getElementById('codecString');
+      const mimeTypeEl = document.getElementById('mimeType');
+      const resolutionEl = document.getElementById('resolution');
+      const packetCountEl = document.getElementById('packetCount');
+
+      let mediaSource = null;
+      let sourceBuffer = null;
+      let packetCount = 0;
+      let ws = null;
+
+      // Simple buffer
+      const buf = new Uint8Array(2 * 1024 * 1024);
+      let bufLen = 0;
+
+      function updateStatus(connected, text) {
+        if (connected) {
+          statusDot.classList.add('connected');
+        } else {
+          statusDot.classList.remove('connected');
+        }
+        statusText.textContent = text;
+      }
+
+      function stopStream() {
+        console.log('Stopping stream...');
+
+        // Close WebSocket
+        if (ws) {
+          ws.close();
+          ws = null;
+        }
+
+        // Stop video and reset
+        video.pause();
+        video.src = '';
+
+        // Reset MediaSource
+        if (mediaSource) {
+          if (mediaSource.readyState === 'open') {
+            mediaSource.endOfStream();
+          }
+          mediaSource = null;
+        }
+        sourceBuffer = null;
+
+        // Reset buffer
+        bufLen = 0;
+
+        // Reset UI
+        packetCount = 0;
+        packetCountEl.textContent = '0';
+        codecStringEl.textContent = '-';
+        mimeTypeEl.textContent = '-';
+        resolutionEl.textContent = '-';
+        updateStatus(false, 'Ready');
+
+        // Show play overlay, disable stop button
+        playOverlay.classList.remove('hidden');
+        stopButton.disabled = true;
+      }
+
+      function initMediaSource() {
+        if (!('MediaSource' in window)) {
+          console.error('MediaSource not supported');
+          updateStatus(false, 'MediaSource not supported');
+          return;
+        }
+
+        console.log('Initializing MediaSource...');
+        mediaSource = new MediaSource();
+        video.src = URL.createObjectURL(mediaSource);
+      }
+
+      function connectWebSocket() {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}`;
+
+        console.log('Connecting to WebSocket:', wsUrl);
+        ws = new WebSocket(wsUrl);
+
+        ws.onopen = () => {
+          console.log('WebSocket connected');
+          updateStatus(true, 'Connected');
+
+          const url = urlInput.value.trim();
+          if (!url) {
+            console.error('No URL provided');
+            updateStatus(false, 'No URL provided');
+            return;
+          }
+
+          console.log('Sending play signal with URL:', url);
+          ws.send(JSON.stringify({ type: 'play', url }));
+          playOverlay.classList.add('hidden');
+          stopButton.disabled = false;
+        };
+
+        ws.onmessage = async (event) => {
+          if (event.data instanceof ArrayBuffer || event.data instanceof Blob) {
+            handleBinaryData(event.data);
+            return;
+          }
+
+          const data = JSON.parse(event.data);
+
+          if (data.type === 'codec') {
+            console.log('Received codec info:', data.fullCodec);
+            updateStatus(true, 'Streaming');
+
+            codecStringEl.textContent = data.codecString;
+            mimeTypeEl.textContent = data.mimeType;
+            resolutionEl.textContent = `${data.width}x${data.height}`;
+
+            if (!MediaSource.isTypeSupported(data.fullCodec)) {
+              console.error('Codec not supported:', data.fullCodec);
+              updateStatus(false, 'Codec not supported');
+              return;
+            }
+
+            console.log('Codec is supported');
+
+            if (mediaSource && mediaSource.readyState === 'open') {
+              sourceBuffer = mediaSource.addSourceBuffer(data.fullCodec);
+              sourceBuffer.mode = 'segments';
+              console.log('SourceBuffer created');
+
+              sourceBuffer.addEventListener('updateend', () => {
+                // Flush buffered data if available
+                if (!sourceBuffer.updating && bufLen > 0) {
+                  try {
+                    const data = buf.slice(0, bufLen);
+                    sourceBuffer.appendBuffer(data);
+                    bufLen = 0; // Reset AFTER successful append
+                    console.log('Flushed', data.byteLength, 'bytes from buffer');
+                  } catch (error) {
+                    console.error('Error flushing buffer:', error);
+                  }
+                }
+
+                // Buffer cleanup - keep only last 5 seconds
+                if (!sourceBuffer.updating && sourceBuffer.buffered && sourceBuffer.buffered.length) {
+                  const end = sourceBuffer.buffered.end(sourceBuffer.buffered.length - 1);
+                  const start = end - 5;
+                  const start0 = sourceBuffer.buffered.start(0);
+                  if (start > start0) {
+                    sourceBuffer.remove(start0, start);
+                    // console.log('Removed old buffer data:', start0, 'to', start);
+                  }
+                }
+
+                // Try autoplay after any update completes
+                if (video.paused && video.readyState >= 2) {
+                  console.log('Auto-playing video');
+                  video.play().catch(() => {});
+                }
+              });
+            }
+          } else if (data.type === 'end') {
+            console.log('Stream ended');
+            updateStatus(false, 'Stream ended');
+
+            if (sourceBuffer && !sourceBuffer.updating && bufLen > 0) {
+              sourceBuffer.appendBuffer(buf.slice(0, bufLen));
+              bufLen = 0;
+            }
+
+            if (mediaSource && mediaSource.readyState === 'open') {
+              setTimeout(() => {
+                if (mediaSource.readyState === 'open') {
+                  mediaSource.endOfStream();
+                }
+              }, 100);
+            }
+          } else if (data.type === 'error') {
+            console.error('Server error:', data.message);
+            updateStatus(false, 'Error');
+          }
+        };
+
+        ws.onerror = (error) => {
+          console.error('WebSocket error:', error);
+          updateStatus(false, 'Connection error');
+        };
+
+        ws.onclose = () => {
+          console.log('WebSocket closed');
+          updateStatus(false, 'Disconnected');
+        };
+      }
+
+      async function handleBinaryData(data) {
+        let arrayBuffer = data;
+        if (data instanceof Blob) {
+          arrayBuffer = await data.arrayBuffer();
+        }
+
+        const chunk = new Uint8Array(arrayBuffer);
+
+        packetCount++;
+        packetCountEl.textContent = packetCount;
+
+        if (!sourceBuffer) {
+          console.warn('SourceBuffer not ready, dropping chunk');
+          return;
+        }
+
+        if (sourceBuffer.updating || bufLen > 0) {
+          // Buffer while SourceBuffer is busy
+          if (bufLen + chunk.byteLength <= buf.byteLength) {
+            buf.set(chunk, bufLen);
+            bufLen += chunk.byteLength;
+            console.log('Buffered', chunk.byteLength, 'bytes (total:', bufLen, ')');
+          } else {
+            console.error('Buffer overflow! Dropping chunk');
+          }
+        } else {
+          // Append directly
+          try {
+            console.log('Appending', chunk.byteLength, 'bytes to SourceBuffer');
+            sourceBuffer.appendBuffer(arrayBuffer);
+
+            if (video.paused && video.readyState >= 2) {
+              console.log('Auto-playing video');
+              video.play().catch(() => {});
+            }
+          } catch (error) {
+            console.error('Error appending:', error);
+          }
+        }
+      }
+
+      console.log('fMP4 Streaming Client initialized');
+      console.log('MediaSource supported:', 'MediaSource' in window);
+      updateStatus(false, 'Ready');
+
+      playOverlay.addEventListener('click', () => {
+        console.log('Play button clicked');
+        updateStatus(false, 'Initializing...');
+        initMediaSource();
+        connectWebSocket();
+      });
+
+      stopButton.addEventListener('click', () => {
+        stopStream();
+      });
+    </script>
+  </body>
+</html>
