@@ -21,6 +21,7 @@ import { fileURLToPath } from 'url';
 import { WebSocket, WebSocketServer } from 'ws';
 
 import {
+  AV_CODEC_ID_AAC,
   AV_SAMPLE_FMT_FLTP,
   Decoder,
   Encoder,
@@ -150,16 +151,19 @@ wss.on('connection', async (ws: WebSocket) => {
         sampleRate: audioStream.codecpar.sampleRate,
       });
 
-      audioDecoder = await Decoder.create(audioStream);
+      if (audioStream.codecpar.codecId !== AV_CODEC_ID_AAC) {
+        audioDecoder = await Decoder.create(audioStream);
 
-      const filterChain = FilterPreset.chain().aformat(AV_SAMPLE_FMT_FLTP, 48000, 'stereo').asetnsamples(1024).build();
-      audioFilter = FilterAPI.create(filterChain, {
-        timeBase: audioStream.timeBase,
-      });
+        const targetSampleRate = 48000;
+        const filterChain = FilterPreset.chain().aformat(AV_SAMPLE_FMT_FLTP, targetSampleRate, 'stereo').asetnsamples(1024).build();
+        audioFilter = FilterAPI.create(filterChain, {
+          timeBase: audioStream.timeBase,
+        });
 
-      audioEncoder = await Encoder.create(FF_ENCODER_AAC, {
-        timeBase: audioStream.timeBase,
-      });
+        audioEncoder = await Encoder.create(FF_ENCODER_AAC, {
+          timeBase: { num: 1, den: targetSampleRate },
+        });
+      }
     }
 
     let codecInfoSent = false;
@@ -228,7 +232,7 @@ wss.on('connection', async (ws: WebSocket) => {
     });
 
     const videoStreamIndex = output.addStream(videoStream);
-    const audioStreamIndex = audioEncoder ? output.addStream(audioEncoder) : null;
+    const audioStreamIndex = audioEncoder ? output.addStream(audioEncoder) : audioStream ? output.addStream(audioStream) : null;
 
     console.log('[Server] Starting encoding pipeline...');
 
@@ -242,17 +246,23 @@ wss.on('connection', async (ws: WebSocket) => {
         // Write packet to output to generate fMP4
         await output.writePacket(packet, videoStreamIndex);
       } else if (packet.streamIndex === audioStream?.index) {
-        using decodedFrame = await audioDecoder!.decode(packet);
+        if (!audioDecoder || !audioFilter || !audioEncoder) {
+          // Stream copy audio
+          await output.writePacket(packet, audioStreamIndex!);
+          continue;
+        }
+
+        using decodedFrame = await audioDecoder.decode(packet);
         if (!decodedFrame) {
           continue;
         }
 
-        using filteredFrame = await audioFilter!.process(decodedFrame);
+        using filteredFrame = await audioFilter.process(decodedFrame);
         if (!filteredFrame) {
           continue;
         }
 
-        using encodedPacket = await audioEncoder!.encode(filteredFrame);
+        using encodedPacket = await audioEncoder.encode(filteredFrame);
         if (!encodedPacket) {
           continue;
         }

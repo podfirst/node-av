@@ -213,6 +213,7 @@
       let sourceBuffer = null;
       let packetCount = 0;
       let ws = null;
+      let hasPlayed = false; // Track if we've started playback
 
       // Simple buffer
       const buf = new Uint8Array(2 * 1024 * 1024);
@@ -252,6 +253,9 @@
         // Reset buffer
         bufLen = 0;
 
+        // Reset playback state
+        hasPlayed = false;
+
         // Reset UI
         packetCount = 0;
         packetCountEl.textContent = '0';
@@ -266,15 +270,32 @@
       }
 
       function initMediaSource() {
-        if (!('MediaSource' in window)) {
+        // Support both MediaSource and ManagedMediaSource (Safari 17+)
+        const MSE = window.ManagedMediaSource || window.MediaSource;
+
+        if (!MSE) {
           console.error('MediaSource not supported');
           updateStatus(false, 'MediaSource not supported');
           return;
         }
 
         console.log('Initializing MediaSource...');
-        mediaSource = new MediaSource();
+        mediaSource = new MSE();
         video.src = URL.createObjectURL(mediaSource);
+        video.srcObject = null;
+      }
+
+      // Auto-play with mute fallback
+      function play() {
+        video.play().catch(() => {
+          if (!video.muted) {
+            console.log('Auto-play blocked, trying with muted');
+            video.muted = true;
+            video.play().catch((err) => {
+              console.error('Auto-play failed:', err);
+            });
+          }
+        });
       }
 
       function connectWebSocket() {
@@ -343,21 +364,11 @@
                   }
                 }
 
-                // Buffer cleanup - keep only last 5 seconds
-                if (!sourceBuffer.updating && sourceBuffer.buffered && sourceBuffer.buffered.length) {
-                  const end = sourceBuffer.buffered.end(sourceBuffer.buffered.length - 1);
-                  const start = end - 5;
-                  const start0 = sourceBuffer.buffered.start(0);
-                  if (start > start0) {
-                    sourceBuffer.remove(start0, start);
-                    // console.log('Removed old buffer data:', start0, 'to', start);
-                  }
-                }
-
-                // Try autoplay after any update completes
-                if (video.paused && video.readyState >= 2) {
-                  console.log('Auto-playing video');
-                  video.play().catch(() => {});
+                // Auto-play ONCE when we have enough data
+                if (!hasPlayed && video.paused && video.readyState >= 2) {
+                  console.log('Auto-playing video (first time)');
+                  hasPlayed = true;
+                  play();
                 }
               });
             }
@@ -424,11 +435,6 @@
           try {
             console.log('Appending', chunk.byteLength, 'bytes to SourceBuffer');
             sourceBuffer.appendBuffer(arrayBuffer);
-
-            if (video.paused && video.readyState >= 2) {
-              console.log('Auto-playing video');
-              video.play().catch(() => {});
-            }
           } catch (error) {
             console.error('Error appending:', error);
           }
