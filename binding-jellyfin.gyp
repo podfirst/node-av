@@ -58,7 +58,10 @@
                 "src/bindings/bitstream_filter_context_sync.cc",
                 "src/bindings/option.cc",
             ],
-            "include_dirs": ["<!@(node -p \"require('node-addon-api').include\")"],
+            "include_dirs": [
+                "<!@(node -p \"require('node-addon-api').include\")",
+                "<(module_root_dir)/externals/jellyfin-ffmpeg",
+            ],
             "dependencies": ["<!(node -p \"require('node-addon-api').gyp\")"],
             "cflags!": ["-fno-exceptions"],
             "cflags_cc!": ["-fno-exceptions"],
@@ -67,7 +70,10 @@
                 [
                     "OS=='mac'",
                     {
-                        "include_dirs": ["/opt/ffbuild/prefix/include"],
+                        "include_dirs": [
+                            "/opt/ffbuild/prefix/include",
+                            "<(module_root_dir)/externals/jellyfin-ffmpeg",
+                        ],
                         "library_dirs": ["/opt/ffbuild/prefix/lib"],
                         "libraries": [
                             "-Wl,-force_load,/opt/ffbuild/prefix/lib/libavformat.a",
@@ -155,7 +161,10 @@
                 [
                     "OS=='linux'",
                     {
-                        "include_dirs": ["/opt/ffbuild/prefix/include"],
+                        "include_dirs": [
+                            "/opt/ffbuild/prefix/include",
+                            "<(module_root_dir)/externals/jellyfin-ffmpeg",
+                        ],
                         "library_dirs": ["/opt/ffbuild/prefix/lib"],
                         "libraries": [
                             "-L/opt/ffbuild/prefix/lib",
@@ -286,7 +295,10 @@
                             [
                                 "target_arch=='x64'",
                                 {
-                                    "include_dirs": ["/clang64/ffbuild/include"],
+                                    "include_dirs": [
+                                        "/clang64/ffbuild/include",
+                                        "<(module_root_dir)/externals/jellyfin-ffmpeg",
+                                    ],
                                     "library_dirs": ["/clang64/ffbuild/lib"],
                                     "libraries": ["-l:libvpl.a"],
                                 },
@@ -294,7 +306,10 @@
                             [
                                 "target_arch=='arm64'",
                                 {
-                                    "include_dirs": ["/clangarm64/ffbuild/include"],
+                                    "include_dirs": [
+                                        "/clangarm64/ffbuild/include",
+                                        "<(module_root_dir)/externals/jellyfin-ffmpeg",
+                                    ],
                                     "library_dirs": ["/clangarm64/ffbuild/lib"],
                                 },
                             ],
