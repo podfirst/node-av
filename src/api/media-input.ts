@@ -679,6 +679,55 @@ export class MediaInput implements AsyncDisposable, Disposable {
   }
 
   /**
+   * Get MIME type of the input format.
+   *
+   * Returns null if input is closed or format is not available.
+   *
+   * @example
+   * ```typescript
+   * console.log(`MIME Type: ${input.mimeType}`); // "video/mp4"
+   * ```
+   */
+  get mimeType(): string | null {
+    if (this.isClosed) {
+      return null;
+    }
+
+    return this.formatContext.iformat?.mimeType ?? null;
+  }
+
+  /**
+   * Get input stream by index.
+   *
+   * Returns the stream at the specified index.
+   *
+   * @param index - Stream index
+   *
+   * @returns Stream or undefined if index is invalid
+   *
+   * @example
+   * ```typescript
+   * const input = await MediaInput.open('input.mp4');
+   *
+   * // Get the input stream to inspect codec parameters
+   * const stream = input.getStream(1); // Get stream at index 1
+   * if (stream) {
+   *   console.log(`Input codec: ${stream.codecpar.codecId}`);
+   * }
+   * ```
+   *
+   * @see {@link video} For getting video streams
+   * @see {@link audio} For getting audio streams
+   */
+  getStream(index: number): Stream | undefined {
+    const streams = this.formatContext.streams;
+    if (!streams || index < 0 || index >= streams.length) {
+      return undefined;
+    }
+    return streams[index];
+  }
+
+  /**
    * Get video stream by index.
    *
    * Returns the nth video stream (0-based index).
@@ -740,6 +789,25 @@ export class MediaInput implements AsyncDisposable, Disposable {
   audio(index = 0): Stream | undefined {
     const streams = this._streams.filter((s) => s.codecpar.codecType === AVMEDIA_TYPE_AUDIO);
     return streams[index];
+  }
+
+  /**
+   * Get input format details.
+   *
+   * Returns null if input is closed or format is not available.
+   *
+   * @returns Input format or null
+   *
+   * @example
+   * ```typescript
+   * const inputFormat = input.inputFormat;
+   * if (inputFormat) {
+   *   console.log(`Input Format: ${inputFormat.name}`);
+   * }
+   * ```
+   */
+  inputFormat(): InputFormat | null {
+    return this.formatContext.iformat;
   }
 
   /**
