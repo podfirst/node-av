@@ -148,6 +148,67 @@ describe('MediaInput', () => {
 
       await media.close();
     });
+
+    it('should get MIME type', async () => {
+      const media = await MediaInput.open(inputFile);
+
+      const mimeType = media.mimeType;
+
+      // MIME type may be null if format doesn't define one
+      // This is normal behavior - not all formats have MIME types in FFmpeg
+      if (mimeType !== null) {
+        assert.ok(typeof mimeType === 'string', 'MIME type should be string if present');
+        console.log('MIME type:', mimeType);
+      } else {
+        console.log('MIME type: null (format does not define MIME type)');
+      }
+
+      await media.close();
+    });
+
+    it('should get input format', async () => {
+      const media = await MediaInput.open(inputFile);
+
+      const inputFormat = media.inputFormat();
+      assert.ok(inputFormat, 'Should have input format');
+      assert.ok(inputFormat.name, 'Input format should have name');
+      assert.ok(inputFormat.longName, 'Input format should have long name');
+
+      console.log(`Input format: ${inputFormat.name} (${inputFormat.longName})`);
+
+      await media.close();
+    });
+  });
+
+  describe('stream access', () => {
+    it('should get stream by index', async () => {
+      const media = await MediaInput.open(inputFile);
+
+      const stream0 = media.getStream(0);
+      assert.ok(stream0, 'Should get stream at index 0');
+      assert.equal(stream0.index, 0, 'Stream should have correct index');
+
+      await media.close();
+    });
+
+    it('should return undefined for invalid stream index', async () => {
+      const media = await MediaInput.open(inputFile);
+
+      const invalidStream = media.getStream(999);
+      assert.equal(invalidStream, undefined, 'Should return undefined for invalid index');
+
+      await media.close();
+    });
+
+    it('should get stream by index (negative)', async () => {
+      const media = await MediaInput.open(inputFile);
+
+      // Negative indices should return undefined
+      const negativeStream = media.getStream(-1);
+      assert.equal(negativeStream, undefined, 'Should return undefined for negative index');
+
+      await media.close();
+    });
   });
 
   describe('packets', () => {

@@ -37,6 +37,8 @@ describe('MediaOutput', () => {
       const output = await MediaOutput.open(outputFile);
 
       assert(output instanceof MediaOutput);
+      assert.equal(output.isOutputOpen, true, 'Output should be open');
+      assert.equal(output.isOutputInitialized, false, 'Output should not be initialized yet');
 
       await output.close();
       await cleanup();
@@ -116,6 +118,130 @@ describe('MediaOutput', () => {
 
       assert(output instanceof MediaOutput);
       await output.close();
+    });
+  });
+
+  describe('properties', () => {
+    it('should get format name and long name (async)', async () => {
+      const outputFile = getTempFile('mp4');
+      const output = await MediaOutput.open(outputFile);
+
+      const formatName = output.formatName;
+      assert.ok(formatName, 'Should have format name');
+      assert.ok(typeof formatName === 'string', 'Format name should be string');
+
+      const formatLongName = output.formatLongName;
+      assert.ok(formatLongName, 'Should have format long name');
+      assert.ok(typeof formatLongName === 'string', 'Format long name should be string');
+
+      console.log(`Output format: ${formatName} (${formatLongName})`);
+
+      await output.close();
+      await cleanup();
+    });
+
+    it('should get MIME type (async)', async () => {
+      const outputFile = getTempFile('mp4');
+      const output = await MediaOutput.open(outputFile);
+
+      const mimeType = output.mimeType;
+
+      // MIME type may be null if format doesn't define one
+      // This is normal behavior - not all formats have MIME types in FFmpeg
+      if (mimeType !== null) {
+        assert.ok(typeof mimeType === 'string', 'MIME type should be string if present');
+        console.log('Output MIME type:', mimeType);
+      } else {
+        console.log('Output MIME type: null (format does not define MIME type)');
+      }
+
+      await output.close();
+      await cleanup();
+    });
+
+    it('should get streams (async)', async () => {
+      const outputFile = getTempFile('mp4');
+      const output = await MediaOutput.open(outputFile);
+
+      // Initially no streams
+      assert.ok(Array.isArray(output.streams), 'Streams should be array');
+      assert.equal(output.streams.length, 0, 'Should have no streams initially');
+
+      // Add a stream
+      const encoder = await Encoder.create(FF_ENCODER_LIBX264, {
+        frameRate: { num: 25, den: 1 },
+        timeBase: { num: 1, den: 25 },
+      });
+
+      output.addStream(encoder);
+
+      // Now should have one stream
+      assert.equal(output.streams.length, 1, 'Should have one stream after adding');
+      assert.ok(output.streams[0], 'Stream should exist');
+
+      encoder.close();
+      await output.close();
+      await cleanup();
+    });
+
+    it('should track initialization state (async)', async () => {
+      const input = await MediaInput.open(inputFile);
+      const outputFile = getTempFile('mp4');
+      const output = await MediaOutput.open(outputFile);
+
+      // Initially not initialized
+      assert.equal(output.isOutputInitialized, false, 'Should not be initialized');
+
+      const videoStream = input.video();
+      assert(videoStream);
+
+      const decoder = await Decoder.create(videoStream);
+      const encoder = await Encoder.create(FF_ENCODER_LIBX264, {
+        frameRate: { num: 25, den: 1 },
+        timeBase: { num: 1, den: 25 },
+      });
+
+      const streamIdx = output.addStream(encoder);
+
+      // Still not initialized until first packet
+      assert.equal(output.isOutputInitialized, false, 'Should not be initialized before first packet');
+
+      // Write first packet to trigger initialization
+      for await (const packet of input.packets()) {
+        if (packet.streamIndex === 0) {
+          const frame = await decoder.decode(packet);
+          if (frame) {
+            const encoded = await encoder.encode(frame);
+            if (encoded) {
+              await output.writePacket(encoded, streamIdx);
+              // Now should be initialized
+              assert.equal(output.isOutputInitialized, true, 'Should be initialized after first packet');
+              encoded.free();
+              break;
+            }
+            frame.free();
+          }
+          packet.free();
+        }
+      }
+
+      decoder.close();
+      encoder.close();
+      await output.close();
+      await input.close();
+      await cleanup();
+    });
+
+    it('should track open state (async)', async () => {
+      const outputFile = getTempFile('mp4');
+      const output = await MediaOutput.open(outputFile);
+
+      assert.equal(output.isOutputOpen, true, 'Should be open initially');
+
+      await output.close();
+
+      assert.equal(output.isOutputOpen, false, 'Should be closed after close()');
+      await cleanup();
     });
   });
 
