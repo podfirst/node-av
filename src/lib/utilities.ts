@@ -3,6 +3,7 @@ import { FFmpegError } from './error.js';
 
 import type { AVCodecID, AVMediaType, AVPixelFormat, AVSampleFormat } from '../constants/constants.js';
 import type { FormatContext } from './format-context.js';
+import type { NativeCodecParameters, NativeWrapper } from './native-types.js';
 import type { ChannelLayout, IRational } from './types.js';
 
 /**
@@ -195,6 +196,116 @@ export function avSampleFmtIsPlanar(sampleFmt: AVSampleFormat): boolean {
  */
 export function avGetCodecName(codecId: AVCodecID): string | null {
   return bindings.avGetCodecName(codecId);
+}
+
+/**
+ * Get DASH/RFC 6381 codec string from codec parameters.
+ *
+ * Generates codec strings for MPEG-DASH manifests following RFC 6381.
+ * Uses FFmpeg's dashenc.c implementation for accurate codec strings.
+ *
+ * Supported codecs:
+ * - **WebM codecs**: VP8, VP9 (detailed), Vorbis, Opus, FLAC
+ * - **H.264** (avc1): `avc1.PPCCLL` (profile, constraints, level)
+ * - **HEVC** (hvc1/hev1): Base tag only (`hvc1` or `hev1`) - no profile details
+ * - **AV1** (av01): `av01.P.LLT.BB...` (profile, level, tier, bitdepth, etc.)
+ * - **AAC** (mp4a): `mp4a.OT.AOT` (object type, audio object type)
+ *
+ * Note: For HLS with detailed HEVC codec strings, use {@link avGetCodecStringHls}.
+ *
+ * @param codecpar - Codec parameters
+ *
+ * @returns DASH codec string, or null if cannot be determined
+ *
+ * @example
+ * ```typescript
+ * import { avGetCodecStringDash } from 'node-av/lib';
+ *
+ * // Get codec string from DASH output stream
+ * const stream = dashOutput.video();
+ * const codecString = avGetCodecStringDash(stream.codecpar);
+ * console.log(codecString); // "hev1" for HEVC, "avc1.42c01e" for H.264
+ *
+ * // Use for DASH manifest
+ * const mimeType = `video/mp4; codecs="${codecString}"`;
+ * ```
+ *
+ * @see [RFC 6381](https://tools.ietf.org/html/rfc6381) - RFC 6381: Codecs Parameter Specification
+ * @see [dashenc](https://ffmpeg.org/doxygen/trunk/dashenc_8c_source.html#l00345) - FFmpeg dashenc.c implementation
+ */
+export function avGetCodecStringDash(codecpar: NativeWrapper<NativeCodecParameters>): string | null {
+  return bindings.avGetCodecStringDash(codecpar.getNative());
+}
+
+/**
+ * Get HLS codec string from codec parameters.
+ *
+ * Generates codec strings for HLS playlists. Uses FFmpeg's hlsenc.c implementation.
+ * Provides detailed HEVC codec strings with profile, tier, level, and constraints.
+ *
+ * Supported codecs:
+ * - **H.264** (avc1): `avc1.PPCCLL` (profile, constraints, level)
+ * - **HEVC** (hvc1): `hvc1.P.PC.TL.C` (profile, profile_compatibility, tier+level, constraints)
+ * - **AAC**: `mp4a.40.AOT` (audio object type based on profile)
+ * - **MP2**: `mp4a.40.33`
+ * - **MP3**: `mp4a.40.34`
+ * - **AC-3**: `ac-3`
+ * - **E-AC-3**: `ec-3`
+ *
+ * Note: For DASH manifests, use {@link avGetCodecStringDash} instead.
+ *
+ * @param codecpar - Codec parameters
+ *
+ * @returns HLS codec string, or null if cannot be determined
+ *
+ * @example
+ * ```typescript
+ * import { avGetCodecStringHls } from 'node-av/lib';
+ *
+ * // Get detailed HEVC codec string for HLS
+ * const stream = hlsOutput.video();
+ * const codecString = avGetCodecStringHls(stream.codecpar);
+ * console.log(codecString); // "hvc1.1.6.L93.B0" - detailed HEVC profile info
+ *
+ * // Use for HLS playlist
+ * const codecsAttr = `CODECS="${codecString}"`;
+ * ```
+ *
+ * @see [hlsenc](https://ffmpeg.org/doxygen/trunk/hlsenc_8c_source.html#l00351) - FFmpeg hlsenc.c implementation
+ */
+export function avGetCodecStringHls(codecpar: NativeWrapper<NativeCodecParameters>): string | null {
+  return bindings.avGetCodecStringHls(codecpar.getNative());
+}
+
+/**
+ * Get DASH MIME type for codec parameters.
+ *
+ * Determines the MIME type for MPEG-DASH segments based on codec.
+ * Uses FFmpeg's segment type selection logic:
+ * - WebM codecs (VP8, VP9, Vorbis, Opus) → `video/webm` or `audio/webm`
+ * - All other codecs → `video/mp4` or `audio/mp4`
+ *
+ * @param codecpar - Codec parameters
+ *
+ * @returns MIME type string, or null if invalid media type
+ *
+ * @example
+ * ```typescript
+ * import { avGetMimeTypeDash } from 'node-av/lib';
+ *
+ * const stream = input.video();
+ * const mimeType = avGetMimeTypeDash(stream.codecpar);
+ * console.log(mimeType); // "video/mp4" for H.264
+ *
+ * // VP9 codec
+ * const mimeTypeVP9 = avGetMimeTypeDash(vp9Stream.codecpar);
+ * console.log(mimeTypeVP9); // "video/webm"
+ * ```
+ *
+ * @see https://ffmpeg.org/doxygen/trunk/dashenc_8c_source.html#l00285 - FFmpeg dashenc.c segment type selection
+ */
+export function avGetMimeTypeDash(codecpar: NativeWrapper<NativeCodecParameters>): string | null {
+  return bindings.avGetMimeTypeDash(codecpar.getNative());
 }
 
 /**

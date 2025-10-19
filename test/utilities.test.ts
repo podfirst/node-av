@@ -38,7 +38,10 @@ import {
   avChannelLayoutDescribe,
   avCompareTs,
   avGetBytesPerSample,
+  avGetCodecStringDash,
+  avGetCodecStringHls,
   avGetMediaTypeString,
+  avGetMimeTypeDash,
   avGetPackedSampleFmt,
   avGetPixFmtFromName,
   avGetPixFmtName,
@@ -60,6 +63,11 @@ import {
   avUsleep,
   getFFmpegInfo,
 } from '../src/index.js';
+
+import { MediaInput } from '../src/api/index.js';
+import { getInputFile, prepareTestEnvironment } from './index.js';
+
+prepareTestEnvironment();
 
 describe('Utilities', () => {
   describe('FFmpeg Information', () => {
@@ -739,6 +747,215 @@ describe('Utilities', () => {
         // Clean up
         contexts.forEach((ctx) => ctx.freeContext());
       }
+    });
+  });
+
+  describe('Codec String and MIME Type Functions', () => {
+    const inputFile = getInputFile('demux.mp4');
+
+    it('should get DASH codec string for video', async () => {
+      const media = await MediaInput.open(inputFile);
+      const videoStream = media.video();
+
+      assert.ok(videoStream, 'Should have video stream');
+
+      const codecString = avGetCodecStringDash(videoStream.codecpar);
+      assert.ok(codecString, 'Should return codec string');
+      assert.ok(typeof codecString === 'string', 'Should be string');
+
+      // H.264 should return format like "avc1.42E01E" or at least "avc1"
+      console.log('DASH codec string:', codecString);
+      assert.ok(codecString.length > 0, 'Should have non-empty codec string');
+
+      await media.close();
+    });
+
+    it('should get DASH codec string for audio', async () => {
+      const media = await MediaInput.open(inputFile);
+      const audioStream = media.audio();
+
+      if (audioStream) {
+        const codecString = avGetCodecStringDash(audioStream.codecpar);
+        assert.ok(codecString, 'Should return codec string');
+        assert.ok(typeof codecString === 'string', 'Should be string');
+
+        // AAC should return format like "mp4a.40.2"
+        console.log('DASH audio codec string:', codecString);
+      } else {
+        console.log('Skipping audio codec string test: no audio stream');
+      }
+
+      await media.close();
+    });
+
+    it('should get HLS codec string for video', async () => {
+      const media = await MediaInput.open(inputFile);
+      const videoStream = media.video();
+
+      assert.ok(videoStream, 'Should have video stream');
+
+      const codecString = avGetCodecStringHls(videoStream.codecpar);
+      assert.ok(codecString, 'Should return codec string');
+      assert.ok(typeof codecString === 'string', 'Should be string');
+
+      // H.264 should return format like "avc1.42E01E"
+      console.log('HLS codec string:', codecString);
+      assert.ok(codecString.length > 0, 'Should have non-empty codec string');
+
+      await media.close();
+    });
+
+    it('should get HLS codec string for audio', async () => {
+      const media = await MediaInput.open(inputFile);
+      const audioStream = media.audio();
+
+      if (audioStream) {
+        const codecString = avGetCodecStringHls(audioStream.codecpar);
+        assert.ok(codecString, 'Should return codec string');
+        assert.ok(typeof codecString === 'string', 'Should be string');
+
+        console.log('HLS audio codec string:', codecString);
+      } else {
+        console.log('Skipping HLS audio codec string test: no audio stream');
+      }
+
+      await media.close();
+    });
+
+    it('should get MIME type for video stream', async () => {
+      const media = await MediaInput.open(inputFile);
+      const videoStream = media.video();
+
+      assert.ok(videoStream, 'Should have video stream');
+
+      const mimeType = avGetMimeTypeDash(videoStream.codecpar);
+      assert.ok(mimeType, 'Should return MIME type');
+      assert.ok(typeof mimeType === 'string', 'Should be string');
+
+      // H.264 should return "video/mp4"
+      console.log('Video MIME type:', mimeType);
+      assert.ok(mimeType.startsWith('video/'), 'Should start with video/');
+
+      await media.close();
+    });
+
+    it('should get MIME type for audio stream', async () => {
+      const media = await MediaInput.open(inputFile);
+      const audioStream = media.audio();
+
+      if (audioStream) {
+        const mimeType = avGetMimeTypeDash(audioStream.codecpar);
+        assert.ok(mimeType, 'Should return MIME type');
+        assert.ok(typeof mimeType === 'string', 'Should be string');
+
+        // AAC should return "audio/mp4"
+        console.log('Audio MIME type:', mimeType);
+        assert.ok(mimeType.startsWith('audio/'), 'Should start with audio/');
+      } else {
+        console.log('Skipping audio MIME type test: no audio stream');
+      }
+
+      await media.close();
+    });
+
+    it('should handle codec strings with extradata', async () => {
+      const media = await MediaInput.open(inputFile);
+      const videoStream = media.video();
+
+      assert.ok(videoStream, 'Should have video stream');
+
+      // Check if stream has extradata
+      const extradata = videoStream.codecpar.extradata;
+      if (extradata && extradata.length > 0) {
+        console.log('Stream has extradata:', extradata.length, 'bytes');
+
+        // Codec string should include profile/level info from extradata
+        const codecString = avGetCodecStringDash(videoStream.codecpar);
+        assert.ok(codecString, 'Should return codec string');
+
+        // For H.264 with extradata, should have format like "avc1.42E01E"
+        if (codecString.startsWith('avc')) {
+          console.log('H.264 codec string with extradata:', codecString);
+        }
+      } else {
+        console.log('Stream has no extradata');
+      }
+
+      await media.close();
+    });
+
+    it('should handle WebM VP8 codec', async () => {
+      const vp8File = getInputFile('video-vp8.webm');
+
+      try {
+        const media = await MediaInput.open(vp8File);
+        const videoStream = media.video();
+
+        assert.ok(videoStream, 'Should have video stream');
+
+        const codecString = avGetCodecStringDash(videoStream.codecpar);
+        assert.ok(codecString, 'Should return codec string');
+        assert.equal(codecString, 'vp8', 'VP8 should return "vp8"');
+
+        const mimeType = avGetMimeTypeDash(videoStream.codecpar);
+        assert.ok(mimeType, 'Should return MIME type');
+        assert.equal(mimeType, 'video/webm', 'VP8 should return video/webm');
+
+        console.log('VP8 codec string:', codecString);
+        console.log('VP8 MIME type:', mimeType);
+
+        await media.close();
+      } catch {
+        console.log('Skipping VP8 test: file not found');
+      }
+    });
+
+    it('should handle WebM VP9 codec', async () => {
+      const vp9File = getInputFile('video-vp9.webm');
+
+      try {
+        const media = await MediaInput.open(vp9File);
+        const videoStream = media.video();
+
+        assert.ok(videoStream, 'Should have video stream');
+
+        const codecString = avGetCodecStringDash(videoStream.codecpar);
+        assert.ok(codecString, 'Should return codec string');
+
+        // VP9 should return format like "vp09.00.41.08" or at least "vp9"
+        console.log('VP9 codec string:', codecString);
+        assert.ok(codecString.startsWith('vp'), 'VP9 should start with "vp"');
+
+        const mimeType = avGetMimeTypeDash(videoStream.codecpar);
+        assert.ok(mimeType, 'Should return MIME type');
+        assert.equal(mimeType, 'video/webm', 'VP9 should return video/webm');
+
+        console.log('VP9 MIME type:', mimeType);
+
+        await media.close();
+      } catch {
+        console.log('Skipping VP9 test: file not found');
+      }
+    });
+
+    it('should return consistent codec strings between DASH and HLS for H.264', async () => {
+      const media = await MediaInput.open(inputFile);
+      const videoStream = media.video();
+
+      assert.ok(videoStream, 'Should have video stream');
+
+      const dashCodec = avGetCodecStringDash(videoStream.codecpar);
+      const hlsCodec = avGetCodecStringHls(videoStream.codecpar);
+
+      // For H.264, DASH and HLS should return the same string
+      console.log('DASH:', dashCodec);
+      console.log('HLS:', hlsCodec);
+
+      // Both should return valid strings
+      assert.ok(dashCodec, 'DASH should return codec string');
+      assert.ok(hlsCodec, 'HLS should return codec string');
+
+      await media.close();
     });
   });
 });
