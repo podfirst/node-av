@@ -1,7 +1,22 @@
 import assert from 'node:assert';
 import { describe, it } from 'node:test';
 
-import { AVFILTER_CMD_FLAG_FAST, AVFILTER_CMD_FLAG_ONE, AVFILTER_THREAD_SLICE, AVFLAG_NONE, Filter, FilterContext, FilterGraph } from '../src/index.js';
+import {
+  AV_OPT_TYPE_IMAGE_SIZE,
+  AV_OPT_TYPE_PIXEL_FMT,
+  AV_OPT_TYPE_RATIONAL,
+  AV_OPT_TYPE_SAMPLE_FMT,
+  AV_OPT_TYPE_STRING,
+  AV_PIX_FMT_YUV420P,
+  AV_SAMPLE_FMT_S16,
+  AVFILTER_CMD_FLAG_FAST,
+  AVFILTER_CMD_FLAG_ONE,
+  AVFILTER_THREAD_SLICE,
+  AVFLAG_NONE,
+  Filter,
+  FilterContext,
+  FilterGraph,
+} from '../src/index.js';
 
 describe('FilterGraph', () => {
   describe('Creation and Lifecycle', () => {
@@ -548,10 +563,10 @@ describe('FilterGraph', () => {
       assert.ok(bufferCtx);
 
       // Set options individually
-      bufferCtx.setOption('video_size', '320x240');
-      bufferCtx.setOption('pix_fmt', '0'); // AV_PIX_FMT_YUV420P
-      bufferCtx.setOption('time_base', '1/25');
-      bufferCtx.setOption('pixel_aspect', '1/1');
+      bufferCtx.setOption('video_size', { width: 320, height: 240 }, AV_OPT_TYPE_IMAGE_SIZE);
+      bufferCtx.setOption('pix_fmt', AV_PIX_FMT_YUV420P, AV_OPT_TYPE_PIXEL_FMT);
+      bufferCtx.setOption('time_base', { num: 1, den: 25 }, AV_OPT_TYPE_RATIONAL);
+      bufferCtx.setOption('pixel_aspect', '1/1', AV_OPT_TYPE_STRING);
 
       // Initialize the filter
       const initRet = bufferCtx.init();
@@ -580,10 +595,10 @@ describe('FilterGraph', () => {
       assert.ok(abufferCtx);
 
       // Set audio options
-      abufferCtx.setOption('sample_rate', '44100');
-      abufferCtx.setOption('sample_fmt', '1'); // AV_SAMPLE_FMT_S16
-      abufferCtx.setOption('channel_layout', 'stereo');
-      abufferCtx.setOption('time_base', '1/44100');
+      abufferCtx.setOption('sample_rate', 44100);
+      abufferCtx.setOption('sample_fmt', AV_SAMPLE_FMT_S16, AV_OPT_TYPE_SAMPLE_FMT);
+      abufferCtx.setOption('channel_layout', 'stereo', AV_OPT_TYPE_STRING);
+      abufferCtx.setOption('time_base', { num: 1, den: 44100 }, AV_OPT_TYPE_RATIONAL);
 
       // Initialize
       const initRet = abufferCtx.init();
