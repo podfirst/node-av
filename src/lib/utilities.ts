@@ -92,6 +92,32 @@ export function avGetSampleFmtName(sampleFmt: AVSampleFormat): string | null {
 }
 
 /**
+ * Get sample format from name string.
+ *
+ * Converts a sample format name (like "s16", "fltp", etc.) to the
+ * corresponding AVSampleFormat enum value.
+ *
+ * Direct mapping to av_get_sample_fmt().
+ *
+ * @param name - Sample format name (e.g., "s16", "fltp", "s32p")
+ *
+ * @returns Sample format enum, or AV_SAMPLE_FMT_NONE if unknown
+ *
+ * @example
+ * ```typescript
+ * const fmt1 = avGetSampleFmtFromName("s16");   // Returns AV_SAMPLE_FMT_S16
+ * const fmt2 = avGetSampleFmtFromName("fltp");  // Returns AV_SAMPLE_FMT_FLTP
+ * const none = avGetSampleFmtFromName("invalid"); // Returns AV_SAMPLE_FMT_NONE
+ * ```
+ *
+ * @see [av_get_sample_fmt](https://ffmpeg.org/doxygen/7.1/group__lavu__sampfmts.html#ga5b95d0bf179912e8ff0d23ddfa99c9bc) - FFmpeg Doxygen
+ * @see {@link avGetSampleFmtName} For converting format to name string
+ */
+export function avGetSampleFmtFromName(name: string): AVSampleFormat {
+  return bindings.avGetSampleFmtFromName(name);
+}
+
+/**
  * Get packed sample format.
  *
  * Returns the packed (interleaved) version of a planar sample format,

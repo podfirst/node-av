@@ -253,6 +253,7 @@ export interface NativeBinding {
   // Utility functions
   avGetBytesPerSample: (sampleFmt: AVSampleFormat) => number;
   avGetSampleFmtName: (sampleFmt: AVSampleFormat) => string | null;
+  avGetSampleFmtFromName: (name: string) => AVSampleFormat;
   avGetPackedSampleFmt: (sampleFmt: AVSampleFormat) => AVSampleFormat;
   avGetPlanarSampleFmt: (sampleFmt: AVSampleFormat) => AVSampleFormat;
   avSampleFmtIsPlanar: (sampleFmt: AVSampleFormat) => boolean;

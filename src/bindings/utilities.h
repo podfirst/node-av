@@ -27,6 +27,7 @@ public:
   // Sample format utilities
   static Napi::Value GetBytesPerSample(const Napi::CallbackInfo& info);
   static Napi::Value GetSampleFmtName(const Napi::CallbackInfo& info);
+  static Napi::Value GetSampleFmtFromName(const Napi::CallbackInfo& info);
   static Napi::Value GetPackedSampleFmt(const Napi::CallbackInfo& info);
   static Napi::Value GetPlanarSampleFmt(const Napi::CallbackInfo& info);
   static Napi::Value SampleFmtIsPlanar(const Napi::CallbackInfo& info);

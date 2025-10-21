@@ -31,6 +31,7 @@ Napi::Object Utilities::Init(Napi::Env env, Napi::Object exports) {
   // Sample format utilities
   exports.Set("avGetBytesPerSample", Napi::Function::New(env, GetBytesPerSample));
   exports.Set("avGetSampleFmtName", Napi::Function::New(env, GetSampleFmtName));
+  exports.Set("avGetSampleFmtFromName", Napi::Function::New(env, GetSampleFmtFromName));
   exports.Set("avGetPackedSampleFmt", Napi::Function::New(env, GetPackedSampleFmt));
   exports.Set("avGetPlanarSampleFmt", Napi::Function::New(env, GetPlanarSampleFmt));
   exports.Set("avSampleFmtIsPlanar", Napi::Function::New(env, SampleFmtIsPlanar));
@@ -207,16 +208,30 @@ Napi::Value Utilities::GetPlanarSampleFmt(const Napi::CallbackInfo& info) {
 
 Napi::Value Utilities::SampleFmtIsPlanar(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
+
   if (info.Length() < 1 || !info[0].IsNumber()) {
     Napi::TypeError::New(env, "Expected sample format as number").ThrowAsJavaScriptException();
     return Napi::Boolean::New(env, false);
   }
-  
+
   int sample_fmt = info[0].As<Napi::Number>().Int32Value();
   int is_planar = av_sample_fmt_is_planar(static_cast<AVSampleFormat>(sample_fmt));
-  
+
   return Napi::Boolean::New(env, is_planar != 0);
+}
+
+Napi::Value Utilities::GetSampleFmtFromName(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+
+  if (info.Length() < 1 || !info[0].IsString()) {
+    Napi::TypeError::New(env, "Expected sample format name as string").ThrowAsJavaScriptException();
+    return Napi::Number::New(env, AV_SAMPLE_FMT_NONE);
+  }
+
+  std::string name = info[0].As<Napi::String>().Utf8Value();
+  AVSampleFormat sample_fmt = av_get_sample_fmt(name.c_str());
+
+  return Napi::Number::New(env, static_cast<int>(sample_fmt));
 }
 
 // === Pixel format utilities ===

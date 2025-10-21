@@ -26,6 +26,7 @@ import {
   AV_SAMPLE_FMT_DBLP,
   AV_SAMPLE_FMT_FLT,
   AV_SAMPLE_FMT_FLTP,
+  AV_SAMPLE_FMT_NONE,
   AV_SAMPLE_FMT_S16,
   AV_SAMPLE_FMT_S16P,
   AV_SAMPLE_FMT_S32,
@@ -46,6 +47,7 @@ import {
   avGetPixFmtFromName,
   avGetPixFmtName,
   avGetPlanarSampleFmt,
+  avGetSampleFmtFromName,
   avGetSampleFmtName,
   avImageAlloc,
   avImageAllocArrays,
@@ -193,6 +195,32 @@ describe('Utilities', () => {
       assert.equal(avGetSampleFmtName(AV_SAMPLE_FMT_S32P), 's32p');
       assert.equal(avGetSampleFmtName(AV_SAMPLE_FMT_FLTP), 'fltp');
       assert.equal(avGetSampleFmtName(AV_SAMPLE_FMT_DBLP), 'dblp');
+    });
+
+    it('should get sample format from name', () => {
+      assert.equal(avGetSampleFmtFromName('u8'), AV_SAMPLE_FMT_U8);
+      assert.equal(avGetSampleFmtFromName('s16'), AV_SAMPLE_FMT_S16);
+      assert.equal(avGetSampleFmtFromName('s32'), AV_SAMPLE_FMT_S32);
+      assert.equal(avGetSampleFmtFromName('flt'), AV_SAMPLE_FMT_FLT);
+      assert.equal(avGetSampleFmtFromName('dbl'), AV_SAMPLE_FMT_DBL);
+
+      // Planar formats
+      assert.equal(avGetSampleFmtFromName('u8p'), AV_SAMPLE_FMT_U8P);
+      assert.equal(avGetSampleFmtFromName('s16p'), AV_SAMPLE_FMT_S16P);
+      assert.equal(avGetSampleFmtFromName('s32p'), AV_SAMPLE_FMT_S32P);
+      assert.equal(avGetSampleFmtFromName('fltp'), AV_SAMPLE_FMT_FLTP);
+      assert.equal(avGetSampleFmtFromName('dblp'), AV_SAMPLE_FMT_DBLP);
+    });
+
+    it('should handle invalid sample format name', () => {
+      const invalidFormat = avGetSampleFmtFromName('invalid_format_name');
+      assert.equal(invalidFormat, AV_SAMPLE_FMT_NONE, 'Should return AV_SAMPLE_FMT_NONE for invalid format name');
+
+      // Test empty string
+      assert.equal(avGetSampleFmtFromName(''), AV_SAMPLE_FMT_NONE, 'Should return AV_SAMPLE_FMT_NONE for empty string');
+
+      // Test case sensitivity
+      assert.equal(avGetSampleFmtFromName('S16'), AV_SAMPLE_FMT_NONE, 'Should return AV_SAMPLE_FMT_NONE for uppercase (case sensitive)');
     });
 
     it('should check if sample format is planar', () => {
