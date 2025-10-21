@@ -170,11 +170,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
         // Set format options if provided
         if (options?.options) {
           for (const [key, value] of Object.entries(options.options)) {
-            if (value === undefined || value === null) {
-              continue;
-            }
-
-            output.formatContext.setOption(key, typeof value === 'number' ? value.toString() : value);
+            output.formatContext.setOption(key, value);
           }
         }
 
@@ -200,11 +196,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
         // Set format options if provided
         if (options?.options) {
           for (const [key, value] of Object.entries(options.options)) {
-            if (value === undefined || value === null) {
-              continue;
-            }
-
-            output.formatContext.setOption(key, typeof value === 'number' ? value.toString() : value);
+            output.formatContext.setOption(key, value);
           }
         }
 
@@ -304,11 +296,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
         // Set format options if provided
         if (options?.options) {
           for (const [key, value] of Object.entries(options.options)) {
-            if (value === undefined || value === null) {
-              continue;
-            }
-
-            output.formatContext.setOption(key, typeof value === 'number' ? value.toString() : value);
+            output.formatContext.setOption(key, value);
           }
         }
 
@@ -334,11 +322,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
         // Set format options if provided
         if (options?.options) {
           for (const [key, value] of Object.entries(options.options)) {
-            if (value === undefined || value === null) {
-              continue;
-            }
-
-            output.formatContext.setOption(key, typeof value === 'number' ? value.toString() : value);
+            output.formatContext.setOption(key, value);
           }
         }
 

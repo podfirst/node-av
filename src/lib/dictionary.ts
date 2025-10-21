@@ -80,7 +80,7 @@ export class Dictionary implements Disposable, NativeWrapper<NativeDictionary> {
    * });
    * ```
    */
-  static fromObject(obj: Record<string, string | number | undefined | null>, flags: AVDictFlag = AVFLAG_NONE): Dictionary {
+  static fromObject(obj: Record<string, string | number | boolean | undefined | null>, flags: AVDictFlag = AVFLAG_NONE): Dictionary {
     const dict = new Dictionary();
     for (const [key, value] of Object.entries(obj)) {
       if (value === undefined || value === null) {

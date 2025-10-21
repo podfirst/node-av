@@ -82,7 +82,7 @@ export interface MediaInputOptions {
   /**
    * FFmpeg format options passed directly to the input.
    */
-  options?: Record<string, string | number | undefined | null>;
+  options?: Record<string, string | number | boolean | undefined | null>;
 }
 
 /**
@@ -115,7 +115,7 @@ export interface MediaOutputOptions {
   /**
    * FFmpeg format options passed directly to the output.
    */
-  options?: Record<string, string | number | undefined | null>;
+  options?: Record<string, string | number | boolean | bigint | undefined | null>;
 }
 
 /**
@@ -139,8 +139,8 @@ export interface DecoderOptions {
    */
   extraHWFrames?: number;
 
-  /** Additional codec-specific options (passed to AVOptions) */
-  options?: Record<string, string | number | undefined | null>;
+  /** Additional codec-specific options */
+  options?: Record<string, string | number | boolean | undefined | null>;
 }
 
 /**
@@ -177,8 +177,8 @@ export interface EncoderOptions {
   /** Frame rate (rational {num, den}) */
   frameRate?: IRational;
 
-  /** Additional codec-specific options (passed to AVOptions) */
-  options?: Record<string, string | number | undefined | null>;
+  /** Additional codec-specific options */
+  options?: Record<string, string | number | boolean | undefined | null>;
 }
 
 /**
