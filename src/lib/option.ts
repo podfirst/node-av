@@ -25,7 +25,9 @@ import {
 } from '../constants/constants.js';
 import { bindings } from './binding.js';
 import { Dictionary } from './dictionary.js';
+import { FFmpegError, PosixError } from './error.js';
 import { Rational } from './rational.js';
+import { avGetPixFmtFromName, avGetSampleFmtFromName } from './utilities.js';
 
 import type {
   AVOptionFlag,
@@ -1003,7 +1005,8 @@ export class OptionMember<T extends OptionCapableObject> {
   }
 
   // String options
-  setOption(name: string, value: string, type?: AVOptionTypeString, searchFlags?: AVOptionSearchFlags): number;
+  setOption(name: string, value: string | number | boolean | bigint | null | undefined): number;
+  setOption(name: string, value: string, type: AVOptionTypeString, searchFlags?: AVOptionSearchFlags): number;
   setOption(name: string, value: string, type: AVOptionTypeColor, searchFlags?: AVOptionSearchFlags): number;
 
   // Integer options
@@ -1079,8 +1082,17 @@ export class OptionMember<T extends OptionCapableObject> {
    * FFmpegError.throwIfError(ret, 'set pixel format');
    * ```
    */
-  setOption(name: string, value: any, type: AVOptionType = AV_OPT_TYPE_STRING, searchFlags: AVOptionSearchFlags = AV_OPT_SEARCH_CHILDREN): number {
-    // Use specific setter based on type
+  setOption(name: string, value: any, type?: AVOptionType, searchFlags?: AVOptionSearchFlags): number {
+    if (value === undefined || value === null) {
+      return 0;
+    }
+
+    if (type === undefined) {
+      return this.setUnknownOption(name, value);
+    }
+
+    searchFlags ??= AV_OPT_SEARCH_CHILDREN;
+
     switch (type) {
       case AV_OPT_TYPE_STRING:
       case AV_OPT_TYPE_COLOR: // Colors are set as strings
@@ -1362,5 +1374,332 @@ export class OptionMember<T extends OptionCapableObject> {
       options.push(opt);
     }
     return options;
+  }
+
+  /**
+   * Intelligently set a format option based on its FFmpeg type.
+   *
+   * Queries the option type using av_opt_find() and calls the appropriate
+   * typed setOption() overload. Handles automatic type conversion from
+   * JavaScript types to FFmpeg option types.
+   *
+   * @param name - Option name
+   *
+   * @param value - Option value (null/undefined are skipped)
+   *
+   * @returns 0 on success, negative on error
+   *
+   * @internal
+   */
+  private setUnknownOption(name: string, value: string | number | boolean | bigint | object | null | undefined): number {
+    if (value === undefined || value === null) {
+      return 0;
+    }
+
+    // Try to find the option to get its type
+    const optInfo = Option.find(this.native, name, AV_OPT_SEARCH_CHILDREN);
+
+    console.log(`Setting option '${name}' with value:`, value, 'Found option info:', {
+      name: optInfo?.name,
+      help: optInfo?.help,
+      type: optInfo?.type,
+      defaultValue: optInfo?.defaultValue,
+      min: optInfo?.min,
+      max: optInfo?.max,
+      flags: optInfo?.flags,
+      unit: optInfo?.unit,
+    });
+
+    if (optInfo) {
+      const optType = optInfo.type;
+
+      // Handle based on FFmpeg option type
+      switch (optType) {
+        case AV_OPT_TYPE_INT:
+          if (typeof value === 'number') {
+            return this.setOption(name, value, AV_OPT_TYPE_INT);
+          } else if (typeof value === 'boolean') {
+            return this.setOption(name, value ? 1 : 0, AV_OPT_TYPE_INT);
+          } else if (typeof value === 'bigint') {
+            return this.setOption(name, Number(value), AV_OPT_TYPE_INT);
+          } else if (typeof value === 'string') {
+            return this.setOption(name, parseInt(value, 10), AV_OPT_TYPE_INT);
+          } else {
+            return FFmpegError.AVERROR(PosixError.EINVAL);
+          }
+
+        case AV_OPT_TYPE_UINT:
+          if (typeof value === 'number') {
+            return this.setOption(name, value, AV_OPT_TYPE_UINT);
+          } else if (typeof value === 'boolean') {
+            return this.setOption(name, value ? 1 : 0, AV_OPT_TYPE_UINT);
+          } else if (typeof value === 'bigint') {
+            return this.setOption(name, Number(value), AV_OPT_TYPE_UINT);
+          } else if (typeof value === 'string') {
+            return this.setOption(name, parseInt(value, 10), AV_OPT_TYPE_UINT);
+          } else {
+            return FFmpegError.AVERROR(PosixError.EINVAL);
+          }
+
+        case AV_OPT_TYPE_FLAGS:
+          if (typeof value === 'number') {
+            return this.setOption(name, value, AV_OPT_TYPE_FLAGS);
+          } else if (typeof value === 'boolean') {
+            return this.setOption(name, value ? 1 : 0, AV_OPT_TYPE_FLAGS);
+          } else if (typeof value === 'bigint') {
+            return this.setOption(name, Number(value), AV_OPT_TYPE_FLAGS);
+          } else if (typeof value === 'string') {
+            return this.setOption(name, parseInt(value, 10), AV_OPT_TYPE_FLAGS);
+          } else {
+            return FFmpegError.AVERROR(PosixError.EINVAL);
+          }
+
+        case AV_OPT_TYPE_CONST:
+          if (typeof value === 'number') {
+            return this.setOption(name, value, AV_OPT_TYPE_CONST);
+          } else if (typeof value === 'boolean') {
+            return this.setOption(name, value ? 1 : 0, AV_OPT_TYPE_CONST);
+          } else if (typeof value === 'bigint') {
+            return this.setOption(name, Number(value), AV_OPT_TYPE_CONST);
+          } else if (typeof value === 'string') {
+            return this.setOption(name, parseInt(value, 10), AV_OPT_TYPE_CONST);
+          } else {
+            return FFmpegError.AVERROR(PosixError.EINVAL);
+          }
+
+        case AV_OPT_TYPE_DURATION:
+          if (typeof value === 'number') {
+            return this.setOption(name, value, AV_OPT_TYPE_DURATION);
+          } else if (typeof value === 'boolean') {
+            return this.setOption(name, value ? 1 : 0, AV_OPT_TYPE_DURATION);
+          } else if (typeof value === 'bigint') {
+            return this.setOption(name, Number(value), AV_OPT_TYPE_DURATION);
+          } else if (typeof value === 'string') {
+            return this.setOption(name, parseInt(value, 10), AV_OPT_TYPE_DURATION);
+          } else {
+            return FFmpegError.AVERROR(PosixError.EINVAL);
+          }
+
+        case AV_OPT_TYPE_INT64:
+          if (typeof value === 'bigint') {
+            return this.setOption(name, value, AV_OPT_TYPE_INT64);
+          } else if (typeof value === 'number') {
+            return this.setOption(name, BigInt(value), AV_OPT_TYPE_INT64);
+          } else if (typeof value === 'boolean') {
+            return this.setOption(name, value ? 1n : 0n, AV_OPT_TYPE_INT64);
+          } else if (typeof value === 'string') {
+            return this.setOption(name, BigInt(value), AV_OPT_TYPE_INT64);
+          } else {
+            return FFmpegError.AVERROR(PosixError.EINVAL);
+          }
+
+        case AV_OPT_TYPE_UINT64:
+          if (typeof value === 'bigint') {
+            return this.setOption(name, value, AV_OPT_TYPE_UINT64);
+          } else if (typeof value === 'number') {
+            return this.setOption(name, BigInt(value), AV_OPT_TYPE_UINT64);
+          } else if (typeof value === 'boolean') {
+            return this.setOption(name, value ? 1n : 0n, AV_OPT_TYPE_UINT64);
+          } else if (typeof value === 'string') {
+            return this.setOption(name, BigInt(value), AV_OPT_TYPE_UINT64);
+          } else {
+            return FFmpegError.AVERROR(PosixError.EINVAL);
+          }
+
+        case AV_OPT_TYPE_CHLAYOUT:
+          if (typeof value === 'bigint') {
+            return this.setOption(name, value, AV_OPT_TYPE_CHLAYOUT);
+          } else if (typeof value === 'number') {
+            return this.setOption(name, BigInt(value), AV_OPT_TYPE_CHLAYOUT);
+          } else if (typeof value === 'boolean') {
+            return this.setOption(name, value ? 1n : 0n, AV_OPT_TYPE_CHLAYOUT);
+          } else if (typeof value === 'string') {
+            return this.setOption(name, BigInt(value), AV_OPT_TYPE_CHLAYOUT);
+          } else {
+            return FFmpegError.AVERROR(PosixError.EINVAL);
+          }
+
+        case AV_OPT_TYPE_FLOAT:
+          if (typeof value === 'number') {
+            return this.setOption(name, value, AV_OPT_TYPE_FLOAT);
+          } else if (typeof value === 'boolean') {
+            return this.setOption(name, value ? 1.0 : 0.0, AV_OPT_TYPE_FLOAT);
+          } else if (typeof value === 'bigint') {
+            return this.setOption(name, Number(value), AV_OPT_TYPE_FLOAT);
+          } else if (typeof value === 'string') {
+            return this.setOption(name, parseFloat(value), AV_OPT_TYPE_FLOAT);
+          } else {
+            return FFmpegError.AVERROR(PosixError.EINVAL);
+          }
+
+        case AV_OPT_TYPE_DOUBLE:
+          if (typeof value === 'number') {
+            return this.setOption(name, value, AV_OPT_TYPE_DOUBLE);
+          } else if (typeof value === 'boolean') {
+            return this.setOption(name, value ? 1.0 : 0.0, AV_OPT_TYPE_DOUBLE);
+          } else if (typeof value === 'bigint') {
+            return this.setOption(name, Number(value), AV_OPT_TYPE_DOUBLE);
+          } else if (typeof value === 'string') {
+            return this.setOption(name, parseFloat(value), AV_OPT_TYPE_DOUBLE);
+          } else {
+            return FFmpegError.AVERROR(PosixError.EINVAL);
+          }
+
+        case AV_OPT_TYPE_BOOL:
+          if (typeof value === 'boolean') {
+            return this.setOption(name, value, AV_OPT_TYPE_BOOL);
+          } else if (typeof value === 'number') {
+            return this.setOption(name, value !== 0, AV_OPT_TYPE_BOOL);
+          } else if (typeof value === 'bigint') {
+            return this.setOption(name, value !== 0n, AV_OPT_TYPE_BOOL);
+          } else if (typeof value === 'string') {
+            // Parse string as boolean (1/true/yes/on = true, everything else = false)
+            const str = value.toLowerCase();
+            return this.setOption(name, str === '1' || str === 'true' || str === 'yes' || str === 'on', AV_OPT_TYPE_BOOL);
+          } else {
+            return FFmpegError.AVERROR(PosixError.EINVAL);
+          }
+
+        case AV_OPT_TYPE_STRING:
+          if (typeof value === 'string') {
+            return this.setOption(name, value, AV_OPT_TYPE_STRING);
+          } else if (typeof value === 'object') {
+            return this.setOption(name, JSON.stringify(value), AV_OPT_TYPE_STRING);
+          } else {
+            return this.setOption(name, String(value), AV_OPT_TYPE_STRING);
+          }
+
+        case AV_OPT_TYPE_COLOR:
+          if (typeof value === 'string') {
+            return this.setOption(name, value, AV_OPT_TYPE_COLOR);
+          } else if (typeof value === 'object') {
+            return this.setOption(name, JSON.stringify(value), AV_OPT_TYPE_COLOR);
+          } else {
+            return this.setOption(name, String(value), AV_OPT_TYPE_COLOR);
+          }
+
+        case AV_OPT_TYPE_RATIONAL:
+        case AV_OPT_TYPE_VIDEO_RATE:
+          if (typeof value === 'object' && 'num' in value && 'den' in value) {
+            return this.setOption(name, value as IRational, AV_OPT_TYPE_RATIONAL);
+          } else if (typeof value === 'string') {
+            // Try to parse "30/1" or "30:1" format
+            const match = /^(\d+)[/:](\d+)$/.exec(value);
+            if (match) {
+              return this.setOption(name, { num: parseInt(match[1], 10), den: parseInt(match[2], 10) }, AV_OPT_TYPE_RATIONAL);
+            }
+            // Fallback to string (let FFmpeg parse it)
+            return this.setOption(name, value, AV_OPT_TYPE_STRING);
+          } else {
+            return FFmpegError.AVERROR(PosixError.EINVAL);
+          }
+
+        // Image size type - handle all input types
+        case AV_OPT_TYPE_IMAGE_SIZE:
+          if (typeof value === 'object' && 'width' in value && 'height' in value) {
+            return this.setOption(name, value as { width: number; height: number }, AV_OPT_TYPE_IMAGE_SIZE);
+          } else if (typeof value === 'string') {
+            // Try to parse "1920x1080" format
+            const match = /^(\d+)x(\d+)$/.exec(value);
+            if (match) {
+              return this.setOption(name, { width: parseInt(match[1], 10), height: parseInt(match[2], 10) }, AV_OPT_TYPE_IMAGE_SIZE);
+            }
+            // Fallback to string (let FFmpeg parse it)
+            return this.setOption(name, value, AV_OPT_TYPE_STRING);
+          } else {
+            return FFmpegError.AVERROR(PosixError.EINVAL);
+          }
+
+        // Pixel/Sample format types - handle all input types
+        case AV_OPT_TYPE_PIXEL_FMT:
+          if (typeof value === 'number') {
+            return this.setOption(name, value as AVPixelFormat, AV_OPT_TYPE_PIXEL_FMT);
+          } else if (typeof value === 'bigint') {
+            return this.setOption(name, Number(value) as AVPixelFormat, AV_OPT_TYPE_PIXEL_FMT);
+          } else if (typeof value === 'string') {
+            return this.setOption(name, avGetPixFmtFromName(value), AV_OPT_TYPE_PIXEL_FMT);
+          } else {
+            return FFmpegError.AVERROR(PosixError.EINVAL);
+          }
+
+        case AV_OPT_TYPE_SAMPLE_FMT:
+          if (typeof value === 'number') {
+            return this.setOption(name, value as AVSampleFormat, AV_OPT_TYPE_SAMPLE_FMT);
+          } else if (typeof value === 'bigint') {
+            return this.setOption(name, Number(value) as AVSampleFormat, AV_OPT_TYPE_SAMPLE_FMT);
+          } else if (typeof value === 'string') {
+            return this.setOption(name, avGetSampleFmtFromName(value), AV_OPT_TYPE_SAMPLE_FMT);
+          } else {
+            return FFmpegError.AVERROR(PosixError.EINVAL);
+          }
+
+        // Binary type - handle all input types
+        case AV_OPT_TYPE_BINARY:
+          if (Buffer.isBuffer(value)) {
+            return this.setOption(name, value, AV_OPT_TYPE_BINARY);
+          } else if (typeof value === 'string') {
+            return this.setOption(name, Buffer.from(value), AV_OPT_TYPE_BINARY);
+          } else {
+            return FFmpegError.AVERROR(PosixError.EINVAL);
+          }
+
+        // Binary int array type - handle all input types
+        case AV_OPT_TYPE_BINARY_INT_ARRAY:
+          if (Array.isArray(value)) {
+            // Convert all elements to numbers
+            return this.setOption(
+              name,
+              value.map((v) => (typeof v === 'number' ? v : Number(v))),
+              AV_OPT_TYPE_BINARY_INT_ARRAY,
+            );
+          } else if (typeof value === 'string') {
+            // Parse comma-separated values "1,2,3" → [1, 2, 3]
+            const arr = value.split(',').map((s) => parseInt(s.trim(), 10));
+            return this.setOption(name, arr, AV_OPT_TYPE_BINARY_INT_ARRAY);
+          } else if (typeof value === 'number') {
+            // Single number → single-element array
+            return this.setOption(name, [value], AV_OPT_TYPE_BINARY_INT_ARRAY);
+          } else if (typeof value === 'bigint') {
+            // Single bigint → single-element array
+            return this.setOption(name, [Number(value)], AV_OPT_TYPE_BINARY_INT_ARRAY);
+          } else if (typeof value === 'boolean') {
+            // Boolean → single-element array
+            return this.setOption(name, [value ? 1 : 0], AV_OPT_TYPE_BINARY_INT_ARRAY);
+          } else {
+            return FFmpegError.AVERROR(PosixError.EINVAL);
+          }
+
+        // Dictionary type - handle all input types
+        case AV_OPT_TYPE_DICT:
+          if (value instanceof Dictionary) {
+            return this.setOption(name, value, AV_OPT_TYPE_DICT);
+          } else if (typeof value === 'object' && !Array.isArray(value)) {
+            // Convert plain object to Dictionary
+            const dict = Dictionary.fromObject(value as any);
+            return this.setOption(name, dict, AV_OPT_TYPE_DICT);
+          } else {
+            return FFmpegError.AVERROR(PosixError.EINVAL);
+          }
+
+        // Unknown type - fallback to string
+        default:
+          if (typeof value === 'string') {
+            return this.setOption(name, value, AV_OPT_TYPE_STRING);
+          } else if (typeof value === 'object') {
+            return this.setOption(name, JSON.stringify(value), AV_OPT_TYPE_STRING);
+          } else {
+            return this.setOption(name, String(value), AV_OPT_TYPE_STRING);
+          }
+      }
+    } else {
+      // Option not found - fallback to string (for private/undocumented options)
+      if (typeof value === 'string') {
+        return this.setOption(name, value, AV_OPT_TYPE_STRING);
+      } else if (typeof value === 'object') {
+        return this.setOption(name, JSON.stringify(value), AV_OPT_TYPE_STRING);
+      } else {
+        return this.setOption(name, String(value), AV_OPT_TYPE_STRING);
+      }
+    }
   }
 }
