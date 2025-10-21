@@ -1082,16 +1082,17 @@ export class OptionMember<T extends OptionCapableObject> {
    * FFmpegError.throwIfError(ret, 'set pixel format');
    * ```
    */
-  setOption(name: string, value: any, type?: AVOptionType, searchFlags?: AVOptionSearchFlags): number {
+  setOption(name: string, value: any, type: AVOptionType = AV_OPT_TYPE_STRING, searchFlags: AVOptionSearchFlags = AV_OPT_SEARCH_CHILDREN): number {
     if (value === undefined || value === null) {
       return 0;
     }
 
+    // Do we need to infer type? FFmpeg can handle unknown options
     if (type === undefined) {
       return this.setUnknownOption(name, value);
     }
 
-    searchFlags ??= AV_OPT_SEARCH_CHILDREN;
+    // searchFlags ??= AV_OPT_SEARCH_CHILDREN;
 
     switch (type) {
       case AV_OPT_TYPE_STRING:
