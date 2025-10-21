@@ -1398,18 +1398,6 @@ export class OptionMember<T extends OptionCapableObject> {
 
     // Try to find the option to get its type
     const optInfo = Option.find(this.native, name, AV_OPT_SEARCH_CHILDREN);
-
-    console.log(`Setting option '${name}' with value:`, value, 'Found option info:', {
-      name: optInfo?.name,
-      help: optInfo?.help,
-      type: optInfo?.type,
-      defaultValue: optInfo?.defaultValue,
-      min: optInfo?.min,
-      max: optInfo?.max,
-      flags: optInfo?.flags,
-      unit: optInfo?.unit,
-    });
-
     if (optInfo) {
       const optType = optInfo.type;
 
