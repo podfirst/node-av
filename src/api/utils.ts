@@ -1,4 +1,5 @@
 import {
+  AV_CODEC_ID_AV1,
   AV_CODEC_ID_H264,
   AV_CODEC_ID_HEVC,
   AV_CODEC_ID_OPUS,
@@ -92,7 +93,7 @@ export function isAudioWebRTCCompatible(codecId: AVCodecID): boolean {
  * isVideoWebRTCCompatible(AV_CODEC_ID_HEVC); // true
  * isVideoWebRTCCompatible(AV_CODEC_ID_VP8);  // true
  * isVideoWebRTCCompatible(AV_CODEC_ID_VP9);  // true
- * isVideoWebRTCCompatible(AV_CODEC_ID_AV1);  // false
+ * isVideoWebRTCCompatible(AV_CODEC_ID_AV1);  // true
  * ```
  */
 export function isVideoWebRTCCompatible(codecId: AVCodecID): boolean {
@@ -101,6 +102,7 @@ export function isVideoWebRTCCompatible(codecId: AVCodecID): boolean {
     case AV_CODEC_ID_HEVC:
     case AV_CODEC_ID_VP8:
     case AV_CODEC_ID_VP9:
+    case AV_CODEC_ID_AV1:
       return true;
     default:
       return false;
@@ -193,6 +195,12 @@ export function getVideoCodecConfig(codecId: AVCodecID): Partial<RTCRtpCodecPara
         mimeType: 'video/VP9',
         clockRate: 90000,
         payloadType: 98,
+      };
+    case AV_CODEC_ID_AV1:
+      return {
+        mimeType: 'video/AV1',
+        clockRate: 90000,
+        payloadType: 35,
       };
     default:
       return null;
