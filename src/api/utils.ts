@@ -1,3 +1,16 @@
+import {
+  AV_CODEC_ID_H264,
+  AV_CODEC_ID_HEVC,
+  AV_CODEC_ID_OPUS,
+  AV_CODEC_ID_PCM_ALAW,
+  AV_CODEC_ID_PCM_MULAW,
+  AV_CODEC_ID_VP8,
+  AV_CODEC_ID_VP9,
+} from '../constants/constants.js';
+
+import type { RTCRtpCodecParameters } from 'werift';
+import type { AVCodecID } from '../constants/constants.js';
+
 /**
  * Parse bitrate string to bigint.
  *
@@ -38,6 +51,152 @@ export function parseBitrate(str: string): bigint {
   }
 
   return BigInt(Math.floor(value));
+}
+
+/**
+ * Check if the given audio codec is compatible with WebRTC.
+ *
+ * @param codecId - The AVCodecID to check
+ *
+ * @returns True if the codec is WebRTC compatible, false otherwise
+ *
+ * @example
+ * ```typescript
+ * isAudioWebRTCCompatible(AV_CODEC_ID_OPUS); // true
+ * isAudioWebRTCCompatible(AV_CODEC_ID_PCM_ALAW); // true
+ * isAudioWebRTCCompatible(AV_CODEC_ID_PCM_MULAW); // true
+ * isAudioWebRTCCompatible(AV_CODEC_ID_AAC); // false
+ * ```
+ */
+export function isAudioWebRTCCompatible(codecId: AVCodecID): boolean {
+  switch (codecId) {
+    case AV_CODEC_ID_PCM_ALAW:
+    case AV_CODEC_ID_PCM_MULAW:
+    case AV_CODEC_ID_OPUS:
+      return true;
+    default:
+      return false;
+  }
+}
+
+/**
+ * Check if the given video codec is compatible with WebRTC.
+ *
+ * @param codecId - The AVCodecID to check
+ *
+ * @returns True if the codec is WebRTC compatible, false otherwise
+ *
+ * @example
+ * ```typescript
+ * isVideoWebRTCCompatible(AV_CODEC_ID_H264); // true
+ * isVideoWebRTCCompatible(AV_CODEC_ID_HEVC); // true
+ * isVideoWebRTCCompatible(AV_CODEC_ID_VP8);  // true
+ * isVideoWebRTCCompatible(AV_CODEC_ID_VP9);  // true
+ * isVideoWebRTCCompatible(AV_CODEC_ID_AV1);  // false
+ * ```
+ */
+export function isVideoWebRTCCompatible(codecId: AVCodecID): boolean {
+  switch (codecId) {
+    case AV_CODEC_ID_H264:
+    case AV_CODEC_ID_HEVC:
+    case AV_CODEC_ID_VP8:
+    case AV_CODEC_ID_VP9:
+      return true;
+    default:
+      return false;
+  }
+}
+
+/**
+ * Get the audio codec configuration for WebRTC.
+ *
+ * @param codecId - The AVCodecID of the audio codec
+ *
+ * @returns An object containing MIME type, clock rate, and channels, or null if unsupported
+ *
+ * @example
+ * ```typescript
+ * getAudioCodecConfig(AV_CODEC_ID_OPUS);
+ * // {
+ * //   mimeType: 'audio/opus',
+ * //   clockRate: 48000,
+ * //   channels: 2,
+ * //   payloadType: 111,
+ * // }
+ */
+export function getAudioCodecConfig(codecId: AVCodecID): Partial<RTCRtpCodecParameters> | null {
+  switch (codecId) {
+    case AV_CODEC_ID_OPUS:
+      return {
+        mimeType: 'audio/opus',
+        clockRate: 48000,
+        channels: 2,
+        payloadType: 111,
+      };
+    case AV_CODEC_ID_PCM_MULAW:
+      return {
+        mimeType: 'audio/PCMU',
+        clockRate: 8000,
+        channels: 1,
+        payloadType: 0,
+      };
+    case AV_CODEC_ID_PCM_ALAW:
+      return {
+        mimeType: 'audio/PCMA',
+        clockRate: 8000,
+        channels: 1,
+        payloadType: 8,
+      };
+    default:
+      return null;
+  }
+}
+
+/**
+ * Get the video codec configuration for WebRTC.
+ *
+ * @param codecId - The AVCodecID of the video codec
+ *
+ * @returns An object containing MIME type and clock rate, or null if unsupported
+ *
+ * @example
+ * ```typescript
+ * getVideoCodecConfig(AV_CODEC_ID_H264);
+ * // {
+ * //   mimeType: 'video/H264',
+ * //   clockRate: 90000,
+ * //   payloadType: 102,
+ * // }
+ */
+export function getVideoCodecConfig(codecId: AVCodecID): Partial<RTCRtpCodecParameters> | null {
+  switch (codecId) {
+    case AV_CODEC_ID_H264:
+      return {
+        mimeType: 'video/H264',
+        clockRate: 90000,
+        payloadType: 102,
+      };
+    case AV_CODEC_ID_HEVC:
+      return {
+        mimeType: 'video/H265',
+        clockRate: 90000,
+        payloadType: 103,
+      };
+    case AV_CODEC_ID_VP8:
+      return {
+        mimeType: 'video/VP8',
+        clockRate: 90000,
+        payloadType: 96,
+      };
+    case AV_CODEC_ID_VP9:
+      return {
+        mimeType: 'video/VP9',
+        clockRate: 90000,
+        payloadType: 98,
+      };
+    default:
+      return null;
+  }
 }
 
 // (c) https://github.com/shinyoshiaki/werift-webrtc/tree/develop/packages/rtp

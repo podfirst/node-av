@@ -63,7 +63,8 @@
     "update": "updates --update ./"
   },
   "dependencies": {
-    "unzipper": "^0.12.3"
+    "unzipper": "^0.12.3",
+    "werift": "^0.22.2"
   },
   "optionalDependencies": {
     "@seydx/node-av-darwin-arm64": "^3.0.6",
@@ -102,7 +103,6 @@
     "typescript-eslint": "^8.46.2",
     "updates": "^16.8.1",
     "vitepress": "^2.0.0-alpha.12",
-    "werift": "^0.22.2",
     "ws": "^8.18.3"
   },
   "bugs": {
