@@ -65,6 +65,11 @@ private:
   Napi::Value GetCodecId(const Napi::CallbackInfo& info);
   void SetCodecId(const Napi::CallbackInfo& info, const Napi::Value& value);
 
+  Napi::Value GetCodecTag(const Napi::CallbackInfo& info);
+  void SetCodecTag(const Napi::CallbackInfo& info, const Napi::Value& value);
+
+  Napi::Value GetCodecTagString(const Napi::CallbackInfo& info);
+
   Napi::Value GetBitRate(const Napi::CallbackInfo& info);
   void SetBitRate(const Napi::CallbackInfo& info, const Napi::Value& value);
 

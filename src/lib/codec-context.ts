@@ -105,6 +105,31 @@ export class CodecContext extends OptionMember<NativeCodecContext> implements Di
   }
 
   /**
+   * Codec tag.
+   *
+   * Additional codec tag used by some formats.
+   *
+   * Direct mapping to AVCodecContext->codec_tag.
+   */
+  get codecTag(): number {
+    return this.native.codecTag;
+  }
+
+  set codecTag(value: number) {
+    this.native.codecTag = value;
+  }
+
+  /**
+   * Codec tag as string (FourCC).
+   *
+   * Human-readable string representation of the codec tag.
+   * Returns the FourCC (Four Character Code) format.
+   */
+  get codecTagString(): string | null {
+    return this.native.codecTagString;
+  }
+
+  /**
    * Average bitrate.
    *
    * Target bitrate for encoding, detected bitrate for decoding.

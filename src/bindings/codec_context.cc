@@ -43,6 +43,8 @@ Napi::Object CodecContext::Init(Napi::Env env, Napi::Object exports) {
 
     InstanceAccessor<&CodecContext::GetCodecType, &CodecContext::SetCodecType>("codecType"),
     InstanceAccessor<&CodecContext::GetCodecId, &CodecContext::SetCodecId>("codecId"),
+    InstanceAccessor<&CodecContext::GetCodecTag, &CodecContext::SetCodecTag>("codecTag"),
+    InstanceAccessor<&CodecContext::GetCodecTagString>("codecTagString"),
     InstanceAccessor<&CodecContext::GetBitRate, &CodecContext::SetBitRate>("bitRate"),
     InstanceAccessor<&CodecContext::GetTimeBase, &CodecContext::SetTimeBase>("timeBase"),
     InstanceAccessor<&CodecContext::GetPktTimebase, &CodecContext::SetPktTimebase>("pktTimebase"),
@@ -228,6 +230,32 @@ void CodecContext::SetCodecId(const Napi::CallbackInfo& info, const Napi::Value&
   if (context_) {
     context_->codec_id = static_cast<AVCodecID>(value.As<Napi::Number>().Int32Value());
   }
+}
+
+Napi::Value CodecContext::GetCodecTag(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (!context_) {
+    return Napi::Number::New(env, 0);
+  }
+  return Napi::Number::New(env, context_->codec_tag);
+}
+
+void CodecContext::SetCodecTag(const Napi::CallbackInfo& info, const Napi::Value& value) {
+  if (context_) {
+    context_->codec_tag = value.As<Napi::Number>().Uint32Value();
+  }
+}
+
+Napi::Value CodecContext::GetCodecTagString(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (!context_) {
+    return env.Null();
+  }
+
+  char buf[AV_FOURCC_MAX_STRING_SIZE] = {0};
+  av_fourcc_make_string(buf, context_->codec_tag);
+
+  return Napi::String::New(env, buf);
 }
 
 Napi::Value CodecContext::GetBitRate(const Napi::CallbackInfo& info) {

@@ -111,14 +111,6 @@ export class CodecParameters implements NativeWrapper<NativeCodecParameters> {
    *
    * Human-readable string representation of the codec tag.
    * Returns the FourCC (Four Character Code) format.
-   *
-   * @example
-   * ```typescript
-   * console.log(params.codecTagString); // "avc1" for H.264
-   * console.log(params.codecTagString); // "hev1" for HEVC
-   * ```
-   *
-   * @see {@link codecTag} For the numeric value
    */
   get codecTagString(): string | null {
     return this.native.codecTagString;

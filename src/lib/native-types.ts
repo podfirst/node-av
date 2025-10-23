@@ -191,8 +191,10 @@ export interface NativeCodecContext extends Disposable {
   readonly hasBFrames: number;
   readonly frameNumber: number;
   readonly isOpen: boolean;
+  readonly codecTagString: string | null;
   codecType: AVMediaType;
   codecId: AVCodecID;
+  codecTag: number;
   bitRate: bigint;
   timeBase: IRational;
   pktTimebase: IRational;
