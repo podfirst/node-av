@@ -1050,3 +1050,21 @@ export function avSdpCreate(contexts: FormatContext[]): string | null {
 
   return bindings.avSdpCreate(nativeContexts);
 }
+
+/**
+ * Convert string to FourCC.
+ *
+ * Converts a 4-character string to a packed FourCC integer.
+ *
+ * @param str - 4-character string
+ *
+ * @returns Packed FourCC as unsigned 32-bit integer
+ *
+ * @example
+ * ```typescript
+ * const fourcc = stringToFourCC("avc1"); // Returns 828601953 / 0x31637661
+ * ```
+ */
+export function stringToFourCC(str: string): number {
+  return ((str.charCodeAt(0) << 0) | (str.charCodeAt(1) << 8) | (str.charCodeAt(2) << 16) | (str.charCodeAt(3) << 24)) >>> 0; // Convert to unsigned 32-bit
+}

@@ -1,5 +1,6 @@
 import { bindings } from './binding.js';
 import { Rational } from './rational.js';
+import { stringToFourCC } from './utilities.js';
 
 import type {
   AVChromaLocation,
@@ -102,7 +103,15 @@ export class CodecParameters implements NativeWrapper<NativeCodecParameters> {
     return this.native.codecTag;
   }
 
-  set codecTag(value: number) {
+  set codecTag(value: number | string) {
+    if (typeof value === 'string') {
+      if (value.length !== 4) {
+        throw new Error('FourCC string must be exactly 4 characters');
+      }
+
+      value = stringToFourCC(value);
+    }
+
     this.native.codecTag = value;
   }
 

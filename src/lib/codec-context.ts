@@ -3,6 +3,7 @@ import { HardwareDeviceContext } from './hardware-device-context.js';
 import { HardwareFramesContext } from './hardware-frames-context.js';
 import { OptionMember } from './option.js';
 import { Rational } from './rational.js';
+import { stringToFourCC } from './utilities.js';
 
 import type {
   AVChromaLocation,
@@ -115,7 +116,15 @@ export class CodecContext extends OptionMember<NativeCodecContext> implements Di
     return this.native.codecTag;
   }
 
-  set codecTag(value: number) {
+  set codecTag(value: number | string) {
+    if (typeof value === 'string') {
+      if (value.length !== 4) {
+        throw new Error('FourCC string must be exactly 4 characters');
+      }
+
+      value = stringToFourCC(value);
+    }
+
     this.native.codecTag = value;
   }
 

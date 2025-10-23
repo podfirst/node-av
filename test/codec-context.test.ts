@@ -184,6 +184,59 @@ describe('CodecContext', () => {
       assert.equal(ctx.level, 30);
     });
 
+    it('should get and set codec tag', () => {
+      // Codec tag is typically a FOURCC for containers
+      ctx.codecTag = 0x34363248; // 'H264' in little-endian
+      assert.equal(ctx.codecTag, 0x34363248);
+
+      ctx.codecTag = 0;
+      assert.equal(ctx.codecTag, 0);
+
+      // Test with various values
+      ctx.codecTag = 0xffffffff;
+      assert.equal(ctx.codecTag, 0xffffffff);
+    });
+
+    it('should set codec tag from string (FourCC)', () => {
+      ctx.codecTag = 'avc1';
+      assert.equal(ctx.codecTagString, 'avc1');
+
+      ctx.codecTag = 'mp4a';
+      assert.equal(ctx.codecTagString, 'mp4a');
+
+      ctx.codecTag = 'hev1';
+      assert.equal(ctx.codecTagString, 'hev1');
+
+      ctx.codecTag = 'hvc1';
+      assert.equal(ctx.codecTagString, 'hvc1');
+
+      ctx.codecTag = 'av01';
+      assert.equal(ctx.codecTagString, 'av01');
+    });
+
+    it('should get codec tag as string (FourCC)', () => {
+      ctx.codecTag = 'avc1';
+      assert.equal(ctx.codecTagString, 'avc1');
+
+      ctx.codecTag = 'mp4a';
+      assert.equal(ctx.codecTagString, 'mp4a');
+
+      // Test zero codec tag
+      ctx.codecTag = 0;
+      const zeroTag = ctx.codecTagString;
+      assert.ok(zeroTag !== null, 'Should return string for zero tag');
+    });
+
+    it('should throw error for invalid FourCC string length', () => {
+      assert.throws(() => {
+        ctx.codecTag = 'abc'; // Too short
+      }, /FourCC string must be exactly 4 characters/);
+
+      assert.throws(() => {
+        ctx.codecTag = 'abcde'; // Too long
+      }, /FourCC string must be exactly 4 characters/);
+    });
+
     it('should get and set thread count', () => {
       ctx.threadCount = 4;
       assert.equal(ctx.threadCount, 4);

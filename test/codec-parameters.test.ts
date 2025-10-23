@@ -108,26 +108,37 @@ describe('CodecParameters', () => {
     it('should get codec tag as string (FourCC)', () => {
       params.alloc();
 
-      // Test common FourCC codes (little-endian byte order)
-      params.codecTag = 0x31637661; // 'avc1' = 0x61766331 reversed (828601953)
+      params.codecTag = 'avc1';
       assert.equal(params.codecTagString, 'avc1');
 
-      params.codecTag = 0x6134706d; // 'mp4a' = 0x6D703461 reversed (1630826605)
+      params.codecTag = 'mp4a';
       assert.equal(params.codecTagString, 'mp4a');
 
-      params.codecTag = 0x31766568; // 'hev1' = 0x68657631 reversed
+      params.codecTag = 'hev1';
       assert.equal(params.codecTagString, 'hev1');
 
-      params.codecTag = 0x31637668; // 'hvc1' = 0x68766331 reversed
+      params.codecTag = 'hvc1';
       assert.equal(params.codecTagString, 'hvc1');
 
-      params.codecTag = 0x31307661; // 'av01' = 0x61763031 reversed
+      params.codecTag = 'av01';
       assert.equal(params.codecTagString, 'av01');
 
       // Test zero codec tag
       params.codecTag = 0;
       const zeroTag = params.codecTagString;
       assert.ok(zeroTag !== null, 'Should return string for zero tag');
+    });
+
+    it('should throw error for invalid FourCC string length', () => {
+      params.alloc();
+
+      assert.throws(() => {
+        params.codecTag = 'abc'; // Too short
+      }, /FourCC string must be exactly 4 characters/);
+
+      assert.throws(() => {
+        params.codecTag = 'abcde'; // Too long
+      }, /FourCC string must be exactly 4 characters/);
     });
 
     it('should get and set bitrate', () => {
