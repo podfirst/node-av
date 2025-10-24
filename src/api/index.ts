@@ -34,3 +34,6 @@ export * from './utils.js';
 
 // Types
 export type * from './types.js';
+
+// Re-export werift
+export { MediaStreamTrack, RTCIceCandidate, RTCPeerConnection, RTCRtpCodecParameters, RTCSessionDescription, RtpPacket, type PeerConfig } from 'werift';
