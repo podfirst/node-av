@@ -25,6 +25,9 @@ export { pipeline, type NamedInputs, type NamedOutputs, type NamedStages, type P
 // WebRTC
 export { WebRTCSession, WebRTCStream, type WebRTCCodecInfo, type WebRTCSessionOptions, type WebRTCStreamOptions } from './webrtc.js';
 
+// fMP4
+export { FMP4_CODECS, FMP4Stream, type FMP4StreamOptions } from './fmp4.js';
+
 // Utilities
 export * from './utilities/index.js';
 export * from './utils.js';
