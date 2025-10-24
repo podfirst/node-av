@@ -88,7 +88,7 @@
     "cpy-cli": "^6.0.0",
     "cross-env": "^10.1.0",
     "eslint": "^9.38.0",
-    "eslint-plugin-jsdoc": "^61.1.5",
+    "eslint-plugin-jsdoc": "^61.1.7",
     "globals": "^16.4.0",
     "node-addon-api": "^8.5.0",
     "node-gyp": "^11.5.0",
@@ -101,9 +101,12 @@
     "typedoc-vitepress-theme": "^1.1.2",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.46.2",
-    "updates": "^16.8.1",
+    "updates": "^16.8.2",
     "vitepress": "^2.0.0-alpha.12",
     "ws": "^8.18.3"
+  },
+  "overrides": {
+    "ip": "npm:neoip@2.1.0"
   },
   "bugs": {
     "url": "https://github.com/seydx/av/issues"
