@@ -14,20 +14,9 @@
  *   tsx examples/api-hw-rtsp-custom-io.ts rtsp://admin:pass@192.168.1.100/ch1 --duration 30
  */
 
-import {
-  AV_LOG_DEBUG,
-  Codec,
-  Decoder,
-  Encoder,
-  FF_ENCODER_LIBX265,
-  FilterAPI,
-  FilterPreset,
-  HardwareContext,
-  Log,
-  MediaInput,
-  MediaOutput,
-  RtpPacket,
-} from '../src/index.js';
+import { RtpPacket } from 'werift';
+
+import { AV_LOG_DEBUG, Codec, Decoder, Encoder, FF_ENCODER_LIBX265, FilterAPI, FilterPreset, HardwareContext, Log, MediaInput, MediaOutput } from '../src/index.js';
 import { prepareTestEnvironment } from './index.js';
 
 // Parse command line arguments
