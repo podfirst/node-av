@@ -70,6 +70,13 @@ export interface FMP4StreamOptions {
    * @default { deviceType: AV_HWDEVICE_TYPE_NONE }
    */
   hardware?: 'auto' | { deviceType: AVHWDeviceType; device?: string; options?: Record<string, string> };
+
+  /**
+   * FFmpeg input options passed directly to the input.
+   *
+   * @default { flags: 'low_delay', analyzeduration: 0, probesize: 500000 }
+   */
+  inputOptions?: Record<string, string | number | boolean | null | undefined>;
 }
 
 /**
@@ -145,6 +152,7 @@ export class FMP4Stream implements Disposable {
       supportedCodecs: options.supportedCodecs ?? '',
       fragDuration: options.fragDuration ?? 1,
       hardware: options.hardware ?? { deviceType: AV_HWDEVICE_TYPE_NONE },
+      inputOptions: options.inputOptions!,
     };
 
     // Parse supported codecs
@@ -193,9 +201,20 @@ export class FMP4Stream implements Disposable {
    * ```
    */
   static async create(inputUrl: string, options: FMP4StreamOptions = {}): Promise<FMP4Stream> {
-    const isRtsp = inputUrl.toLowerCase().startsWith('rtsp://');
+    const isRtsp = inputUrl.toLowerCase().startsWith('rtsp');
+
+    options.inputOptions = options.inputOptions ?? {};
+
+    options.inputOptions = {
+      flags: 'low_delay',
+      analyzeduration: 0,
+      probesize: 500000,
+      rtsp_transport: isRtsp ? 'tcp' : undefined,
+      ...options.inputOptions,
+    };
+
     const input = await MediaInput.open(inputUrl, {
-      options: isRtsp ? { rtsp_transport: 'tcp' } : undefined,
+      options: options.inputOptions,
     });
 
     const videoStream = input.video();
@@ -373,6 +392,7 @@ export class FMP4Stream implements Disposable {
       this.videoEncoder = await Encoder.create(FF_ENCODER_LIBX264, {
         timeBase: videoStream.timeBase,
         frameRate: videoStream.avgFrameRate,
+        maxBFrames: 0,
       });
     }
 
