@@ -1,6 +1,17 @@
-import { MediaStreamTrack, RTCIceCandidate, RTCPeerConnection, RTCRtpCodecParameters, RTCSessionDescription } from 'werift';
+import { MediaStreamTrack, RTCIceCandidate, RTCPeerConnection, RTCRtpCodecParameters, RTCSessionDescription, RtpPacket } from 'werift';
 
-import { AV_CODEC_ID_H264, AV_CODEC_ID_OPUS, AV_HWDEVICE_TYPE_NONE, AV_SAMPLE_FMT_S16 } from '../constants/constants.js';
+import {
+  AV_CODEC_ID_AV1,
+  AV_CODEC_ID_H264,
+  AV_CODEC_ID_HEVC,
+  AV_CODEC_ID_OPUS,
+  AV_CODEC_ID_PCM_ALAW,
+  AV_CODEC_ID_PCM_MULAW,
+  AV_CODEC_ID_VP8,
+  AV_CODEC_ID_VP9,
+  AV_HWDEVICE_TYPE_NONE,
+  AV_SAMPLE_FMT_S16,
+} from '../constants/constants.js';
 import { FF_ENCODER_LIBOPUS, FF_ENCODER_LIBX264 } from '../constants/encoders.js';
 import { Decoder } from './decoder.js';
 import { Encoder } from './encoder.js';
@@ -9,7 +20,6 @@ import { FilterAPI } from './filter.js';
 import { HardwareContext } from './hardware.js';
 import { MediaInput } from './media-input.js';
 import { MediaOutput } from './media-output.js';
-import { getAudioCodecConfig, getVideoCodecConfig, isAudioWebRTCCompatible, isVideoWebRTCCompatible, RtpPacket } from './utils.js';
 
 import type { AVCodecID, AVHWDeviceType } from '../constants/constants.js';
 
@@ -150,17 +160,36 @@ export class WebRTCStream implements Disposable {
   /**
    * @param input - Media input source
    *
-   * @param codecInfo - Detected codec information
-   *
    * @param options - Stream configuration options
    *
    * Use {@link create} factory method
    *
    * @internal
    */
-  private constructor(input: MediaInput, codecInfo: WebRTCCodecInfo, options: WebRTCStreamOptions) {
+  private constructor(input: MediaInput, options: WebRTCStreamOptions) {
     this.input = input;
-    this.codecInfo = codecInfo;
+
+    const videoStream = input.video()!;
+    const audioStream = input.audio();
+    const videoCodecId = videoStream.codecpar.codecId;
+    const audioCodecId = audioStream?.codecpar.codecId ?? null;
+    const videoConfig = this.getVideoCodecConfig(videoCodecId) ?? this.getVideoCodecConfig(AV_CODEC_ID_H264)!; // We transcode unsupported codecs to H264
+
+    this.codecInfo = {
+      video: {
+        codecId: videoCodecId,
+        ...videoConfig,
+      },
+    };
+
+    if (audioCodecId !== null) {
+      const audioConfig = this.getAudioCodecConfig(audioCodecId) ?? this.getAudioCodecConfig(AV_CODEC_ID_OPUS)!; // We transcode unsupported codecs to OPUS
+      this.codecInfo.audio = {
+        codecId: audioCodecId,
+        ...audioConfig,
+      };
+    }
+
     this.options = {
       onVideoPacket: options.onVideoPacket ?? (() => {}),
       onAudioPacket: options.onAudioPacket ?? (() => {}),
@@ -216,27 +245,7 @@ export class WebRTCStream implements Disposable {
       throw new Error('No video stream found in input');
     }
 
-    const audioStream = input.audio();
-    const videoCodecId = videoStream.codecpar.codecId;
-    const audioCodecId = audioStream?.codecpar.codecId ?? null;
-    const videoConfig = getVideoCodecConfig(videoCodecId) ?? getVideoCodecConfig(AV_CODEC_ID_H264)!; // We transcode unsupported codecs to H264
-
-    const codecInfo: WebRTCCodecInfo = {
-      video: {
-        codecId: videoCodecId,
-        ...videoConfig,
-      },
-    };
-
-    if (audioCodecId !== null) {
-      const audioConfig = getAudioCodecConfig(audioCodecId) ?? getAudioCodecConfig(AV_CODEC_ID_OPUS)!; // We transcode unsupported codecs to OPUS
-      codecInfo.audio = {
-        codecId: audioCodecId,
-        ...audioConfig,
-      };
-    }
-
-    return new WebRTCStream(input, codecInfo, options);
+    return new WebRTCStream(input, options);
   }
 
   /**
@@ -305,7 +314,7 @@ export class WebRTCStream implements Disposable {
     const audioStream = this.input.audio();
 
     // Setup video transcoding if needed
-    if (!isVideoWebRTCCompatible(videoStream.codecpar.codecId)) {
+    if (!this.isVideoCodecSupported(videoStream.codecpar.codecId)) {
       if (this.options.hardware === 'auto') {
         this.hardwareContext = HardwareContext.auto();
       } else if (this.options.hardware.deviceType !== AV_HWDEVICE_TYPE_NONE) {
@@ -356,7 +365,7 @@ export class WebRTCStream implements Disposable {
     let audioStreamIndex: number | null = null;
 
     if (audioStream) {
-      if (!isAudioWebRTCCompatible(audioStream.codecpar.codecId)) {
+      if (!this.isAudioCodecSupported(audioStream.codecpar.codecId)) {
         this.audioDecoder = await Decoder.create(audioStream, {
           exitOnError: false,
         });
@@ -445,49 +454,8 @@ export class WebRTCStream implements Disposable {
       }
     }
 
-    const flushVideo = async () => {
-      if (this.videoDecoder && this.videoEncoder && this.videoOutput) {
-        for await (using frame of this.videoDecoder.flushFrames()) {
-          using encodedPacket = await this.videoEncoder.encode(frame);
-          if (encodedPacket) {
-            await this.videoOutput.writePacket(encodedPacket, videoStreamIndex);
-          }
-        }
-
-        for await (using packet of this.videoEncoder.flushPackets()) {
-          await this.videoOutput.writePacket(packet, videoStreamIndex);
-        }
-      }
-    };
-
-    const flushAudio = async () => {
-      if (this.audioDecoder && this.audioFilter && this.audioEncoder && hasAudio && this.audioOutput) {
-        for await (using frame of this.audioDecoder.flushFrames()) {
-          using filteredFrame = await this.audioFilter.process(frame);
-          if (!filteredFrame) {
-            continue;
-          }
-
-          using encodedPacket = await this.audioEncoder.encode(filteredFrame);
-          if (encodedPacket) {
-            await this.audioOutput?.writePacket(encodedPacket, audioStreamIndex!);
-          }
-        }
-
-        for await (using frame of this.audioFilter.flushFrames()) {
-          using encodedPacket = await this.audioEncoder.encode(frame);
-          if (encodedPacket) {
-            await this.audioOutput?.writePacket(encodedPacket, audioStreamIndex!);
-          }
-        }
-
-        for await (using packet of this.audioEncoder.flushPackets()) {
-          await this.audioOutput?.writePacket(packet, audioStreamIndex!);
-        }
-      }
-    };
-
-    await Promise.allSettled([flushVideo(), flushAudio()]);
+    // Flush pipelines
+    await Promise.allSettled([this.flushVideo(videoStreamIndex), this.flushAudio(audioStreamIndex!, hasAudio)]);
   }
 
   /**
@@ -551,6 +519,193 @@ export class WebRTCStream implements Disposable {
     this.audioFilter?.close();
     this.audioEncoder?.close();
     this.input.close();
+  }
+
+  /**
+   * Check if the given audio codec is compatible with WebRTC.
+   *
+   * @param codecId - The AVCodecID to check
+   *
+   * @returns True if the codec is WebRTC compatible, false otherwise
+   *
+   * @internal
+   */
+  private isAudioCodecSupported(codecId: AVCodecID): boolean {
+    switch (codecId) {
+      case AV_CODEC_ID_PCM_ALAW:
+      case AV_CODEC_ID_PCM_MULAW:
+      case AV_CODEC_ID_OPUS:
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  /**
+   * Check if the given video codec is compatible with WebRTC.
+   *
+   * @param codecId - The AVCodecID to check
+   *
+   * @returns True if the codec is WebRTC compatible, false otherwise
+   *
+   * @internal
+   */
+  private isVideoCodecSupported(codecId: AVCodecID): boolean {
+    switch (codecId) {
+      case AV_CODEC_ID_H264:
+      case AV_CODEC_ID_HEVC:
+      case AV_CODEC_ID_VP8:
+      case AV_CODEC_ID_VP9:
+      case AV_CODEC_ID_AV1:
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  /**
+   * Get the audio codec configuration for WebRTC.
+   *
+   * @param codecId - The AVCodecID of the audio codec
+   *
+   * @returns An object containing MIME type, clock rate, and channels, or null if unsupported
+   *
+   * @internal
+   */
+  private getAudioCodecConfig(codecId: AVCodecID): Partial<RTCRtpCodecParameters> | null {
+    switch (codecId) {
+      case AV_CODEC_ID_OPUS:
+        return {
+          mimeType: 'audio/opus',
+          clockRate: 48000,
+          channels: 2,
+          payloadType: 111,
+        };
+      case AV_CODEC_ID_PCM_MULAW:
+        return {
+          mimeType: 'audio/PCMU',
+          clockRate: 8000,
+          channels: 1,
+          payloadType: 0,
+        };
+      case AV_CODEC_ID_PCM_ALAW:
+        return {
+          mimeType: 'audio/PCMA',
+          clockRate: 8000,
+          channels: 1,
+          payloadType: 8,
+        };
+      default:
+        return null;
+    }
+  }
+
+  /**
+   * Get the video codec configuration for WebRTC.
+   *
+   * @param codecId - The AVCodecID of the video codec
+   *
+   * @returns An object containing MIME type and clock rate, or null if unsupported
+   *
+   * @internal
+   */
+  private getVideoCodecConfig(codecId: AVCodecID): Partial<RTCRtpCodecParameters> | null {
+    switch (codecId) {
+      case AV_CODEC_ID_H264:
+        return {
+          mimeType: 'video/H264',
+          clockRate: 90000,
+          payloadType: 102,
+        };
+      case AV_CODEC_ID_HEVC:
+        return {
+          mimeType: 'video/H265',
+          clockRate: 90000,
+          payloadType: 103,
+        };
+      case AV_CODEC_ID_VP8:
+        return {
+          mimeType: 'video/VP8',
+          clockRate: 90000,
+          payloadType: 96,
+        };
+      case AV_CODEC_ID_VP9:
+        return {
+          mimeType: 'video/VP9',
+          clockRate: 90000,
+          payloadType: 98,
+        };
+      case AV_CODEC_ID_AV1:
+        return {
+          mimeType: 'video/AV1',
+          clockRate: 90000,
+          payloadType: 35,
+        };
+      default:
+        return null;
+    }
+  }
+
+  /**
+   * Flush video encoder pipeline.
+   *
+   * @param videoStreamIndex - Output video stream index
+   *
+   * @internal
+   */
+  private async flushVideo(videoStreamIndex: number): Promise<void> {
+    if (!this.videoDecoder || !this.videoEncoder || !this.videoOutput) {
+      return;
+    }
+
+    for await (using frame of this.videoDecoder.flushFrames()) {
+      using encodedPacket = await this.videoEncoder.encode(frame);
+      if (encodedPacket) {
+        await this.videoOutput.writePacket(encodedPacket, videoStreamIndex);
+      }
+    }
+
+    for await (using packet of this.videoEncoder.flushPackets()) {
+      await this.videoOutput.writePacket(packet, videoStreamIndex);
+    }
+  }
+
+  /**
+   * Flush audio encoder pipeline.
+   *
+   * @param audioStreamIndex - Output audio stream index
+   *
+   * @param hasAudio - Whether audio stream exists
+   *
+   * @internal
+   */
+  private async flushAudio(audioStreamIndex: number, hasAudio: boolean): Promise<void> {
+    if (!this.audioDecoder || !this.audioFilter || !this.audioEncoder || !hasAudio || !this.audioOutput) {
+      return;
+    }
+
+    for await (using frame of this.audioDecoder.flushFrames()) {
+      using filteredFrame = await this.audioFilter.process(frame);
+      if (!filteredFrame) {
+        continue;
+      }
+
+      using encodedPacket = await this.audioEncoder.encode(filteredFrame);
+      if (encodedPacket) {
+        await this.audioOutput.writePacket(encodedPacket, audioStreamIndex);
+      }
+    }
+
+    for await (using frame of this.audioFilter.flushFrames()) {
+      using encodedPacket = await this.audioEncoder.encode(frame);
+      if (encodedPacket) {
+        await this.audioOutput.writePacket(encodedPacket, audioStreamIndex);
+      }
+    }
+
+    for await (using packet of this.audioEncoder.flushPackets()) {
+      await this.audioOutput.writePacket(packet, audioStreamIndex);
+    }
   }
 
   /**
