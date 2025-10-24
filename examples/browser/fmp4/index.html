@@ -166,10 +166,10 @@
         <button class="stop-button" id="stopButton" disabled>Stop</button>
       </div>
 
-      <input type="text" id="urlInput" placeholder="Enter file path, RTSP URL, HTTP URL, etc." value="../../../testdata/demux.mp4" />
+      <input type="text" id="urlInput" placeholder="Enter RTSP URL, file path, HTTP URL, etc." value="rtsp://camera.local/stream" />
 
       <div class="video-container">
-        <video id="video" controls muted></video>
+        <video id="video" controls muted autoplay></video>
         <div class="play-overlay" id="playOverlay">
           <div class="play-button">
             <div class="play-icon"></div>
@@ -179,20 +179,20 @@
 
       <div class="info-grid">
         <div class="info-card">
-          <h3>Codec String</h3>
-          <div class="value" id="codecString">-</div>
+          <h3>Codecs</h3>
+          <div class="value" id="videoCodecs" style="font-size: 12px; word-break: break-all">-</div>
         </div>
         <div class="info-card">
-          <h3>MIME Type</h3>
-          <div class="value" id="mimeType">-</div>
+          <h3>MediaSource State</h3>
+          <div class="value" id="mediaSourceState">-</div>
         </div>
         <div class="info-card">
           <h3>Resolution</h3>
           <div class="value" id="resolution">-</div>
         </div>
         <div class="info-card">
-          <h3>Packets Received</h3>
-          <div class="value" id="packetCount">0</div>
+          <h3>Buffer State</h3>
+          <div class="value" id="bufferState">-</div>
         </div>
       </div>
     </div>
@@ -204,20 +204,47 @@
       const urlInput = document.getElementById('urlInput');
       const statusDot = document.getElementById('statusDot');
       const statusText = document.getElementById('statusText');
-      const codecStringEl = document.getElementById('codecString');
-      const mimeTypeEl = document.getElementById('mimeType');
+      const videoCodecsEl = document.getElementById('videoCodecs');
+      const mediaSourceStateEl = document.getElementById('mediaSourceState');
       const resolutionEl = document.getElementById('resolution');
-      const packetCountEl = document.getElementById('packetCount');
+      const bufferStateEl = document.getElementById('bufferState');
 
+      let ws = null;
       let mediaSource = null;
       let sourceBuffer = null;
-      let packetCount = 0;
-      let ws = null;
-      let hasPlayed = false; // Track if we've started playback
+      let hasPlayed = false;
 
       // Simple buffer
       const buf = new Uint8Array(2 * 1024 * 1024);
       let bufLen = 0;
+
+      // Detect supported codecs for fMP4
+      function detectSupportedCodecs() {
+        const MSE = window.ManagedMediaSource || window.MediaSource;
+        if (!MSE || !MSE.isTypeSupported) {
+          return '';
+        }
+
+        const testCodecs = [
+          'avc1.640029', // H.264 High 4.1
+          'hvc1.1.6.L153.B0', // H.265 Main 5.1
+          'av01.0.00M.08', // AV1 Main Profile, level 2.0
+          'mp4a.40.2', // AAC-LC
+          'flac', // FLAC
+          'opus', // Opus
+        ];
+
+        const supported = [];
+        for (const codec of testCodecs) {
+          const mimeType = codec.startsWith('mp4a') || codec === 'flac' || codec === 'opus' ? `audio/mp4; codecs="${codec}"` : `video/mp4; codecs="${codec}"`;
+
+          if (MSE.isTypeSupported(mimeType)) {
+            supported.push(codec);
+          }
+        }
+
+        return supported.join(',');
+      }
 
       function updateStatus(connected, text) {
         if (connected) {
@@ -257,11 +284,10 @@
         hasPlayed = false;
 
         // Reset UI
-        packetCount = 0;
-        packetCountEl.textContent = '0';
-        codecStringEl.textContent = '-';
-        mimeTypeEl.textContent = '-';
+        videoCodecsEl.textContent = '-';
+        mediaSourceStateEl.textContent = '-';
         resolutionEl.textContent = '-';
+        bufferStateEl.textContent = '-';
         updateStatus(false, 'Ready');
 
         // Show play overlay, disable stop button
@@ -269,60 +295,156 @@
         stopButton.disabled = true;
       }
 
-      function initMediaSource() {
+      function createMediaSource() {
         // Support both MediaSource and ManagedMediaSource (Safari 17+)
         const MSE = window.ManagedMediaSource || window.MediaSource;
 
         if (!MSE) {
           console.error('MediaSource not supported');
           updateStatus(false, 'MediaSource not supported');
-          return;
+          return null;
         }
 
-        console.log('Initializing MediaSource...');
-        mediaSource = new MSE();
-        video.src = URL.createObjectURL(mediaSource);
+        console.log('Creating MediaSource...');
+        const ms = new MSE();
+        video.src = URL.createObjectURL(ms);
         video.srcObject = null;
+
+        ms.addEventListener('sourceopen', () => {
+          console.log('MediaSource opened, waiting for codec string from server...');
+          mediaSourceStateEl.textContent = 'open';
+        });
+
+        ms.addEventListener('sourceended', () => {
+          console.log('MediaSource ended');
+          mediaSourceStateEl.textContent = 'ended';
+        });
+
+        ms.addEventListener('sourceclose', () => {
+          console.log('MediaSource closed');
+          mediaSourceStateEl.textContent = 'closed';
+        });
+
+        return ms;
       }
 
-      // Auto-play with mute fallback
-      function play() {
-        video.play().catch(() => {
-          if (!video.muted) {
-            console.log('Auto-play blocked, trying with muted');
-            video.muted = true;
+      function createSourceBuffer(codecString) {
+        const MSE = window.ManagedMediaSource || window.MediaSource;
+        const mimeType = `video/mp4; codecs="${codecString}"`;
+
+        console.log('Creating SourceBuffer with MIME type:', mimeType);
+
+        if (!MSE.isTypeSupported(mimeType)) {
+          console.error('MIME type not supported:', mimeType);
+          updateStatus(false, 'Codec not supported: ' + codecString);
+          return false;
+        }
+
+        sourceBuffer = mediaSource.addSourceBuffer(mimeType);
+        sourceBuffer.mode = 'segments';
+        console.log('SourceBuffer created successfully');
+        updateStatus(true, 'Streaming');
+
+        sourceBuffer.addEventListener('updateend', () => {
+          // Flush buffered data if available
+          if (!sourceBuffer.updating && bufLen > 0) {
+            try {
+              const data = buf.slice(0, bufLen);
+              sourceBuffer.appendBuffer(data);
+              bufLen = 0;
+              console.log('Flushed', data.byteLength, 'bytes from buffer');
+            } catch (error) {
+              console.error('Error flushing buffer:', error);
+            }
+          }
+
+          // Update buffer state
+          if (sourceBuffer.buffered.length > 0) {
+            const buffered = sourceBuffer.buffered.end(0) - video.currentTime;
+            bufferStateEl.textContent = `${buffered.toFixed(1)}s`;
+          }
+
+          // Auto-play ONCE when we have enough data
+          if (!hasPlayed && video.paused && video.readyState >= 2) {
+            console.log('Auto-playing video');
+            hasPlayed = true;
             video.play().catch((err) => {
               console.error('Auto-play failed:', err);
             });
           }
         });
+
+        return true;
       }
 
-      function connectWebSocket() {
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${protocol}//${window.location.host}`;
+      async function handleBinaryData(data) {
+        let arrayBuffer = data;
+        if (data instanceof Blob) {
+          arrayBuffer = await data.arrayBuffer();
+        }
 
-        console.log('Connecting to WebSocket:', wsUrl);
-        ws = new WebSocket(wsUrl);
+        const chunk = new Uint8Array(arrayBuffer);
 
-        ws.onopen = () => {
+        if (!sourceBuffer) {
+          console.warn('SourceBuffer not ready, dropping chunk');
+          return;
+        }
+
+        if (sourceBuffer.updating || bufLen > 0) {
+          // Buffer while SourceBuffer is busy
+          if (bufLen + chunk.byteLength <= buf.byteLength) {
+            buf.set(chunk, bufLen);
+            bufLen += chunk.byteLength;
+          } else {
+            console.error('Buffer overflow! Dropping chunk');
+          }
+        } else {
+          // Append directly
+          try {
+            sourceBuffer.appendBuffer(arrayBuffer);
+          } catch (error) {
+            console.error('Error appending:', error);
+          }
+        }
+      }
+
+      async function startStream() {
+        console.log('Starting fMP4 stream...');
+
+        const url = urlInput.value.trim();
+        if (!url) {
+          console.error('No URL provided');
+          updateStatus(false, 'No URL provided');
+          return;
+        }
+
+        updateStatus(false, 'Connecting...');
+
+        // Create MediaSource first
+        mediaSource = createMediaSource();
+        if (!mediaSource) {
+          return;
+        }
+
+        // Connect to WebSocket server
+        ws = new WebSocket('ws://localhost:8080');
+
+        ws.addEventListener('open', () => {
           console.log('WebSocket connected');
           updateStatus(true, 'Connected');
 
-          const url = urlInput.value.trim();
-          if (!url) {
-            console.error('No URL provided');
-            updateStatus(false, 'No URL provided');
-            return;
-          }
+          const supportedCodecs = detectSupportedCodecs();
+          console.log('Sending play request with URL and codecs:', url, supportedCodecs);
+          ws.send(
+            JSON.stringify({
+              type: 'play',
+              url,
+              supportedCodecs,
+            }),
+          );
+        });
 
-          console.log('Sending play signal with URL:', url);
-          ws.send(JSON.stringify({ type: 'play', url }));
-          playOverlay.classList.add('hidden');
-          stopButton.disabled = false;
-        };
-
-        ws.onmessage = async (event) => {
+        ws.addEventListener('message', async (event) => {
           if (event.data instanceof ArrayBuffer || event.data instanceof Blob) {
             handleBinaryData(event.data);
             return;
@@ -330,47 +452,32 @@
 
           const data = JSON.parse(event.data);
 
-          if (data.type === 'codec') {
-            console.log('Received codec info:', data.fullCodec);
-            updateStatus(true, 'Streaming');
+          if (data.type === 'mse') {
+            console.log('Received MSE codec string from server:', data.value);
+            console.log('Stream resolution:', data.resolution);
 
-            codecStringEl.textContent = data.codecString;
-            mimeTypeEl.textContent = data.mimeType;
-            resolutionEl.textContent = `${data.width}x${data.height}`;
+            videoCodecsEl.textContent = data.value || 'none';
+            resolutionEl.textContent = `${data.resolution.width}x${data.resolution.height}`;
 
-            if (!MediaSource.isTypeSupported(data.fullCodec)) {
-              console.error('Codec not supported:', data.fullCodec);
-              updateStatus(false, 'Codec not supported');
-              return;
-            }
-
-            console.log('Codec is supported');
-
+            // Create SourceBuffer with codec string from server
             if (mediaSource && mediaSource.readyState === 'open') {
-              sourceBuffer = mediaSource.addSourceBuffer(data.fullCodec);
-              sourceBuffer.mode = 'segments';
-              console.log('SourceBuffer created');
-
-              sourceBuffer.addEventListener('updateend', () => {
-                // Flush buffered data if available
-                if (!sourceBuffer.updating && bufLen > 0) {
-                  try {
-                    const data = buf.slice(0, bufLen);
-                    sourceBuffer.appendBuffer(data);
-                    bufLen = 0; // Reset AFTER successful append
-                    console.log('Flushed', data.byteLength, 'bytes from buffer');
-                  } catch (error) {
-                    console.error('Error flushing buffer:', error);
+              const success = createSourceBuffer(data.value);
+              if (!success) {
+                stopStream();
+              }
+            } else {
+              console.warn('MediaSource not ready yet, waiting...');
+              // Wait for sourceopen event
+              mediaSource.addEventListener(
+                'sourceopen',
+                () => {
+                  const success = createSourceBuffer(data.value);
+                  if (!success) {
+                    stopStream();
                   }
-                }
-
-                // Auto-play ONCE when we have enough data
-                if (!hasPlayed && video.paused && video.readyState >= 2) {
-                  console.log('Auto-playing video (first time)');
-                  hasPlayed = true;
-                  play();
-                }
-              });
+                },
+                { once: true },
+              );
             }
           } else if (data.type === 'end') {
             console.log('Stream ended');
@@ -389,67 +496,39 @@
               }, 100);
             }
           } else if (data.type === 'error') {
-            console.error('Server error:', data.message);
-            updateStatus(false, 'Error');
+            console.error('Server error:', data.value);
+            updateStatus(false, 'Error: ' + data.value);
+            stopStream();
           }
-        };
+        });
 
-        ws.onerror = (error) => {
+        ws.addEventListener('close', () => {
+          console.log('WebSocket disconnected');
+          stopStream();
+        });
+
+        ws.addEventListener('error', (error) => {
           console.error('WebSocket error:', error);
           updateStatus(false, 'Connection error');
-        };
+        });
 
-        ws.onclose = () => {
-          console.log('WebSocket closed');
-          updateStatus(false, 'Disconnected');
-        };
-      }
-
-      async function handleBinaryData(data) {
-        let arrayBuffer = data;
-        if (data instanceof Blob) {
-          arrayBuffer = await data.arrayBuffer();
-        }
-
-        const chunk = new Uint8Array(arrayBuffer);
-
-        packetCount++;
-        packetCountEl.textContent = packetCount;
-
-        if (!sourceBuffer) {
-          console.warn('SourceBuffer not ready, dropping chunk');
-          return;
-        }
-
-        if (sourceBuffer.updating || bufLen > 0) {
-          // Buffer while SourceBuffer is busy
-          if (bufLen + chunk.byteLength <= buf.byteLength) {
-            buf.set(chunk, bufLen);
-            bufLen += chunk.byteLength;
-            console.log('Buffered', chunk.byteLength, 'bytes (total:', bufLen, ')');
-          } else {
-            console.error('Buffer overflow! Dropping chunk');
-          }
-        } else {
-          // Append directly
-          try {
-            console.log('Appending', chunk.byteLength, 'bytes to SourceBuffer');
-            sourceBuffer.appendBuffer(arrayBuffer);
-          } catch (error) {
-            console.error('Error appending:', error);
-          }
-        }
+        // Hide play overlay, enable stop button
+        playOverlay.classList.add('hidden');
+        stopButton.disabled = false;
       }
 
       console.log('fMP4 Streaming Client initialized');
-      console.log('MediaSource supported:', 'MediaSource' in window);
+      console.log('MediaSource supported:', 'MediaSource' in window || 'ManagedMediaSource' in window);
       updateStatus(false, 'Ready');
 
       playOverlay.addEventListener('click', () => {
         console.log('Play button clicked');
-        updateStatus(false, 'Initializing...');
-        initMediaSource();
-        connectWebSocket();
+        startStream().catch((error) => {
+          console.error('Failed to start stream:', error);
+          updateStatus(false, 'Connection failed');
+          playOverlay.classList.remove('hidden');
+          stopButton.disabled = true;
+        });
       });
 
       stopButton.addEventListener('click', () => {
