@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+#### WebRTC High-Level API
+
+- **`WebRTCSession`**: Complete WebRTC streaming with SDP negotiation and ICE handling
+  - Automatic codec detection and transcoding (H.264, H.265, VP8, VP9, AV1 video; Opus, PCMA, PCMU audio)
+  - Hardware acceleration support
+  - Werift integration for peer connection management
+
+```typescript
+import { WebRTCSession } from 'node-av/api';
+
+const session = await WebRTCSession.create('rtsp://camera.local/stream', {
+  hardware: 'auto'
+});
+
+// Handle signaling
+session.onIceCandidate = (candidate) => ws.send({ type: 'candidate', candidate });
+const answer = await session.setOffer(sdpOffer);
+await session.start();
+```
+
+- **`WebRTCStream`**: Library-agnostic WebRTC streaming with RTP callbacks for custom WebRTC implementations
+
+#### fMP4/MSE High-Level API
+
+- **`FMP4Stream`**: Fragmented MP4 streaming for Media Source Extensions
+  - Browser codec negotiation (H.264, H.265, AV1 video; AAC, FLAC, Opus audio)
+  - Automatic transcoding based on browser support
+  - Hardware acceleration support
+
+```typescript
+import { FMP4Stream, FMP4_CODECS } from 'node-av/api';
+
+const stream = await FMP4Stream.create('input.mp4', {
+  supportedCodecs: 'avc1.640029,mp4a.40.2', // From browser
+  hardware: 'auto',
+  onChunk: (chunk) => ws.send(chunk)
+});
+
+const codecString = stream.getCodecString(); // For MSE addSourceBuffer()
+await stream.start();
+```
+
+- **`FMP4_CODECS`**: Predefined codec strings (H.264, H.265, AV1, AAC, FLAC, Opus)
+
 ## [3.0.2] - 2025-10-14
 
 ### Breaking Changes
