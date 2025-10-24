@@ -74,7 +74,7 @@ export interface FMP4StreamOptions {
   /**
    * FFmpeg input options passed directly to the input.
    *
-   * @default { flags: 'low_delay', analyzeduration: 0, probesize: 500000 }
+   * @default { flags: 'low_delay' }
    */
   inputOptions?: Record<string, string | number | boolean | null | undefined>;
 }
@@ -207,8 +207,6 @@ export class FMP4Stream implements Disposable {
 
     options.inputOptions = {
       flags: 'low_delay',
-      analyzeduration: 0,
-      probesize: 500000,
       rtsp_transport: isRtsp ? 'tcp' : undefined,
       ...options.inputOptions,
     };
