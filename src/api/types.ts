@@ -1,4 +1,4 @@
-import type { AVPixelFormat, AVSampleFormat } from '../constants/constants.js';
+import type { AVPixelFormat, AVSampleFormat, AVSeekWhence } from '../constants/constants.js';
 import type { IRational } from '../lib/index.js';
 import type { HardwareContext } from './hardware.js';
 
@@ -257,7 +257,7 @@ export interface IOInputCallbacks {
    *
    * @returns New position or negative error code
    */
-  seek?: (offset: bigint, whence: number) => bigint | number;
+  seek?: (offset: bigint, whence: AVSeekWhence) => bigint | number;
 }
 
 /**
@@ -286,7 +286,7 @@ export interface IOOutputCallbacks {
    *
    * @returns New position or negative error code
    */
-  seek?: (offset: bigint, whence: number) => bigint | number;
+  seek?: (offset: bigint, whence: AVSeekWhence) => bigint | number;
 
   /**
    * Read callback - some formats may need to read back data.

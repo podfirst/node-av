@@ -1,6 +1,7 @@
 import { AVSEEK_CUR, AVSEEK_END, AVSEEK_SET, AVSEEK_SIZE } from '../constants/constants.js';
 import { IOContext } from '../lib/index.js';
 
+import type { AVSeekWhence } from '../constants/constants.js';
 import type { IOInputCallbacks, MediaInputOptions } from './types.js';
 
 /**
@@ -29,7 +30,7 @@ import type { IOInputCallbacks, MediaInputOptions } from './types.js';
  *     // Read from custom source
  *     return Buffer.alloc(size);
  *   },
- *   seek: async (offset: bigint, whence: number) => {
+ *   seek: async (offset: bigint, whence: AVSeekWhence) => {
  *     // Seek in custom source
  *     return offset;
  *   }
@@ -140,7 +141,7 @@ export class IOStream {
         return chunk;
       },
       undefined,
-      (offset: bigint, whence: number) => {
+      (offset: bigint, whence: AVSeekWhence) => {
         switch (whence) {
           case AVSEEK_SIZE:
             return BigInt(buffer.length);

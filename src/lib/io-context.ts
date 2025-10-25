@@ -276,7 +276,7 @@ export class IOContext extends OptionMember<NativeIOContext> implements AsyncDis
     writeFlag: 0 | 1,
     readCallback?: ((size: number) => Buffer | null | number) | null,
     writeCallback?: ((buffer: Buffer) => number | void) | null,
-    seekCallback?: ((offset: bigint, whence: number) => bigint | number) | null,
+    seekCallback?: ((offset: bigint, whence: AVSeekWhence) => bigint | number) | null,
   ): void {
     this.native.allocContextWithCallbacks(bufferSize, writeFlag, readCallback ?? undefined, writeCallback ?? undefined, seekCallback ?? undefined);
   }

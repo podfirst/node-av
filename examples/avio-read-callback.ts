@@ -15,6 +15,8 @@ import { existsSync, readFileSync } from 'node:fs';
 
 import { AVERROR_EOF, AVSEEK_CUR, AVSEEK_END, AVSEEK_SET, AVSEEK_SIZE, FFmpegError, FormatContext, IOContext } from '../src/index.js';
 
+import type { AVSeekWhence } from '../src/index.js';
+
 /**
  * Buffer data structure for reading
  */
@@ -45,7 +47,7 @@ class BufferData {
   /**
    * Seek in buffer
    */
-  seek(offset: bigint, whence: number): bigint {
+  seek(offset: bigint, whence: AVSeekWhence): bigint {
     let newPos: number;
 
     // Handle AVSEEK_SIZE
@@ -116,7 +118,7 @@ async function customIORead(inputFile: string): Promise<void> {
       },
       undefined, // No write callback
       // Seek callback
-      (offset: bigint, whence: number) => {
+      (offset: bigint, whence: AVSeekWhence) => {
         const newPos = bufferData.seek(offset, whence);
         return newPos;
       },
