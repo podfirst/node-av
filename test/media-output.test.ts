@@ -1,11 +1,12 @@
 import assert from 'node:assert';
-import { stat, unlink } from 'node:fs/promises';
+import { readFile, stat, unlink } from 'node:fs/promises';
 import { describe, it } from 'node:test';
 
-import { Decoder, Encoder, FF_ENCODER_AAC, FF_ENCODER_LIBX264, MediaInput, MediaOutput, Packet } from '../src/index.js';
+import { AVSEEK_CUR, AVSEEK_END, AVSEEK_SET, AVSEEK_SIZE, Decoder, Encoder, FF_ENCODER_AAC, FF_ENCODER_LIBX264, MediaInput, MediaOutput, Packet } from '../src/index.js';
 import { getInputFile, getOutputFile, prepareTestEnvironment } from './index.js';
 
 import type { IOOutputCallbacks } from '../src/api/types.js';
+import type { AVSeekWhence } from '../src/index.js';
 
 prepareTestEnvironment();
 
@@ -709,6 +710,245 @@ describe('MediaOutput', () => {
       }, /MediaOutput is closed/);
 
       await cleanup();
+    });
+  });
+
+  describe('IOOutputCallbacks with using keyword (deadlock fix)', () => {
+    it('should support using keyword with IOOutputCallbacks without deadlock (sync)', () => {
+      const chunks: Buffer[] = [];
+
+      const callbacks: IOOutputCallbacks = {
+        write: (buffer: Buffer) => {
+          chunks.push(Buffer.from(buffer));
+          return buffer.length;
+        },
+      };
+
+      {
+        using output = MediaOutput.openSync(callbacks, {
+          format: 'mp4',
+          options: {
+            movflags: '+frag_keyframe+empty_moov',
+          },
+        });
+
+        const input = MediaInput.openSync(inputFile);
+        const videoStream = input.video();
+        assert(videoStream);
+
+        const streamIdx = output.addStream(videoStream);
+
+        let packetCount = 0;
+        for (const packet of input.packetsSync()) {
+          if (packet.streamIndex === videoStream.index && packetCount < 3) {
+            output.writePacketSync(packet, streamIdx);
+            packetCount++;
+          }
+          packet.free();
+          if (packetCount >= 3) break;
+        }
+
+        input.closeSync();
+      }
+
+      // Verify data was written
+      assert.ok(chunks.length > 0, 'Should have written data');
+    });
+
+    it('should support await using with IOOutputCallbacks (async)', async () => {
+      const chunks: Buffer[] = [];
+
+      const callbacks: IOOutputCallbacks = {
+        write: (buffer: Buffer) => {
+          chunks.push(Buffer.from(buffer));
+          return buffer.length;
+        },
+      };
+
+      {
+        await using output = await MediaOutput.open(callbacks, {
+          format: 'mp4',
+          options: {
+            movflags: '+frag_keyframe+empty_moov',
+          },
+        });
+
+        const input = await MediaInput.open(inputFile);
+        const videoStream = input.video();
+        assert(videoStream);
+
+        const streamIdx = output.addStream(videoStream);
+
+        let packetCount = 0;
+        for await (const packet of input.packets()) {
+          if (packet.streamIndex === videoStream.index && packetCount < 3) {
+            await output.writePacket(packet, streamIdx);
+            packetCount++;
+          }
+          packet.free();
+          if (packetCount >= 3) break;
+        }
+
+        await input.close();
+      }
+
+      // Verify data was written
+      assert.ok(chunks.length > 0, 'Should have written data');
+    });
+
+    it('should handle errors correctly with using keyword and IOOutputCallbacks', async () => {
+      const chunks: Buffer[] = [];
+
+      const callbacks: IOOutputCallbacks = {
+        write: (buffer: Buffer) => {
+          chunks.push(Buffer.from(buffer));
+          return buffer.length;
+        },
+      };
+
+      let errorCaught = false;
+      try {
+        using output = MediaOutput.openSync(callbacks, { format: 'mp4' });
+
+        const encoder = Encoder.createSync(FF_ENCODER_LIBX264, {
+          frameRate: { num: 25, den: 1 },
+          timeBase: { num: 1, den: 25 },
+        });
+
+        output.addStream(encoder);
+
+        // Throw an error intentionally
+        throw new Error('Intentional test error');
+      } catch (e) {
+        errorCaught = true;
+        assert.equal((e as Error).message, 'Intentional test error', 'Should catch the error');
+      }
+
+      assert.ok(errorCaught, 'Error should have been caught');
+      // Output should have been closed despite the error - no deadlock!
+    });
+
+    it('should write trailer correctly with closeSync and IOOutputCallbacks', () => {
+      const chunks: Buffer[] = [];
+
+      const callbacks: IOOutputCallbacks = {
+        write: (buffer: Buffer) => {
+          chunks.push(Buffer.from(buffer));
+          return buffer.length;
+        },
+      };
+
+      const output = MediaOutput.openSync(callbacks, {
+        format: 'mp4',
+        options: {
+          movflags: '+frag_keyframe+empty_moov',
+        },
+      });
+
+      const input = MediaInput.openSync(inputFile);
+      const videoStream = input.video();
+      assert(videoStream);
+
+      const streamIdx = output.addStream(videoStream);
+
+      let packetCount = 0;
+      for (const packet of input.packetsSync()) {
+        if (packet.streamIndex === videoStream.index && packetCount < 3) {
+          output.writePacketSync(packet, streamIdx);
+          packetCount++;
+        }
+        packet.free();
+        if (packetCount >= 3) break;
+      }
+
+      input.closeSync();
+
+      // This used to deadlock - now it should work!
+      output.closeSync();
+
+      // Verify data was written (including trailer)
+      assert.ok(chunks.length > 0, 'Should have written data');
+    });
+
+    it('should complete full workflow with IOInputCallbacks and IOOutputCallbacks', async () => {
+      // Read input file
+      const inputFile = getInputFile('demux.mp4');
+      const buffer = await readFile(inputFile);
+      let inputPosition = 0;
+
+      const inputCallbacks: IOOutputCallbacks & {
+        read: (size: number) => Buffer | null | number;
+      } = {
+        read: (size: number) => {
+          if (inputPosition >= buffer.length) return null;
+          const end = Math.min(inputPosition + size, buffer.length);
+          const chunk = buffer.subarray(inputPosition, end);
+          inputPosition = end;
+          return chunk;
+        },
+        write: () => 0,
+        seek: (offset: bigint, whence: AVSeekWhence) => {
+          if (whence === AVSEEK_SIZE) {
+            return BigInt(buffer.length);
+          }
+
+          if (whence === AVSEEK_SET) {
+            inputPosition = Number(offset);
+          } else if (whence === AVSEEK_CUR) {
+            inputPosition += Number(offset);
+          } else if (whence === AVSEEK_END) {
+            inputPosition = buffer.length + Number(offset);
+          }
+
+          return BigInt(inputPosition);
+        },
+      };
+
+      const outputChunks: Buffer[] = [];
+      const outputCallbacks: IOOutputCallbacks = {
+        write: (buffer: Buffer) => {
+          outputChunks.push(Buffer.from(buffer));
+          return buffer.length;
+        },
+      };
+
+      // Test with using keyword - no deadlock!
+      try {
+        await using input = await MediaInput.open(inputCallbacks as any, { format: 'mp4' });
+        await using output = await MediaOutput.open(outputCallbacks, {
+          format: 'mp4',
+          options: {
+            movflags: '+frag_keyframe+separate_moof+default_base_moof+empty_moov',
+          },
+        });
+
+        const videoStream = input.video();
+        assert(videoStream, 'Should have video stream');
+
+        const streamIdx = output.addStream(videoStream);
+
+        // Copy some packets
+        let packetCount = 0;
+        for await (const packet of input.packets()) {
+          if (packet.streamIndex === videoStream.index && packetCount < 10) {
+            await output.writePacket(packet, streamIdx);
+            packetCount++;
+          }
+          packet.free();
+          if (packetCount >= 10) break;
+        }
+
+        // Both should auto-close without deadlock
+      } catch (e) {
+        // Errors should be properly caught
+        console.error('Test error:', (e as Error).message);
+        throw e;
+      }
+
+      // Verify output was written
+      assert.ok(outputChunks.length > 0, 'Should have written output data');
+      const totalSize = outputChunks.reduce((sum, chunk) => sum + chunk.length, 0);
+      assert.ok(totalSize > 0, 'Output should have content');
     });
   });
 
