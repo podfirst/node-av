@@ -4,6 +4,7 @@
 #include <napi.h>
 #include <memory>
 #include <atomic>
+#include <thread>
 #include "common.h"
 
 extern "C" {
@@ -77,9 +78,14 @@ private:
   // Custom I/O callback support
   struct CallbackData {
     IOContext* io_context;
+    napi_env env = nullptr;  // Store env for direct calls (synchronous operations)
+    std::thread::id main_thread_id;  // Thread ID where callbacks were registered
     Napi::ThreadSafeFunction read_callback;
     Napi::ThreadSafeFunction write_callback;
     Napi::ThreadSafeFunction seek_callback;
+    Napi::FunctionReference read_callback_direct;   // For direct synchronous calls
+    Napi::FunctionReference write_callback_direct;  // For direct synchronous calls
+    Napi::FunctionReference seek_callback_direct;   // For direct synchronous calls
     bool has_read_callback = false;
     bool has_write_callback = false;
     bool has_seek_callback = false;

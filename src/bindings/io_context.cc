@@ -3,6 +3,7 @@
 #include <libavutil/mem.h>
 #include <future>
 #include <cstring>
+#include <thread>
 
 namespace ffmpeg {
 
@@ -80,15 +81,48 @@ int IOContext::ReadPacket(void* opaque, uint8_t* buf, int buf_size) {
   if (!data || !data->active || !data->has_read_callback) {
     return AVERROR_EOF;
   }
-  
+
+  // Try direct call first (for synchronous operations in main thread)
+  // IMPORTANT: Only use direct call if we're in the same thread where callbacks were registered
+  if (data->env && !data->read_callback_direct.IsEmpty() &&
+      std::this_thread::get_id() == data->main_thread_id) {
+    try {
+      Napi::Env env(data->env);
+      Napi::HandleScope scope(env);
+
+      Napi::Value result = data->read_callback_direct.Call({Napi::Number::New(env, buf_size)});
+
+      if (result.IsNull() || result.IsUndefined()) {
+        return AVERROR_EOF;
+      } else if (result.IsBuffer()) {
+        Napi::Buffer<uint8_t> buffer = result.As<Napi::Buffer<uint8_t>>();
+        int bytes_read = std::min(static_cast<int>(buffer.Length()), buf_size);
+        memcpy(buf, buffer.Data(), bytes_read);
+        return bytes_read;
+      } else if (result.IsNumber()) {
+        // Error code
+        return result.As<Napi::Number>().Int32Value();
+      } else {
+        return AVERROR(EINVAL);
+      }
+    } catch (const Napi::Error& e) {
+      // Direct call failed (likely not in main thread or exception thrown)
+      // Fall through to ThreadSafeFunction approach
+    } catch (...) {
+      // Unknown error
+      return AVERROR(EIO);
+    }
+  }
+
+  // Fallback to ThreadSafeFunction (for async operations or when not in main thread)
   int bytes_read = 0;
   std::promise<int> promise;
   std::future<int> future = promise.get_future();
-  
+
   auto callback = [&promise, &bytes_read, buf, buf_size](Napi::Env env, Napi::Function jsCallback) {
     try {
       Napi::Value result = jsCallback.Call({Napi::Number::New(env, buf_size)});
-      
+
       if (result.IsNull() || result.IsUndefined()) {
         bytes_read = AVERROR_EOF;
       } else if (result.IsBuffer()) {
@@ -106,12 +140,12 @@ int IOContext::ReadPacket(void* opaque, uint8_t* buf, int buf_size) {
     }
     promise.set_value(bytes_read);
   };
-  
+
   napi_status status = data->read_callback.BlockingCall(callback);
   if (status != napi_ok) {
     return AVERROR(EIO);
   }
-  
+
   return future.get();
 }
 
@@ -120,16 +154,41 @@ int IOContext::WritePacket(void* opaque, const uint8_t* buf, int buf_size) {
   if (!data || !data->active || !data->has_write_callback) {
     return AVERROR(ENOSYS);
   }
-  
+
+  // Try direct call first (for synchronous operations in main thread)
+  // IMPORTANT: Only use direct call if we're in the same thread where callbacks were registered
+  if (data->env && !data->write_callback_direct.IsEmpty() &&
+      std::this_thread::get_id() == data->main_thread_id) {
+    try {
+      Napi::Env env(data->env);
+      Napi::HandleScope scope(env);
+
+      Napi::Buffer<uint8_t> buffer = Napi::Buffer<uint8_t>::Copy(env, const_cast<uint8_t*>(buf), buf_size);
+      Napi::Value result = data->write_callback_direct.Call({buffer});
+
+      if (result.IsNumber()) {
+        return result.As<Napi::Number>().Int32Value();
+      }
+      return buf_size;  // Assume all bytes written
+    } catch (const Napi::Error& e) {
+      // Direct call failed (likely not in main thread or exception thrown)
+      // Fall through to ThreadSafeFunction approach
+    } catch (...) {
+      // Unknown error
+      return AVERROR(EIO);
+    }
+  }
+
+  // Fallback to ThreadSafeFunction (for async operations or when not in main thread)
   int bytes_written = 0;
   std::promise<int> promise;
   std::future<int> future = promise.get_future();
-  
+
   auto callback = [&promise, &bytes_written, buf, buf_size](Napi::Env env, Napi::Function jsCallback) {
     try {
       Napi::Buffer<uint8_t> buffer = Napi::Buffer<uint8_t>::Copy(env, const_cast<uint8_t*>(buf), buf_size);
       Napi::Value result = jsCallback.Call({buffer});
-      
+
       if (result.IsNumber()) {
         bytes_written = result.As<Napi::Number>().Int32Value();
       } else {
@@ -140,12 +199,12 @@ int IOContext::WritePacket(void* opaque, const uint8_t* buf, int buf_size) {
     }
     promise.set_value(bytes_written);
   };
-  
+
   napi_status status = data->write_callback.BlockingCall(callback);
   if (status != napi_ok) {
     return AVERROR(EIO);
   }
-  
+
   return future.get();
 }
 
@@ -154,23 +213,54 @@ int64_t IOContext::Seek(void* opaque, int64_t offset, int whence) {
   if (!data || !data->active || !data->has_seek_callback) {
     return AVERROR(ENOSYS);
   }
-  
+
   // Special case: AVSEEK_SIZE
   if (whence & AVSEEK_SIZE) {
     whence = AVSEEK_SIZE;
   }
-  
+
+  // Try direct call first (for synchronous operations in main thread)
+  // IMPORTANT: Only use direct call if we're in the same thread where callbacks were registered
+  if (data->env && !data->seek_callback_direct.IsEmpty() &&
+      std::this_thread::get_id() == data->main_thread_id) {
+    try {
+      Napi::Env env(data->env);
+      Napi::HandleScope scope(env);
+
+      Napi::Value result = data->seek_callback_direct.Call({
+        Napi::BigInt::New(env, offset),
+        Napi::Number::New(env, whence)
+      });
+
+      if (result.IsBigInt()) {
+        bool lossless;
+        return result.As<Napi::BigInt>().Int64Value(&lossless);
+      } else if (result.IsNumber()) {
+        return static_cast<int64_t>(result.As<Napi::Number>().Int64Value());
+      } else {
+        return AVERROR(EINVAL);
+      }
+    } catch (const Napi::Error& e) {
+      // Direct call failed (likely not in main thread or exception thrown)
+      // Fall through to ThreadSafeFunction approach
+    } catch (...) {
+      // Unknown error
+      return AVERROR(EIO);
+    }
+  }
+
+  // Fallback to ThreadSafeFunction (for async operations or when not in main thread)
   int64_t new_position = -1;
   std::promise<int64_t> promise;
   std::future<int64_t> future = promise.get_future();
-  
+
   auto callback = [&promise, &new_position, offset, whence](Napi::Env env, Napi::Function jsCallback) {
     try {
       Napi::Value result = jsCallback.Call({
         Napi::BigInt::New(env, offset),
         Napi::Number::New(env, whence)
       });
-      
+
       if (result.IsBigInt()) {
         bool lossless;
         new_position = result.As<Napi::BigInt>().Int64Value(&lossless);
@@ -184,12 +274,12 @@ int64_t IOContext::Seek(void* opaque, int64_t offset, int whence) {
     }
     promise.set_value(new_position);
   };
-  
+
   napi_status status = data->seek_callback.BlockingCall(callback);
   if (status != napi_ok) {
     return AVERROR(EIO);
   }
-  
+
   return future.get();
 }
 
@@ -198,14 +288,17 @@ void IOContext::CleanupCallbacks() {
     callback_data_->active = false;
     if (callback_data_->has_read_callback) {
       callback_data_->read_callback.Release();
+      callback_data_->read_callback_direct.Reset();
       callback_data_->has_read_callback = false;
     }
     if (callback_data_->has_write_callback) {
       callback_data_->write_callback.Release();
+      callback_data_->write_callback_direct.Reset();
       callback_data_->has_write_callback = false;
     }
     if (callback_data_->has_seek_callback) {
       callback_data_->seek_callback.Release();
+      callback_data_->seek_callback_direct.Reset();
       callback_data_->has_seek_callback = false;
     }
     callback_data_.reset();
@@ -292,48 +385,56 @@ Napi::Value IOContext::AllocContextWithCallbacks(const Napi::CallbackInfo& info)
   // Initialize callback data
   callback_data_ = std::make_unique<CallbackData>();
   callback_data_->io_context = this;
+  callback_data_->env = env;  // Store env for direct calls
+  callback_data_->main_thread_id = std::this_thread::get_id();  // Store thread ID for safety check
   callback_data_->active = true;
-  
+
   // Setup callbacks
   int (*read_cb)(void*, uint8_t*, int) = nullptr;
   int (*write_cb)(void*, const uint8_t*, int) = nullptr;
   int64_t (*seek_cb)(void*, int64_t, int) = nullptr;
-  
+
   // Read callback
   if (info.Length() > 2 && info[2].IsFunction()) {
+    Napi::Function read_fn = info[2].As<Napi::Function>();
     callback_data_->read_callback = Napi::ThreadSafeFunction::New(
       env,
-      info[2].As<Napi::Function>(),
+      read_fn,
       "IOReadCallback",
       0,  // Unlimited queue
       1   // One thread
     );
+    callback_data_->read_callback_direct = Napi::Persistent(read_fn);
     callback_data_->has_read_callback = true;
     read_cb = ReadPacket;
   }
-  
+
   // Write callback
   if (info.Length() > 3 && info[3].IsFunction()) {
+    Napi::Function write_fn = info[3].As<Napi::Function>();
     callback_data_->write_callback = Napi::ThreadSafeFunction::New(
       env,
-      info[3].As<Napi::Function>(),
+      write_fn,
       "IOWriteCallback",
       0,  // Unlimited queue
       1   // One thread
     );
+    callback_data_->write_callback_direct = Napi::Persistent(write_fn);
     callback_data_->has_write_callback = true;
     write_cb = WritePacket;
   }
-  
+
   // Seek callback
   if (info.Length() > 4 && info[4].IsFunction()) {
+    Napi::Function seek_fn = info[4].As<Napi::Function>();
     callback_data_->seek_callback = Napi::ThreadSafeFunction::New(
       env,
-      info[4].As<Napi::Function>(),
+      seek_fn,
       "IOSeekCallback",
       0,  // Unlimited queue
       1   // One thread
     );
+    callback_data_->seek_callback_direct = Napi::Persistent(seek_fn);
     callback_data_->has_seek_callback = true;
     seek_cb = Seek;
   }
