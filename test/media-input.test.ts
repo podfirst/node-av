@@ -192,6 +192,7 @@ describe('MediaInput', () => {
         read: () => null,
       };
 
+      // @ts-expect-error Testing missing format
       await assert.rejects(async () => await MediaInput.open(callbacks), /Format must be specified for custom I\/O/);
     });
 
@@ -200,6 +201,7 @@ describe('MediaInput', () => {
         read: () => null,
       };
 
+      // @ts-expect-error Testing missing format
       assert.throws(() => MediaInput.openSync(callbacks), /Format must be specified for custom I\/O/);
     });
 

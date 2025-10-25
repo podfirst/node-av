@@ -104,6 +104,7 @@ describe('MediaOutput', () => {
         write: (buffer: Buffer) => buffer.length,
       };
 
+      // @ts-expect-error Testing missing format
       await assert.rejects(async () => await MediaOutput.open(callbacks), /Format must be specified for custom IO/);
     });
 
