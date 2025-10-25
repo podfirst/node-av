@@ -7,6 +7,8 @@ import { pathToFileURL } from 'node:url';
 import { AVIO_FLAG_READ, AVIO_FLAG_WRITE, AVSEEK_CUR, AVSEEK_END, AVSEEK_SET, AVSEEK_SIZE, IOContext } from '../src/index.js';
 import { getInputFile, getOutputFile, prepareTestEnvironment } from './index.js';
 
+import type { AVSeekWhence } from '../src/index.js';
+
 prepareTestEnvironment();
 
 const testVideoFile = getInputFile('video.mp4');
@@ -1008,7 +1010,7 @@ describe('IOContext', () => {
         },
         undefined, // No write callback
         // Seek callback
-        (offset: bigint, whence: number) => {
+        (offset: bigint, whence: AVSeekWhence) => {
           let newPos: number;
           const offsetNum = Number(offset);
 
