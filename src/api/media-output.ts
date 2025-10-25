@@ -133,7 +133,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
    *     // Write to custom destination
    *     return buffer.length;
    *   },
-   *   seek: async (offset: bigint, whence: number) => {
+   *   seek: async (offset: bigint, whence: AVSeekWhence) => {
    *     // Seek in custom destination
    *     return offset;
    *   }
