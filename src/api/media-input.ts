@@ -325,7 +325,8 @@ export class MediaInput implements AsyncDisposable, Disposable {
    * @see {@link RawData} For raw data input
    * @see {@link IOInputCallbacks} For custom I/O interface
    */
-  static async open(input: string | Buffer | IOInputCallbacks, options?: MediaInputOptions): Promise<MediaInput>;
+  static async open(input: string | Buffer, options?: MediaInputOptions): Promise<MediaInput>;
+  static async open(input: IOInputCallbacks, options: MediaInputOptions & { format: string }): Promise<MediaInput>;
   static async open(rawData: RawData, options?: MediaInputOptions): Promise<MediaInput>;
   static async open(input: string | Buffer | RawData | IOInputCallbacks, options: MediaInputOptions = {}): Promise<MediaInput> {
     // Check if input is raw data
@@ -514,7 +515,8 @@ export class MediaInput implements AsyncDisposable, Disposable {
    * @see {@link open} For async version
    * @see {@link IOInputCallbacks} For custom I/O interface
    */
-  static openSync(input: string | Buffer | IOInputCallbacks, options?: MediaInputOptions): MediaInput;
+  static openSync(input: string | Buffer, options?: MediaInputOptions): MediaInput;
+  static openSync(input: IOInputCallbacks, options: MediaInputOptions & { format: string }): MediaInput;
   static openSync(rawData: RawData, options?: MediaInputOptions): MediaInput;
   static openSync(input: string | Buffer | RawData | IOInputCallbacks, options: MediaInputOptions = {}): MediaInput {
     // Check if input is raw data

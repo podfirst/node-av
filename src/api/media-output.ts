@@ -148,6 +148,8 @@ export class MediaOutput implements AsyncDisposable, Disposable {
    * @see {@link MediaOutputOptions} For configuration options
    * @see {@link IOOutputCallbacks} For custom I/O interface
    */
+  static async open(target: string, options?: MediaOutputOptions): Promise<MediaOutput>;
+  static async open(target: IOOutputCallbacks, options: MediaOutputOptions & { format: string }): Promise<MediaOutput>;
   static async open(target: string | IOOutputCallbacks, options?: MediaOutputOptions): Promise<MediaOutput> {
     const output = new MediaOutput();
 
@@ -274,6 +276,8 @@ export class MediaOutput implements AsyncDisposable, Disposable {
    *
    * @see {@link open} For async version
    */
+  static openSync(target: string, options?: MediaOutputOptions): MediaOutput;
+  static openSync(target: IOOutputCallbacks, options: MediaOutputOptions & { format: string }): MediaOutput;
   static openSync(target: string | IOOutputCallbacks, options?: MediaOutputOptions): MediaOutput {
     const output = new MediaOutput();
 
