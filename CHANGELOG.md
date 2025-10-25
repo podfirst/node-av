@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`MediaInput`**: Custom I/O callbacks support via `IOInputCallbacks`
+
+```typescript
+import { MediaInput } from 'node-av/api';
+
+import type { IOInputCallbacks } from 'node-av/api';
+
+const callbacks: IOInputCallbacks = {
+  read: (size: number) => {
+    // Read data from custom source
+    return buffer; // or null for EOF
+  },
+  seek: (offset: bigint, whence: AVSeekWhence) => {
+    // Seek in custom source
+    return offset;
+  }
+};
+
+await using input = await MediaInput.open(callbacks, {
+  format: 'mp4',
+  bufferSize: 8192
+});
+```
+
+- **`MediaInput`**: Buffer input support in synchronous mode
+  - `MediaInput.openSync()` now accepts `Buffer` input
+  - Previously restricted due to callback requirements
+  - Enabled by direct callback invocation improvements
+
+### Fixed
+
+- **Critical**: Fixed deadlock when using `using` keyword with `IOOutputCallbacks`
+  - `MediaOutput` with custom I/O callbacks now properly closes synchronously
+  - Direct callback invocation in same thread eliminates event loop dependency
+
+```typescript
+// This now works without deadlock!
+try {
+  using output = MediaOutput.openSync(callbacks, { format: 'mp4' });
+  // ... write packets
+  // Automatically closes without deadlock
+} catch (e) {
+  console.error('Error caught correctly!', e); // ✅ Works now
+}
+```
+
 ## [3.1.0] - 2025-10-24
 
 ### Added
