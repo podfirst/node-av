@@ -1,10 +1,14 @@
 import assert from 'node:assert';
+import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { after, describe, it } from 'node:test';
 
 import { MediaInput } from '../src/api/index.js';
-import { AVMEDIA_TYPE_AUDIO, AVMEDIA_TYPE_VIDEO } from '../src/index.js';
+import { AVMEDIA_TYPE_AUDIO, AVMEDIA_TYPE_VIDEO, AVSEEK_CUR, AVSEEK_END, AVSEEK_SET, AVSEEK_SIZE } from '../src/index.js';
 import { getInputFile, prepareTestEnvironment } from './index.js';
+
+import type { IOInputCallbacks } from '../src/api/types.js';
+import type { AVSeekWhence } from '../src/index.js';
 
 prepareTestEnvironment();
 
@@ -65,12 +69,226 @@ describe('MediaInput', () => {
       await media.close();
     });
 
+    it('should open from Buffer (sync)', () => {
+      const buffer = readFileSync(inputFile);
+      const media = MediaInput.openSync(buffer);
+
+      assert.ok(media, 'Should create MediaInput from Buffer');
+      assert.ok(media.streams.length > 0, 'Should have streams');
+
+      media.closeSync();
+    });
+
     it('should throw on invalid file (async)', async () => {
       await assert.rejects(async () => await MediaInput.open('nonexistent.mp4'), /Failed to open input/);
     });
 
     it('should throw on invalid file (sync)', () => {
       assert.throws(() => MediaInput.openSync('nonexistent.mp4'), /Failed to open input/);
+    });
+
+    it('should open with IOInputCallbacks (async)', async () => {
+      const buffer = await readFile(inputFile);
+      let position = 0;
+
+      const callbacks: IOInputCallbacks = {
+        read: (size: number) => {
+          if (position >= buffer.length) {
+            return null; // EOF
+          }
+          const end = Math.min(position + size, buffer.length);
+          const chunk = buffer.subarray(position, end);
+          position = end;
+          return chunk;
+        },
+        seek: (offset: bigint, whence: AVSeekWhence) => {
+          if (whence === AVSEEK_SIZE) {
+            return BigInt(buffer.length);
+          } else if (whence === AVSEEK_SET) {
+            position = Number(offset);
+          } else if (whence === AVSEEK_CUR) {
+            position += Number(offset);
+          } else if (whence === AVSEEK_END) {
+            position = buffer.length + Number(offset);
+          }
+          return BigInt(position);
+        },
+      };
+
+      const media = await MediaInput.open(callbacks, {
+        format: 'mp4',
+        bufferSize: 4096,
+      });
+
+      assert.ok(media, 'Should create MediaInput from IOInputCallbacks');
+      assert.ok(media.streams.length > 0, 'Should have streams');
+      assert.ok(media.duration > 0, 'Should have duration');
+
+      // Read some packets to verify it works
+      let packetCount = 0;
+      for await (const packet of media.packets()) {
+        assert.ok(packet, 'Should have packet');
+        packet.free();
+        packetCount++;
+        if (packetCount >= 5) break;
+      }
+      assert.ok(packetCount > 0, 'Should have read packets');
+
+      await media.close();
+    });
+
+    it('should open with IOInputCallbacks (sync)', () => {
+      const buffer = readFileSync(inputFile);
+      let position = 0;
+
+      const callbacks: IOInputCallbacks = {
+        read: (size: number) => {
+          if (position >= buffer.length) {
+            return null; // EOF
+          }
+          const end = Math.min(position + size, buffer.length);
+          const chunk = buffer.subarray(position, end);
+          position = end;
+          return chunk;
+        },
+        seek: (offset: bigint, whence: AVSeekWhence) => {
+          if (whence === AVSEEK_SIZE) {
+            return BigInt(buffer.length);
+          } else if (whence === AVSEEK_SET) {
+            position = Number(offset);
+          } else if (whence === AVSEEK_CUR) {
+            position += Number(offset);
+          } else if (whence === AVSEEK_END) {
+            position = buffer.length + Number(offset);
+          }
+          return BigInt(position);
+        },
+      };
+
+      const media = MediaInput.openSync(callbacks, {
+        format: 'mp4',
+        bufferSize: 4096,
+      });
+
+      assert.ok(media, 'Should create MediaInput from IOInputCallbacks');
+      assert.ok(media.streams.length > 0, 'Should have streams');
+      assert.ok(media.duration > 0, 'Should have duration');
+
+      // Read some packets to verify it works
+      let packetCount = 0;
+      for (const packet of media.packetsSync()) {
+        assert.ok(packet, 'Should have packet');
+        packet.free();
+        packetCount++;
+        if (packetCount >= 5) break;
+      }
+      assert.ok(packetCount > 0, 'Should have read packets');
+
+      media.closeSync();
+    });
+
+    it('should require format for IOInputCallbacks (async)', async () => {
+      const callbacks: IOInputCallbacks = {
+        read: () => null,
+      };
+
+      await assert.rejects(async () => await MediaInput.open(callbacks), /Format must be specified for custom I\/O/);
+    });
+
+    it('should require format for IOInputCallbacks (sync)', () => {
+      const callbacks: IOInputCallbacks = {
+        read: () => null,
+      };
+
+      assert.throws(() => MediaInput.openSync(callbacks), /Format must be specified for custom I\/O/);
+    });
+
+    it('should support IOInputCallbacks with using keyword (async)', async () => {
+      const buffer = await readFile(inputFile);
+      let position = 0;
+
+      const callbacks: IOInputCallbacks = {
+        read: (size: number) => {
+          if (position >= buffer.length) return null;
+          const end = Math.min(position + size, buffer.length);
+          const chunk = buffer.subarray(position, end);
+          position = end;
+          return chunk;
+        },
+        seek: (offset: bigint, whence: AVSeekWhence) => {
+          if (whence === AVSEEK_SIZE) {
+            return BigInt(buffer.length);
+          }
+
+          if (whence === AVSEEK_SET) {
+            position = Number(offset);
+          } else if (whence === AVSEEK_CUR) {
+            position += Number(offset);
+          } else if (whence === AVSEEK_END) {
+            position = buffer.length + Number(offset);
+          }
+
+          return BigInt(position);
+        },
+      };
+
+      let streamCount = 0;
+      {
+        await using media = await MediaInput.open(callbacks, { format: 'mp4' });
+        streamCount = media.streams.length;
+        assert.ok(streamCount > 0, 'Should have streams');
+        // Should auto-close when leaving scope - no deadlock!
+      }
+
+      // Verify it actually closed by trying again
+      position = 0;
+      const media2 = await MediaInput.open(callbacks, { format: 'mp4' });
+      assert.equal(media2.streams.length, streamCount, 'Should have same streams');
+      await media2.close();
+    });
+
+    it('should support IOInputCallbacks with using keyword (sync)', () => {
+      const buffer = readFileSync(inputFile);
+      let position = 0;
+
+      const callbacks: IOInputCallbacks = {
+        read: (size: number) => {
+          if (position >= buffer.length) return null;
+          const end = Math.min(position + size, buffer.length);
+          const chunk = buffer.subarray(position, end);
+          position = end;
+          return chunk;
+        },
+        seek: (offset: bigint, whence: AVSeekWhence) => {
+          if (whence === AVSEEK_SIZE) {
+            return BigInt(buffer.length);
+          }
+
+          if (whence === AVSEEK_SET) {
+            position = Number(offset);
+          } else if (whence === AVSEEK_CUR) {
+            position += Number(offset);
+          } else if (whence === AVSEEK_END) {
+            position = buffer.length + Number(offset);
+          }
+
+          return BigInt(position);
+        },
+      };
+
+      let streamCount = 0;
+      {
+        using media = MediaInput.openSync(callbacks, { format: 'mp4' });
+        streamCount = media.streams.length;
+        assert.ok(streamCount > 0, 'Should have streams');
+        // Should auto-close when leaving scope - no deadlock!
+      }
+
+      // Verify it actually closed by trying again
+      position = 0;
+      const media2 = MediaInput.openSync(callbacks, { format: 'mp4' });
+      assert.equal(media2.streams.length, streamCount, 'Should have same streams');
+      media2.closeSync();
     });
   });
 

@@ -2,13 +2,13 @@ import { closeSync, openSync, readSync } from 'fs';
 import { open } from 'fs/promises';
 import { resolve } from 'path';
 
-import { AVFLAG_NONE, AVFMT_FLAG_NONBLOCK, AVMEDIA_TYPE_AUDIO, AVMEDIA_TYPE_VIDEO } from '../constants/constants.js';
-import { avGetPixFmtName, avGetSampleFmtName, Dictionary, FFmpegError, FormatContext, InputFormat, Packet, Rational } from '../lib/index.js';
+import { AVFLAG_NONE, AVFMT_FLAG_CUSTOM_IO, AVFMT_FLAG_NONBLOCK, AVMEDIA_TYPE_AUDIO, AVMEDIA_TYPE_VIDEO } from '../constants/constants.js';
+import { avGetPixFmtName, avGetSampleFmtName, Dictionary, FFmpegError, FormatContext, InputFormat, IOContext, Packet, Rational } from '../lib/index.js';
 import { IOStream } from './io-stream.js';
 
 import type { AVMediaType, AVSeekFlag } from '../constants/constants.js';
-import type { IOContext, Stream } from '../lib/index.js';
-import type { MediaInputOptions, RawData } from './types.js';
+import type { Stream } from '../lib/index.js';
+import type { IOInputCallbacks, MediaInputOptions, RawData } from './types.js';
 
 /**
  * High-level media input for reading and demuxing media files.
@@ -246,7 +246,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
   }
 
   /**
-   * Open media from file, URL, buffer, or raw data.
+   * Open media from file, URL, buffer, raw data, or custom I/O callbacks.
    *
    * Automatically detects format and extracts stream information.
    * Supports various input sources with flexible configuration.
@@ -254,13 +254,13 @@ export class MediaInput implements AsyncDisposable, Disposable {
    *
    * Direct mapping to avformat_open_input() and avformat_find_stream_info().
    *
-   * @param input - File path, URL, buffer, or raw data descriptor
+   * @param input - File path, URL, buffer, raw data descriptor, or custom I/O callbacks
    *
    * @param options - Input configuration options
    *
    * @returns Opened media input instance
    *
-   * @throws {Error} If format not found or open fails
+   * @throws {Error} If format not found or open fails, or format required for custom I/O
    *
    * @throws {FFmpegError} If FFmpeg operations fail
    *
@@ -301,12 +301,33 @@ export class MediaInput implements AsyncDisposable, Disposable {
    * });
    * ```
    *
+   * @example
+   * ```typescript
+   * // Custom I/O callbacks
+   * const callbacks = {
+   *   read: (size: number) => {
+   *     // Read data from custom source
+   *     return buffer; // or null for EOF, or negative error code
+   *   },
+   *   seek: (offset: bigint, whence: AVSeekWhence) => {
+   *     // Seek in custom source
+   *     return offset; // or negative error code
+   *   }
+   * };
+   *
+   * await using input = await MediaInput.open(callbacks, {
+   *   format: 'mp4',
+   *   bufferSize: 8192
+   * });
+   * ```
+   *
    * @see {@link MediaInputOptions} For configuration options
    * @see {@link RawData} For raw data input
+   * @see {@link IOInputCallbacks} For custom I/O interface
    */
-  static async open(input: string | Buffer, options?: MediaInputOptions): Promise<MediaInput>;
+  static async open(input: string | Buffer | IOInputCallbacks, options?: MediaInputOptions): Promise<MediaInput>;
   static async open(rawData: RawData, options?: MediaInputOptions): Promise<MediaInput>;
-  static async open(input: string | Buffer | RawData, options: MediaInputOptions = {}): Promise<MediaInput> {
+  static async open(input: string | Buffer | RawData | IOInputCallbacks, options: MediaInputOptions = {}): Promise<MediaInput> {
     // Check if input is raw data
     if (typeof input === 'object' && 'type' in input && ('width' in input || 'sampleRate' in input)) {
       // Build options for raw data
@@ -378,8 +399,25 @@ export class MediaInput implements AsyncDisposable, Disposable {
         formatContext.pb = ioContext;
         const ret = await formatContext.openInput('', inputFormat, optionsDict);
         FFmpegError.throwIfError(ret, 'Failed to open input from buffer');
+      } else if (typeof input === 'object' && 'read' in input) {
+        // Custom I/O with callbacks - format is required
+        if (!options.format) {
+          throw new Error('Format must be specified for custom I/O');
+        }
+
+        // Allocate context first for custom I/O
+        formatContext.allocContext();
+
+        // Setup custom I/O with callbacks
+        ioContext = new IOContext();
+        ioContext.allocContextWithCallbacks(options.bufferSize ?? 8192, 0, input.read, null, input.seek);
+        formatContext.pb = ioContext;
+        formatContext.flags = AVFMT_FLAG_CUSTOM_IO;
+
+        const ret = await formatContext.openInput('', inputFormat, optionsDict);
+        FFmpegError.throwIfError(ret, 'Failed to open input from custom I/O');
       } else {
-        throw new TypeError('Invalid input type. Expected file path, URL, or Buffer');
+        throw new TypeError('Invalid input type. Expected file path, URL, Buffer, or IOInputCallbacks');
       }
 
       // Find stream information
@@ -394,7 +432,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
       if (ioContext) {
         // Clear the pb reference first
         formatContext.pb = null;
-        // Free the IOContext
+        // Free the IOContext (for both custom I/O and buffer-based I/O)
         ioContext.freeContext();
       }
       // Clean up FormatContext
@@ -409,13 +447,8 @@ export class MediaInput implements AsyncDisposable, Disposable {
   }
 
   /**
-   * Open media from file or URL synchronously.
+   * Open media from file, URL, Buffer, raw data, or custom I/O callbacks synchronously.
    * Synchronous version of open.
-   *
-   * NOTE: Buffer input is not supported in sync mode due to JavaScript's
-   * single-threaded nature. Custom I/O callbacks require the JavaScript
-   * event loop to be available, which is blocked during synchronous operations.
-   * Use the async version {@link open} for buffer input.
    *
    * Automatically detects format and extracts stream information.
    * Supports various input sources with flexible configuration.
@@ -423,13 +456,13 @@ export class MediaInput implements AsyncDisposable, Disposable {
    *
    * Direct mapping to avformat_open_input() and avformat_find_stream_info().
    *
-   * @param input - File path or URL (Buffer not supported in sync mode)
+   * @param input - File path, URL, Buffer, raw data descriptor, or custom I/O callbacks
    *
    * @param options - Input configuration options
    *
    * @returns Opened media input instance
    *
-   * @throws {Error} If format not found or open fails
+   * @throws {Error} If format not found or open fails, or format required for custom I/O
    *
    * @throws {FFmpegError} If FFmpeg operations fail
    *
@@ -437,6 +470,13 @@ export class MediaInput implements AsyncDisposable, Disposable {
    * ```typescript
    * // Open file
    * using input = MediaInput.openSync('video.mp4');
+   * ```
+   *
+   * @example
+   * ```typescript
+   * // Open from buffer
+   * const buffer = await fs.readFile('video.mp4');
+   * using input = MediaInput.openSync(buffer);
    * ```
    *
    * @example
@@ -451,11 +491,32 @@ export class MediaInput implements AsyncDisposable, Disposable {
    * });
    * ```
    *
-   * @see {@link open} For async version with buffer support
+   * @example
+   * ```typescript
+   * // Custom I/O callbacks
+   * const callbacks = {
+   *   read: (size: number) => {
+   *     // Read data from custom source
+   *     return buffer; // or null for EOF, or negative error code
+   *   },
+   *   seek: (offset: bigint, whence: AVSeekWhence) => {
+   *     // Seek in custom source
+   *     return offset; // or negative error code
+   *   }
+   * };
+   *
+   * using input = MediaInput.openSync(callbacks, {
+   *   format: 'mp4',
+   *   bufferSize: 8192
+   * });
+   * ```
+   *
+   * @see {@link open} For async version
+   * @see {@link IOInputCallbacks} For custom I/O interface
    */
-  static openSync(input: string, options?: MediaInputOptions): MediaInput;
-  static openSync(rawData: RawData & { input: string }, options?: MediaInputOptions): MediaInput;
-  static openSync(input: string | (RawData & { input: string }), options: MediaInputOptions = {}): MediaInput {
+  static openSync(input: string | Buffer | IOInputCallbacks, options?: MediaInputOptions): MediaInput;
+  static openSync(rawData: RawData, options?: MediaInputOptions): MediaInput;
+  static openSync(input: string | Buffer | RawData | IOInputCallbacks, options: MediaInputOptions = {}): MediaInput {
     // Check if input is raw data
     if (typeof input === 'object' && 'type' in input && ('width' in input || 'sampleRate' in input)) {
       // Build options for raw data
@@ -516,8 +577,36 @@ export class MediaInput implements AsyncDisposable, Disposable {
         const ret = formatContext.openInputSync(resolvedInput, inputFormat, optionsDict);
         FFmpegError.throwIfError(ret, 'Failed to open input');
         formatContext.setFlags(AVFMT_FLAG_NONBLOCK);
+      } else if (Buffer.isBuffer(input)) {
+        // Validate buffer is not empty
+        if (input.length === 0) {
+          throw new Error('Cannot open media from empty buffer');
+        }
+        // From buffer - allocate context first for custom I/O
+        formatContext.allocContext();
+        ioContext = IOStream.create(input, { bufferSize: options.bufferSize });
+        formatContext.pb = ioContext;
+        const ret = formatContext.openInputSync('', inputFormat, optionsDict);
+        FFmpegError.throwIfError(ret, 'Failed to open input from buffer');
+      } else if (typeof input === 'object' && 'read' in input) {
+        // Custom I/O with callbacks - format is required
+        if (!options.format) {
+          throw new Error('Format must be specified for custom I/O');
+        }
+
+        // Allocate context first for custom I/O
+        formatContext.allocContext();
+
+        // Setup custom I/O with callbacks
+        ioContext = new IOContext();
+        ioContext.allocContextWithCallbacks(options.bufferSize ?? 8192, 0, input.read, null, input.seek);
+        formatContext.pb = ioContext;
+        formatContext.flags = AVFMT_FLAG_CUSTOM_IO;
+
+        const ret = formatContext.openInputSync('', inputFormat, optionsDict);
+        FFmpegError.throwIfError(ret, 'Failed to open input from custom I/O');
       } else {
-        throw new TypeError('Invalid input type. Expected file path, URL, or Buffer');
+        throw new TypeError('Invalid input type. Expected file path, URL, Buffer, or IOInputCallbacks');
       }
 
       // Find stream information
@@ -532,7 +621,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
       if (ioContext) {
         // Clear the pb reference first
         formatContext.pb = null;
-        // Free the IOContext
+        // Free the IOContext (for both custom I/O and buffer-based I/O)
         ioContext.freeContext();
       }
       // Clean up FormatContext
