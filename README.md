@@ -269,15 +269,13 @@ import * as ffmpeg from 'node-av';
 
 ## Stream Processing
 
-### From Files
+### From Files or Network
 
 ```typescript
 const media = await MediaInput.open('input.mp4');
-```
 
-### From Network
+// or
 
-```typescript
 const media = await MediaInput.open('rtsp://example.com/stream');
 ```
 
@@ -288,6 +286,28 @@ import { readFile } from 'fs/promises';
 
 const buffer = await readFile('input.mp4');
 const media = await MediaInput.open(buffer);
+```
+
+### Custom I/O Callbacks
+
+```typescript
+import type { IOInputCallbacks, IOOutputCallbacks } from 'node-av/api';
+
+// Custom input source
+const inputCallbacks: IOInputCallbacks = {
+  read: (size: number) => {
+    // Read from your custom source
+    return buffer; // or null for EOF
+  },
+  seek: (offset: bigint, whence: number) => {
+    // Seek in your custom source
+    return newPosition;
+  }
+};
+
+await using input = await MediaInput.open(inputCallbacks, {
+  format: 'mp4'
+});
 ```
 
 ### Raw Media Processing
