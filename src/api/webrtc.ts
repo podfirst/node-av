@@ -182,7 +182,9 @@ export class WebRTCStream implements Disposable {
     const audioStream = input.audio();
     const videoCodecId = videoStream.codecpar.codecId;
     const audioCodecId = audioStream?.codecpar.codecId ?? null;
-    const videoConfig = this.getVideoCodecConfig(videoCodecId) ?? this.getVideoCodecConfig(AV_CODEC_ID_H264)!; // We transcode unsupported codecs to H264
+
+    // We transcode unsupported codecs to H264
+    const videoConfig = this.getVideoCodecConfig(videoCodecId) ?? this.getVideoCodecConfig(AV_CODEC_ID_H264)!;
 
     this.codecInfo = {
       video: {
@@ -192,7 +194,8 @@ export class WebRTCStream implements Disposable {
     };
 
     if (audioCodecId !== null) {
-      const audioConfig = this.getAudioCodecConfig(audioCodecId) ?? this.getAudioCodecConfig(AV_CODEC_ID_OPUS)!; // We transcode unsupported codecs to OPUS
+      // We transcode unsupported codecs to OPUS
+      const audioConfig = this.getAudioCodecConfig(audioCodecId) ?? this.getAudioCodecConfig(AV_CODEC_ID_OPUS)!;
       this.codecInfo.audio = {
         codecId: audioCodecId,
         ...audioConfig,
