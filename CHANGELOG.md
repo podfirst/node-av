@@ -10,10 +10,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **RTSP Backchannel/Talkback Support**: New methods for bi-directional RTSP communication with IP cameras
-  - `FormatContext.getRTSPStreamInfo()`: Retrieve detailed stream information including transport type (TCP/UDP), stream direction (sendonly/recvonly/sendrecv), codec details (ID, MIME type, payload type), and audio properties (sample rate, channels). Essential for identifying backchannel streams for talkback audio.
+  - `FormatContext.getRTSPStreamInfo()`: Retrieve detailed stream information including:
+    - Transport type (TCP/UDP)
+    - Stream direction (sendonly/recvonly/sendrecv)
+    - Codec details (ID, MIME type, payload type)
+    - Audio properties (sample rate, channels)
+    - MIME type
+    - FMTP parameters
   - `FormatContext.sendRTSPPacket()`: Send RTP packets to RTSP streams with automatic transport handling. Supports both TCP (interleaved) and UDP modes, enabling audio transmission to camera backchannel streams for two-way communication.
-  - Use cases: IP camera talkback/intercom functionality, security system audio announcements, remote audio injection
-  - See `examples/browser/webrtc` for a complete implementation of RTSP talkback using these new methods.
+  - Use cases: IP camera talkback/intercom functionality, security system audio announcements, remote audio injection, WebRTC integration with original SDP parameters
+  - See `examples/rtsp-stream-info.ts` for detailed RTSP stream inspection including FMTP parameters
+  - See `examples/browser/webrtc` for a complete implementation of RTSP talkback.
 
 ## [3.1.1] - 2025-10-25
 
