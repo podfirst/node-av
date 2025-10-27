@@ -9,6 +9,11 @@
 #include "common.h"
 #include <napi.h>
 #include <memory>
+#include <sys/socket.h>
+
+extern "C" {
+#include <libavformat/internal.h>
+}
 
 namespace ffmpeg {
 
@@ -47,6 +52,8 @@ Napi::Object FormatContext::Init(Napi::Env env, Napi::Object exports) {
     InstanceMethod<&FormatContext::NewStream>("newStream"),
     InstanceMethod<&FormatContext::DumpFormat>("dumpFormat"),
     InstanceMethod<&FormatContext::FindBestStream>("findBestStream"),
+    InstanceMethod<&FormatContext::GetRTSPStreamInfo>("getRTSPStreamInfo"),
+    InstanceMethod<&FormatContext::SendRTSPPacket>("sendRTSPPacket"),
     InstanceMethod<&FormatContext::SetFlagsMethod>("setFlags"),
     InstanceMethod<&FormatContext::ClearFlagsMethod>("clearFlags"),
     InstanceMethod(Napi::Symbol::WellKnown(env, "asyncDispose"), &FormatContext::DisposeAsync),
@@ -347,6 +354,291 @@ Napi::Value FormatContext::FindBestStream(const Napi::CallbackInfo& info) {
     return result;
   }
   
+  return Napi::Number::New(env, ret);
+}
+
+// SDP direction enum from rtsp.h
+enum RTSPSDPDirection {
+    RTSP_DIRECTION_RECVONLY = 0,
+    RTSP_DIRECTION_SENDONLY = 1,
+    RTSP_DIRECTION_SENDRECV = 2,
+    RTSP_DIRECTION_INACTIVE = 3,
+};
+
+// RTSP lower transport enum from rtsp.h
+enum RTSPLowerTransport {
+    RTSP_LOWER_TRANSPORT_UDP = 0,
+    RTSP_LOWER_TRANSPORT_TCP = 1,
+    RTSP_LOWER_TRANSPORT_UDP_MULTICAST = 2,
+};
+
+// Forward declarations matching FFmpeg's internal structures
+typedef struct RTSPStream {
+    void *rtp_handle;              // URLContext* - RTP stream handle (if UDP)
+    void *transport_priv;          // RTP/RDT parse context if input
+    int stream_index;              // corresponding stream index, -1 if none
+    int interleaved_min;           // interleaved channel IDs for TCP
+    int interleaved_max;
+    char control_url[MAX_URL_SIZE]; // url for this stream (from SDP)
+
+    // SDP fields - need correct layout to access sdp_direction
+    int sdp_port;
+    struct sockaddr_storage sdp_ip; // 128 bytes on most platforms
+    int nb_include_source_addrs;
+    void *include_source_addrs;
+    int nb_exclude_source_addrs;
+    void *exclude_source_addrs;
+    int sdp_ttl;
+    int sdp_payload_type;
+    enum RTSPSDPDirection sdp_direction;
+} RTSPStream;
+
+typedef struct RTSPState {
+    const void *av_class;          // AVClass* - using void* to avoid 'class' keyword
+    void *rtsp_hd;                 // URLContext* - RTSP TCP connection handle
+    int nb_rtsp_streams;           // number of items in rtsp_streams array
+    RTSPStream **rtsp_streams;     // streams in this session
+
+    // Need to include these fields to get correct offset to lower_transport
+    int state;                     // enum RTSPClientState
+    int64_t seek_timestamp;
+    int seq;
+    char session_id[512];
+    int timeout;
+    int64_t last_cmd_time;
+    int transport;                 // enum RTSPTransport
+    enum RTSPLowerTransport lower_transport;  // The field we want!
+} RTSPState;
+
+Napi::Value FormatContext::GetRTSPStreamInfo(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+
+  if (!ctx_) {
+    Napi::Error::New(env, "Format context not allocated").ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+
+  // Return null if this is not an RTSP input context
+  if (!ctx_->iformat || !ctx_->iformat->name ||
+      (strcmp(ctx_->iformat->name, "rtsp") != 0)) {
+    return env.Null();
+  }
+
+  // Return null if RTSP private data not available
+  RTSPState* rt = static_cast<RTSPState*>(ctx_->priv_data);
+  if (!rt) {
+    return env.Null();
+  }
+
+  // Determine transport type (applies to all streams)
+  const char* transport_str = "unknown";
+  switch (rt->lower_transport) {
+    case RTSP_LOWER_TRANSPORT_UDP:
+      transport_str = "udp";
+      break;
+    case RTSP_LOWER_TRANSPORT_TCP:
+      transport_str = "tcp";
+      break;
+    case RTSP_LOWER_TRANSPORT_UDP_MULTICAST:
+      transport_str = "udp_multicast";
+      break;
+  }
+
+  // Build array of stream info
+  Napi::Array streams = Napi::Array::New(env);
+
+  for (int i = 0; i < rt->nb_rtsp_streams; i++) {
+    RTSPStream* rtsp_st = rt->rtsp_streams[i];
+    if (!rtsp_st) continue;
+
+    Napi::Object streamInfo = Napi::Object::New(env);
+    streamInfo.Set("streamIndex", Napi::Number::New(env, rtsp_st->stream_index));
+    streamInfo.Set("controlUrl", Napi::String::New(env, rtsp_st->control_url));
+    streamInfo.Set("transport", Napi::String::New(env, transport_str));
+    streamInfo.Set("payloadType", Napi::Number::New(env, rtsp_st->sdp_payload_type));
+
+    // Get codec information from AVStream
+    if (rtsp_st->stream_index >= 0 && rtsp_st->stream_index < (int)ctx_->nb_streams) {
+      AVStream* stream = ctx_->streams[rtsp_st->stream_index];
+      if (stream && stream->codecpar) {
+        streamInfo.Set("codecId", Napi::Number::New(env, stream->codecpar->codec_id));
+
+        // Map AVCodecID to RTP/SDP-compliant codec name
+        const char* rtp_codec_name = nullptr;
+        switch (stream->codecpar->codec_id) {
+          // Audio codecs
+          case AV_CODEC_ID_PCM_ALAW:   rtp_codec_name = "PCMA"; break;
+          case AV_CODEC_ID_PCM_MULAW:  rtp_codec_name = "PCMU"; break;
+          case AV_CODEC_ID_OPUS:       rtp_codec_name = "opus"; break;
+          case AV_CODEC_ID_AAC:        rtp_codec_name = "mpeg4-generic"; break;
+          case AV_CODEC_ID_MP3:        rtp_codec_name = "MPA"; break;
+          case AV_CODEC_ID_VORBIS:     rtp_codec_name = "vorbis"; break;
+
+          // Video codecs
+          case AV_CODEC_ID_H264:       rtp_codec_name = "H264"; break;
+          case AV_CODEC_ID_H265:       rtp_codec_name = "H265"; break;
+          case AV_CODEC_ID_VP8:        rtp_codec_name = "VP8"; break;
+          case AV_CODEC_ID_VP9:        rtp_codec_name = "VP9"; break;
+          case AV_CODEC_ID_AV1:        rtp_codec_name = "AV1"; break;
+          case AV_CODEC_ID_MJPEG:      rtp_codec_name = "JPEG"; break;
+          case AV_CODEC_ID_MPEG4:      rtp_codec_name = "MP4V-ES"; break;
+
+          default:
+            // Fallback: use FFmpeg codec name and uppercase first letter
+            const char* ffmpeg_name = avcodec_get_name(stream->codecpar->codec_id);
+            static char fallback_name[64];
+            snprintf(fallback_name, sizeof(fallback_name), "%s", ffmpeg_name);
+            if (fallback_name[0] >= 'a' && fallback_name[0] <= 'z') {
+              fallback_name[0] = fallback_name[0] - 'a' + 'A';
+            }
+            rtp_codec_name = fallback_name;
+            break;
+        }
+
+        // Build RTP MIME type (e.g., "H264/90000" or "PCMA/8000")
+        char mime_type[128];
+
+        if (stream->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
+          // Audio-specific fields
+          int sample_rate = stream->codecpar->sample_rate;
+          int channels = stream->codecpar->ch_layout.nb_channels;
+
+          streamInfo.Set("sampleRate", Napi::Number::New(env, sample_rate));
+          streamInfo.Set("channels", Napi::Number::New(env, channels));
+
+          // Audio MIME: codec/rate or codec/rate/channels
+          if (channels > 1) {
+            snprintf(mime_type, sizeof(mime_type), "%s/%d/%d", rtp_codec_name, sample_rate, channels);
+          } else {
+            snprintf(mime_type, sizeof(mime_type), "%s/%d", rtp_codec_name, sample_rate);
+          }
+        } else if (stream->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
+          // Video MIME: codec/90000 (standard RTP clock rate for video)
+          snprintf(mime_type, sizeof(mime_type), "%s/%d", rtp_codec_name, 90000);
+        } else {
+          // Other types
+          snprintf(mime_type, sizeof(mime_type), "%s/%d", rtp_codec_name, 90000);
+        }
+
+        streamInfo.Set("mimeType", Napi::String::New(env, mime_type));
+      }
+    }
+
+    // SDP direction attribute (RFC 4566)
+    const char* direction_str = "recvonly"; // default
+    switch (rtsp_st->sdp_direction) {
+      case RTSP_DIRECTION_SENDONLY:
+        direction_str = "sendonly";
+        break;
+      case RTSP_DIRECTION_RECVONLY:
+        direction_str = "recvonly";
+        break;
+      case RTSP_DIRECTION_SENDRECV:
+        direction_str = "sendrecv";
+        break;
+      case RTSP_DIRECTION_INACTIVE:
+        direction_str = "inactive";
+        break;
+    }
+    streamInfo.Set("direction", Napi::String::New(env, direction_str));
+
+    streams.Set(i, streamInfo);
+  }
+
+  return streams;
+}
+
+Napi::Value FormatContext::SendRTSPPacket(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+
+  if (!ctx_) {
+    Napi::Error::New(env, "Format context not allocated").ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+
+  // Parameters: streamIndex (number), rtpPacketData (Buffer)
+  if (info.Length() < 2) {
+    Napi::TypeError::New(env, "Expected 2 arguments: streamIndex and rtpPacketData").ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+
+  if (!info[0].IsNumber()) {
+    Napi::TypeError::New(env, "streamIndex must be a number").ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+
+  if (!info[1].IsBuffer()) {
+    Napi::TypeError::New(env, "rtpPacketData must be a Buffer").ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+
+  // Check if this is an RTSP input context
+  if (!ctx_->iformat || !ctx_->iformat->name ||
+      (strcmp(ctx_->iformat->name, "rtsp") != 0)) {
+    return Napi::Number::New(env, AVERROR(ENOTSUP));
+  }
+
+  int stream_index = info[0].As<Napi::Number>().Int32Value();
+  Napi::Buffer<uint8_t> buffer = info[1].As<Napi::Buffer<uint8_t>>();
+  uint8_t* data = buffer.Data();
+  size_t len = buffer.Length();
+
+  // Access RTSP private data
+  RTSPState* rt = static_cast<RTSPState*>(ctx_->priv_data);
+  if (!rt) {
+    return Napi::Number::New(env, AVERROR(ENOTSUP));
+  }
+
+  // Find the RTSP stream by index
+  RTSPStream* rtsp_st = nullptr;
+  for (int i = 0; i < rt->nb_rtsp_streams; i++) {
+    if (rt->rtsp_streams[i] && rt->rtsp_streams[i]->stream_index == stream_index) {
+      rtsp_st = rt->rtsp_streams[i];
+      break;
+    }
+  }
+
+  if (!rtsp_st) {
+    return Napi::Number::New(env, AVERROR(EINVAL)); // Stream not found
+  }
+
+  int ret = 0;
+
+  // Send based on transport type
+  if (rt->lower_transport == RTSP_LOWER_TRANSPORT_TCP) {
+    // TCP: Send with interleaved header over RTSP connection
+    if (!rt->rtsp_hd) {
+      return Napi::Number::New(env, AVERROR(ENOTSUP)); // No TCP connection
+    }
+
+    // Build interleaved packet: $ + channel_id + length (2 bytes) + RTP data
+    int channel_id = rtsp_st->interleaved_min;
+    size_t total_len = 4 + len;
+    std::vector<uint8_t> interleaved_packet(total_len);
+
+    interleaved_packet[0] = '$';
+    interleaved_packet[1] = static_cast<uint8_t>(channel_id);
+    interleaved_packet[2] = static_cast<uint8_t>((len >> 8) & 0xFF);
+    interleaved_packet[3] = static_cast<uint8_t>(len & 0xFF);
+    memcpy(interleaved_packet.data() + 4, data, len);
+
+    // Write to RTSP TCP socket
+    ret = ffurl_write(static_cast<URLContext*>(rt->rtsp_hd), interleaved_packet.data(), total_len);
+
+  } else if (rt->lower_transport == RTSP_LOWER_TRANSPORT_UDP ||
+             rt->lower_transport == RTSP_LOWER_TRANSPORT_UDP_MULTICAST) {
+    // UDP: Send raw RTP packet directly over UDP socket
+    if (!rtsp_st->rtp_handle) {
+      return Napi::Number::New(env, AVERROR(ENOTSUP)); // No UDP socket
+    }
+
+    // Write raw RTP packet to UDP socket (no interleaved header)
+    ret = ffurl_write(static_cast<URLContext*>(rtsp_st->rtp_handle), data, len);
+
+  } else {
+    return Napi::Number::New(env, AVERROR(ENOTSUP)); // Unknown transport
+  }
+
   return Napi::Number::New(env, ret);
 }
 

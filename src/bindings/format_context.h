@@ -9,6 +9,7 @@
 
 extern "C" {
 #include <libavformat/avformat.h>
+#include <libavformat/url.h>
 }
 
 namespace ffmpeg {
@@ -78,6 +79,8 @@ private:
   Napi::Value GetNbStreams(const Napi::CallbackInfo& info);
   Napi::Value DumpFormat(const Napi::CallbackInfo& info);
   Napi::Value FindBestStream(const Napi::CallbackInfo& info);
+  Napi::Value GetRTSPStreamInfo(const Napi::CallbackInfo& info);
+  Napi::Value SendRTSPPacket(const Napi::CallbackInfo& info);
   Napi::Value SetFlagsMethod(const Napi::CallbackInfo& info);
   Napi::Value ClearFlagsMethod(const Napi::CallbackInfo& info);
   Napi::Value DisposeAsync(const Napi::CallbackInfo& info);

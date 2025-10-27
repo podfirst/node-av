@@ -7,7 +7,7 @@ import { OptionMember } from './option.js';
 import { OutputFormat } from './output-format.js';
 import { Stream } from './stream.js';
 
-import type { AVFormatFlag, AVMediaType, AVSeekFlag } from '../constants/constants.js';
+import type { AVCodecID, AVFormatFlag, AVMediaType, AVSeekFlag } from '../constants/constants.js';
 import type { IOContext } from './io-context.js';
 import type { NativeFormatContext, NativeWrapper } from './native-types.js';
 import type { Packet } from './packet.js';
@@ -1283,6 +1283,91 @@ export class FormatContext extends OptionMember<NativeFormatContext> implements 
    */
   clearFlags(...flags: AVFormatFlag[]): void {
     this.native.clearFlags(...flags);
+  }
+
+  /**
+   * Get RTSP stream information.
+   *
+   * Returns information about all RTSP streams including codec details.
+   * Only works with RTSP input contexts.
+   *
+   * @returns Array of stream information objects with codec details, or null if not RTSP
+   *
+   * @example
+   * ```typescript
+   * const ctx = new FormatContext();
+   * await ctx.openInput('rtsp://camera/stream?backchannel=1');
+   *
+   * const rtspStreams = ctx.getRTSPStreamInfo();
+   * if (rtspStreams) {
+   *   // Find sendonly stream (backchannel)
+   *   const backchannel = rtspStreams.find(s => s.direction === 'sendonly');
+   *   if (backchannel) {
+   *     console.log(`Transport: ${backchannel.transport}`);
+   *     console.log(`Codec ID: ${backchannel.codecId}`);
+   *     console.log(`MIME Type: ${backchannel.mimeType}`);
+   *     console.log(`Payload Type: ${backchannel.payloadType}`);
+   *     if (backchannel.sampleRate) {
+   *       console.log(`Audio: ${backchannel.sampleRate}Hz, ${backchannel.channels} channels`);
+   *     }
+   *   }
+   * }
+   * ```
+   *
+   * @internal
+   */
+  // prettier-ignore
+  getRTSPStreamInfo():
+    | {
+      streamIndex: number;
+      controlUrl: string;
+      transport: 'tcp' | 'udp' | 'udp_multicast' | 'unknown';
+      payloadType: number;
+      codecId: AVCodecID;
+      mimeType: string; // RTP MIME type (e.g., "H264/90000", "PCMA/8000")
+      sampleRate?: number; // Only for audio streams
+      channels?: number; // Only for audio streams
+      direction: 'sendonly' | 'recvonly' | 'sendrecv' | 'inactive';
+    }[]
+    | null {
+    return this.native.getRTSPStreamInfo();
+  }
+
+  /**
+   * Send RTP packet to RTSP stream (supports both TCP and UDP).
+   *
+   * Automatically handles transport-specific packet formatting:
+   * - TCP: Sends with interleaved header ($channelId + length + RTP)
+   * - UDP: Sends raw RTP packet directly to UDP socket
+   *
+   * Used for backchannel/talkback audio streaming.
+   * Only works with RTSP input contexts.
+   *
+   * @param streamIndex - RTSP stream index
+   *
+   * @param rtpData - Raw RTP packet data (12-byte header + payload)
+   *
+   * @returns Number of bytes written on success, negative AVERROR on failure
+   *
+   * @example
+   * ```typescript
+   * // Get backchannel stream info
+   * const streams = ctx.getRTSPStreamInfo();
+   * const backchannel = streams.find(s => s.direction === 'sendonly');
+   *
+   * if (backchannel) {
+   *   // Send to camera (works with both TCP and UDP)
+   *   const ret = ctx.sendRTSPPacket(backchannel.streamIndex, rtpPacket);
+   *   if (ret < 0) {
+   *     throw new Error(`Failed to send: ${ret}`);
+   *   }
+   * }
+   * ```
+   *
+   * @see {@link getRTSPStreamInfo} For getting stream info and transport type
+   */
+  sendRTSPPacket(streamIndex: number, rtpData: Buffer): number {
+    return this.native.sendRTSPPacket(streamIndex, rtpData);
   }
 
   /**

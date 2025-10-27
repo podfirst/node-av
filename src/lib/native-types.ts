@@ -532,6 +532,21 @@ export interface NativeFormatContext extends AsyncDisposable {
   ): number | { streamIndex: number; decoder: NativeCodec | null };
   setFlags(...flags: AVFormatFlag[]): void;
   clearFlags(...flags: AVFormatFlag[]): void;
+  // prettier-ignore
+  getRTSPStreamInfo():
+    | {
+      streamIndex: number;
+      controlUrl: string;
+      transport: 'tcp' | 'udp' | 'udp_multicast' | 'unknown';
+      payloadType: number;
+      codecId: AVCodecID;
+      mimeType: string; // RTP MIME type (e.g., "H264/90000", "PCMA/8000")
+      sampleRate?: number; // Only for audio streams
+      channels?: number; // Only for audio streams
+      direction: 'sendonly' | 'recvonly' | 'sendrecv' | 'inactive';
+    }[]
+    | null;
+  sendRTSPPacket(streamIndex: number, rtpData: Buffer): number;
 
   [Symbol.dispose](): void;
 }
