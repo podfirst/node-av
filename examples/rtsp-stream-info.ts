@@ -5,6 +5,7 @@
  * - Transport type (TCP/UDP)
  * - Stream direction (recvonly/sendonly/sendrecv)
  * - Codec information (ID, MIME type, payload type)
+ * - FMTP parameters from SDP
  * - Audio properties (sample rate, channels)
  * - Backchannel/talkback stream detection
  *
@@ -73,6 +74,11 @@ async function getRTSPStreamInfo(rtspUrl: string, rtspTransport = 'tcp'): Promis
       console.log(`  Payload Type: ${stream.payloadType}`);
       console.log(`  Codec ID: ${stream.codecId}`);
       console.log(`  MIME Type: ${stream.mimeType}`);
+
+      // FMTP parameters from SDP
+      if (stream.fmtp) {
+        console.log(`  FMTP: ${stream.fmtp}`);
+      }
 
       // Audio-specific fields
       if (stream.sampleRate !== undefined && stream.channels !== undefined) {

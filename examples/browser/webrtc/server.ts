@@ -57,7 +57,7 @@ wss.on('connection', async (ws: WebSocket) => {
         // Set offer and get answer
         const answer = await session.setOffer(message.value);
 
-        console.log('[WebSocket] Created SDP answer');
+        console.log('[WebSocket] Created SDP answer', answer);
         ws.send(JSON.stringify({ type: 'webrtc/answer', value: answer }));
 
         // Start streaming
