@@ -164,6 +164,7 @@ export class WebRTCStream implements Disposable {
   private audioFilter: FilterAPI | null = null;
   private audioEncoder: Encoder | null = null;
   private streamActive = false;
+  private disposed = false;
 
   /**
    * @param input - Media input source
@@ -533,9 +534,11 @@ export class WebRTCStream implements Disposable {
    * ```
    */
   dispose(): void {
-    if (!this.streamActive) {
+    if (this.disposed) {
       return;
     }
+
+    this.disposed = true;
 
     this.stop();
     this.videoOutput?.close();
@@ -1026,10 +1029,10 @@ export class WebRTCSession implements Disposable {
         const streams = ctx?.getRTSPStreamInfo();
         const backchannel = streams?.find((s) => s.direction === 'sendonly');
 
-        track.onReceiveRtp.subscribe((rtp) => {
+        track.onReceiveRtp.subscribe(async (rtp) => {
           if (backchannel && this.stream.isStreamActive) {
             try {
-              ctx?.sendRTSPPacket(backchannel.streamIndex, rtp.serialize());
+              await ctx?.sendRTSPPacket(backchannel.streamIndex, rtp.serialize());
             } catch {
               // Ignore send errors
             }
