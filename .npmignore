@@ -22,6 +22,7 @@ script.ts
 tsconfig*.json
 typedoc*.json
 *.txt
+*.zip
 CONTRIBUTING.md
 INSTALLATION.md
 CHANGELOG.md

@@ -8,10 +8,19 @@
     "type": "git",
     "url": "git://github.com/seydx/av.git"
   },
+  "type": "module",
   "files": [
-    "node-av.node"
+    "node-av.node.zip",
+    "node-av.node",
+    "install.js"
   ],
   "main": "node-av.node",
+  "scripts": {
+    "postinstall": "node install.js"
+  },
+  "dependencies": {
+    "unzipper": "^0.12.3"
+  },
   "engines": {
     "node": "^18.17.0 || ^20.3.0 || >=21.0.0"
   },

@@ -71,11 +71,14 @@ jobs:
         run: |
           node scripts/create-platform-packages.js
 
-          # Copy prebuilds to platform packages (already named node-av.node)
+          # Compress and copy prebuilds to platform packages (already named node-av.node)
           for platform in darwin-x64 darwin-arm64 linux-x64 linux-arm64 win32-x64-mingw win32-arm64-mingw win32-x64-msvc win32-arm64-msvc; do
             if [ -d "prebuilds/$platform" ]; then
-              cp "prebuilds/$platform/node-av.node" "packages/$platform/node-av.node"
-              echo "Copied binary for $platform"
+              # Create ZIP containing the .node file
+              cd "prebuilds/$platform"
+              zip -9 "../../packages/$platform/node-av.node.zip" node-av.node
+              cd ../..
+              echo "Compressed and copied binary for $platform"
             fi
           done
 
@@ -197,12 +200,6 @@ jobs:
           # Output the release notes
           cat release_notes.md
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: "*.zip"
-          body_path: release_notes.md
-
       - name: Publish to NPM
         run: |
           # Publish platform packages
@@ -214,11 +211,13 @@ jobs:
             fi
           done
 
-          # Clean up artifacts that shouldn't be in the main package
-          rm -rf prebuilds-artifacts
-          rm -f *.zip
-
           # Publish main package
           npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: "*.zip"
+          body_path: release_notes.md

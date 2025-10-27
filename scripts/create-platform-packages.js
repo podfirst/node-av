@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 
-import { mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const rootDir = join(__dirname, '..');
 const packagesDir = join(rootDir, 'packages');
+const installScriptPath = join(__dirname, 'install.js');
 
 // Platform configurations
 const platforms = [
@@ -61,10 +62,10 @@ MIT
 
   writeFileSync(join(packageDir, 'README.md'), readme);
 
+  // Copy install.js
+  copyFileSync(installScriptPath, join(packageDir, 'install.js'));
+
   console.log(`Created package for ${platform.name}`);
 });
 
 console.log('\nAll platform packages created successfully!');
-console.log('\nTo publish packages after building binaries:');
-console.log('1. Copy the built binary to packages/{platform}/node-av.node');
-console.log('2. Run: npm publish packages/{platform}');
