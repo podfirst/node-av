@@ -151,7 +151,8 @@ export interface WebRTCStreamOptions {
  * @see {@link HardwareContext} For GPU acceleration
  */
 export class WebRTCStream implements Disposable {
-  private input: MediaInput;
+  public readonly input: MediaInput;
+
   private codecInfo: WebRTCCodecInfo;
   private options: Required<WebRTCStreamOptions>;
   private videoOutput: MediaOutput | null = null;
@@ -263,6 +264,15 @@ export class WebRTCStream implements Disposable {
     }
 
     return new WebRTCStream(input, options);
+  }
+
+  /**
+   * Check if the stream is active.
+   *
+   * @returns True if the stream is active, false otherwise
+   */
+  get isStreamActive(): boolean {
+    return this.streamActive;
   }
 
   /**
@@ -825,7 +835,7 @@ export interface WebRTCSessionOptions extends Omit<WebRTCStreamOptions, 'onVideo
  * @see {@link HardwareContext} For GPU acceleration
  */
 export class WebRTCSession implements Disposable {
-  private stream: WebRTCStream | null = null;
+  private stream!: WebRTCStream;
   private pc: RTCPeerConnection | null = null;
   private videoTrack: MediaStreamTrack | null = null;
   private audioTrack: MediaStreamTrack | null = null;
@@ -919,8 +929,6 @@ export class WebRTCSession implements Disposable {
    *
    * @returns Codec configuration for video and audio streams
    *
-   * @throws {Error} If stream not initialized
-   *
    * @example
    * ```typescript
    * const session = await WebRTCSession.create('input.mp4');
@@ -931,9 +939,6 @@ export class WebRTCSession implements Disposable {
    * ```
    */
   getCodecs(): WebRTCCodecInfo {
-    if (!this.stream) {
-      throw new Error('Stream not initialized');
-    }
     return this.stream.getCodecs();
   }
 
@@ -948,8 +953,6 @@ export class WebRTCSession implements Disposable {
    * @param offerSdp - SDP offer string from remote WebRTC peer
    *
    * @returns SDP answer string to send back to remote peer
-   *
-   * @throws {Error} If stream not initialized
    *
    * @example
    * ```typescript
@@ -966,10 +969,6 @@ export class WebRTCSession implements Disposable {
    * ```
    */
   async setOffer(offerSdp: string): Promise<string> {
-    if (!this.stream) {
-      throw new Error('Stream not initialized');
-    }
-
     const codecs = this.stream.getCodecs();
 
     const videoConfig: any = codecs.video;
@@ -1011,15 +1010,31 @@ export class WebRTCSession implements Disposable {
     });
 
     // Setup tracks
-    this.pc.onTransceiverAdded.subscribe((transceiver) => {
+    this.pc.onRemoteTransceiverAdded.subscribe(async (transceiver) => {
       if (transceiver.kind === 'video') {
         this.videoTrack = new MediaStreamTrack({ kind: 'video' });
         transceiver.sender.replaceTrack(this.videoTrack);
         transceiver.setDirection('sendonly');
-      } else if (transceiver.kind === 'audio') {
+      } else if (transceiver.kind === 'audio' && this.audioTrack === null) {
         this.audioTrack = new MediaStreamTrack({ kind: 'audio' });
         transceiver.sender.replaceTrack(this.audioTrack);
         transceiver.setDirection('sendonly');
+      } else if (transceiver.kind === 'audio') {
+        // Backchannel
+        const [track] = await transceiver.onTrack.asPromise();
+        const ctx = this.stream.input.getFormatContext();
+        const streams = ctx?.getRTSPStreamInfo();
+        const backchannel = streams?.find((s) => s.direction === 'sendonly');
+
+        track.onReceiveRtp.subscribe((rtp) => {
+          if (backchannel && this.stream.isStreamActive) {
+            try {
+              ctx?.sendRTSPPacket(backchannel.streamIndex, rtp.serialize());
+            } catch {
+              // Ignore send errors
+            }
+          }
+        });
       }
     });
 
@@ -1067,8 +1082,6 @@ export class WebRTCSession implements Disposable {
    *
    * @returns Promise that resolves when streaming completes
    *
-   * @throws {Error} If stream not initialized
-   *
    * @throws {FFmpegError} If transcoding or muxing fails
    *
    * @example
@@ -1095,9 +1108,6 @@ export class WebRTCSession implements Disposable {
    * ```
    */
   async start(): Promise<void> {
-    if (!this.stream) {
-      throw new Error('Stream not initialized');
-    }
     await this.stream.start();
   }
 
@@ -1121,7 +1131,7 @@ export class WebRTCSession implements Disposable {
    * ```
    */
   stop(): void {
-    this.stream?.stop();
+    this.stream.stop();
   }
 
   /**
@@ -1149,7 +1159,7 @@ export class WebRTCSession implements Disposable {
    */
   dispose(): void {
     this.stop();
-    this.stream?.dispose();
+    this.stream.dispose();
     this.pc?.close();
     this.videoTrack = null;
     this.audioTrack = null;

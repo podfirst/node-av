@@ -134,6 +134,7 @@
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
         gap: 15px;
+        margin-top: 15px;
       }
 
       .info-card {
@@ -153,6 +154,51 @@
         font-size: 16px;
         color: #fff;
         font-family: monospace;
+      }
+
+      .talkback-container {
+        margin: 15px 0;
+      }
+
+      .talkback-button {
+        width: 100%;
+        height: 56px;
+        border-radius: 8px;
+        background: #2a2a2a;
+        border: 2px solid #444;
+        color: #ccc;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        font-size: 15px;
+        font-weight: 500;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .talkback-button:hover {
+        background: #333;
+        border-color: #555;
+      }
+
+      .talkback-button.active {
+        background: #dc3545;
+        border-color: #dc3545;
+        color: white;
+      }
+
+      .talkback-button.active:hover {
+        background: #c82333;
+        border-color: #c82333;
+      }
+
+      .mic-icon {
+        width: 24px;
+        height: 24px;
+        fill: currentColor;
       }
     </style>
   </head>
@@ -175,6 +221,17 @@
             <div class="play-icon"></div>
           </div>
         </div>
+      </div>
+
+      <div class="talkback-container">
+        <button id="mic" class="talkback-button">
+          <svg class="mic-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path
+              d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z M17.3 11c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"
+            />
+          </svg>
+          <span id="micText">Click to Enable</span>
+        </button>
       </div>
 
       <div class="info-grid">
@@ -208,11 +265,14 @@
       const iceStateEl = document.getElementById('iceState');
       const resolutionEl = document.getElementById('resolution');
       const bitrateEl = document.getElementById('bitrate');
+      const micEl = document.getElementById('mic');
+      const micTextEl = document.getElementById('micText');
 
       let ws = null;
       let pc = null;
+      let mic = null;
 
-      function createPC() {
+      async function createPC() {
         const pc = new RTCPeerConnection({
           iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
         });
@@ -221,8 +281,11 @@
           console.log('Received track:', event.track.kind);
         };
 
-        const tracks = ['video', 'audio'].map((kind) => pc.addTransceiver(kind, { direction: 'recvonly' }).receiver.track);
-        document.getElementById('video').srcObject = new MediaStream(tracks);
+        const videoTransceiver = pc.addTransceiver('video', { direction: 'recvonly' });
+        const audioTransceiver = pc.addTransceiver('audio', { direction: 'recvonly' });
+        mic = pc.addTransceiver('audio', { direction: 'sendonly' });
+
+        document.getElementById('video').srcObject = new MediaStream([videoTransceiver.receiver.track, audioTransceiver.receiver.track]);
 
         return pc;
       }
@@ -259,6 +322,8 @@
         iceStateEl.textContent = '-';
         resolutionEl.textContent = '-';
         bitrateEl.textContent = '-';
+        micEl.classList.remove('active');
+        micTextEl.textContent = 'Click to Enable';
         updateStatus(false, 'Ready');
 
         // Show play overlay, disable stop button
@@ -279,7 +344,7 @@
         updateStatus(false, 'Connecting...');
 
         // Connect to WebSocket server
-        pc = createPC();
+        pc = await createPC();
         ws = new WebSocket('ws://localhost:8081');
 
         ws.addEventListener('open', () => {
@@ -363,6 +428,31 @@
           playOverlay.classList.remove('hidden');
           stopButton.disabled = true;
         });
+      });
+
+      micEl.addEventListener('click', async () => {
+        if (!pc || !mic) {
+          return;
+        }
+
+        if (micEl.classList.contains('active')) {
+          micEl.classList.remove('active');
+          micTextEl.textContent = 'Click to Enable';
+          console.log('Talkback disabled');
+          await mic?.sender.replaceTrack(null);
+        } else {
+          try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const audioTrack = stream.getAudioTracks()[0];
+            await mic?.sender.replaceTrack(audioTrack);
+            micEl.classList.add('active');
+            micTextEl.textContent = 'Talkback Active';
+            console.log('Talkback enabled');
+          } catch (error) {
+            console.error('Failed to access microphone:', error);
+            alert('Failed to access microphone. Please grant permission.');
+          }
+        }
       });
 
       stopButton.addEventListener('click', () => {
