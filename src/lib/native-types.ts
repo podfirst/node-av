@@ -540,10 +540,11 @@ export interface NativeFormatContext extends AsyncDisposable {
       transport: 'tcp' | 'udp' | 'udp_multicast' | 'unknown';
       payloadType: number;
       codecId: AVCodecID;
-      mimeType: string; // RTP MIME type (e.g., "H264/90000", "PCMA/8000")
+      mimeType: string; // RTP MIME type from SDP (e.g., "H264/90000", "PCMA/8000/1")
       sampleRate?: number; // Only for audio streams
       channels?: number; // Only for audio streams
       direction: 'sendonly' | 'recvonly' | 'sendrecv' | 'inactive';
+      fmtp?: string; // FMTP parameters from SDP (e.g., "packetization-mode=1; sprop-parameter-sets=...")
     }[]
     | null;
   sendRTSPPacket(streamIndex: number, rtpData: Buffer): Promise<number>;

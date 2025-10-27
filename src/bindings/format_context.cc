@@ -406,64 +406,89 @@ Napi::Value FormatContext::GetRTSPStreamInfo(const Napi::CallbackInfo& info) {
       if (stream && stream->codecpar) {
         streamInfo.Set("codecId", Napi::Number::New(env, stream->codecpar->codec_id));
 
-        // Map AVCodecID to RTP/SDP-compliant codec name
-        const char* rtp_codec_name = nullptr;
-        switch (stream->codecpar->codec_id) {
-          // Audio codecs
-          case AV_CODEC_ID_PCM_ALAW:   rtp_codec_name = "PCMA"; break;
-          case AV_CODEC_ID_PCM_MULAW:  rtp_codec_name = "PCMU"; break;
-          case AV_CODEC_ID_OPUS:       rtp_codec_name = "opus"; break;
-          case AV_CODEC_ID_AAC:        rtp_codec_name = "mpeg4-generic"; break;
-          case AV_CODEC_ID_MP3:        rtp_codec_name = "MPA"; break;
-          case AV_CODEC_ID_VORBIS:     rtp_codec_name = "vorbis"; break;
+        // Use MIME type directly from SDP if available, otherwise build from parsed values
+        if (rtsp_st->sdp_mime_type[0] != '\0') {
+          // Use the complete MIME type string from SDP rtpmap line
+          streamInfo.Set("mimeType", Napi::String::New(env, rtsp_st->sdp_mime_type));
+        } else {
+          // Get RTP codec name from dynamic_handler (directly from SDP) if available
+          const char* rtp_codec_name = nullptr;
+          if (rtsp_st->dynamic_handler && rtsp_st->dynamic_handler->enc_name) {
+            rtp_codec_name = rtsp_st->dynamic_handler->enc_name;
+          } else {
+            // Fallback: Map AVCodecID to RTP/SDP-compliant codec name
+            switch (stream->codecpar->codec_id) {
+              // Audio codecs
+              case AV_CODEC_ID_PCM_ALAW:   rtp_codec_name = "PCMA"; break;
+              case AV_CODEC_ID_PCM_MULAW:  rtp_codec_name = "PCMU"; break;
+              case AV_CODEC_ID_OPUS:       rtp_codec_name = "opus"; break;
+              case AV_CODEC_ID_AAC:        rtp_codec_name = "mpeg4-generic"; break;
+              case AV_CODEC_ID_MP3:        rtp_codec_name = "MPA"; break;
+              case AV_CODEC_ID_VORBIS:     rtp_codec_name = "vorbis"; break;
 
-          // Video codecs
-          case AV_CODEC_ID_H264:       rtp_codec_name = "H264"; break;
-          case AV_CODEC_ID_H265:       rtp_codec_name = "H265"; break;
-          case AV_CODEC_ID_VP8:        rtp_codec_name = "VP8"; break;
-          case AV_CODEC_ID_VP9:        rtp_codec_name = "VP9"; break;
-          case AV_CODEC_ID_AV1:        rtp_codec_name = "AV1"; break;
-          case AV_CODEC_ID_MJPEG:      rtp_codec_name = "JPEG"; break;
-          case AV_CODEC_ID_MPEG4:      rtp_codec_name = "MP4V-ES"; break;
+              // Video codecs
+              case AV_CODEC_ID_H264:       rtp_codec_name = "H264"; break;
+              case AV_CODEC_ID_H265:       rtp_codec_name = "H265"; break;
+              case AV_CODEC_ID_VP8:        rtp_codec_name = "VP8"; break;
+              case AV_CODEC_ID_VP9:        rtp_codec_name = "VP9"; break;
+              case AV_CODEC_ID_AV1:        rtp_codec_name = "AV1"; break;
+              case AV_CODEC_ID_MJPEG:      rtp_codec_name = "JPEG"; break;
+              case AV_CODEC_ID_MPEG4:      rtp_codec_name = "MP4V-ES"; break;
 
-          default:
-            // Fallback: use FFmpeg codec name and uppercase first letter
-            const char* ffmpeg_name = avcodec_get_name(stream->codecpar->codec_id);
-            static char fallback_name[64];
-            snprintf(fallback_name, sizeof(fallback_name), "%s", ffmpeg_name);
-            if (fallback_name[0] >= 'a' && fallback_name[0] <= 'z') {
-              fallback_name[0] = fallback_name[0] - 'a' + 'A';
+              default:
+                // Fallback: use FFmpeg codec name and uppercase first letter
+                const char* ffmpeg_name = avcodec_get_name(stream->codecpar->codec_id);
+                static char fallback_name[64];
+                snprintf(fallback_name, sizeof(fallback_name), "%s", ffmpeg_name);
+                if (fallback_name[0] >= 'a' && fallback_name[0] <= 'z') {
+                  fallback_name[0] = fallback_name[0] - 'a' + 'A';
+                }
+                rtp_codec_name = fallback_name;
+                break;
             }
-            rtp_codec_name = fallback_name;
-            break;
+          }
+
+
+          // Fallback: Build RTP MIME type from SDP-parsed values (e.g., "H264/90000" or "PCMA/8000")
+          char mime_type[128];
+
+          if (stream->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
+            // Audio: Use sample_rate from SDP (clock rate) and channels
+            int sample_rate = stream->codecpar->sample_rate;
+            int channels = stream->codecpar->ch_layout.nb_channels;
+
+            streamInfo.Set("sampleRate", Napi::Number::New(env, sample_rate));
+            streamInfo.Set("channels", Napi::Number::New(env, channels));
+
+            // Audio MIME: codec/rate or codec/rate/channels (as parsed from SDP)
+            if (channels > 1) {
+              snprintf(mime_type, sizeof(mime_type), "%s/%d/%d", rtp_codec_name, sample_rate, channels);
+            } else {
+              snprintf(mime_type, sizeof(mime_type), "%s/%d", rtp_codec_name, sample_rate);
+            }
+          } else if (stream->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
+            // Video: Use clock rate from timebase (as parsed from SDP rtpmap line)
+            // FFmpeg stores the clock rate in time_base.den (numerator is 1)
+            int clock_rate = stream->time_base.den;
+
+            // Video MIME: codec/clock_rate (as parsed from SDP)
+            snprintf(mime_type, sizeof(mime_type), "%s/%d", rtp_codec_name, clock_rate);
+          } else {
+            // Other types: Use clock rate from timebase if available
+            int clock_rate = stream->time_base.den > 0 ? stream->time_base.den : 90000;
+            snprintf(mime_type, sizeof(mime_type), "%s/%d", rtp_codec_name, clock_rate);
+          }
+
+          streamInfo.Set("mimeType", Napi::String::New(env, mime_type));
         }
 
-        // Build RTP MIME type (e.g., "H264/90000" or "PCMA/8000")
-        char mime_type[128];
-
+        // Add audio properties if not set yet (when using sdp_mime_type directly)
         if (stream->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
-          // Audio-specific fields
           int sample_rate = stream->codecpar->sample_rate;
           int channels = stream->codecpar->ch_layout.nb_channels;
-
           streamInfo.Set("sampleRate", Napi::Number::New(env, sample_rate));
           streamInfo.Set("channels", Napi::Number::New(env, channels));
-
-          // Audio MIME: codec/rate or codec/rate/channels
-          if (channels > 1) {
-            snprintf(mime_type, sizeof(mime_type), "%s/%d/%d", rtp_codec_name, sample_rate, channels);
-          } else {
-            snprintf(mime_type, sizeof(mime_type), "%s/%d", rtp_codec_name, sample_rate);
-          }
-        } else if (stream->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
-          // Video MIME: codec/90000 (standard RTP clock rate for video)
-          snprintf(mime_type, sizeof(mime_type), "%s/%d", rtp_codec_name, 90000);
-        } else {
-          // Other types
-          snprintf(mime_type, sizeof(mime_type), "%s/%d", rtp_codec_name, 90000);
         }
-
-        streamInfo.Set("mimeType", Napi::String::New(env, mime_type));
       }
     }
 
@@ -484,6 +509,11 @@ Napi::Value FormatContext::GetRTSPStreamInfo(const Napi::CallbackInfo& info) {
         break;
     }
     streamInfo.Set("direction", Napi::String::New(env, direction_str));
+
+    // Add FMTP parameters from SDP if available
+    if (rtsp_st->sdp_fmtp[0] != '\0') {
+      streamInfo.Set("fmtp", Napi::String::New(env, rtsp_st->sdp_fmtp));
+    }
 
     streams.Set(i, streamInfo);
   }

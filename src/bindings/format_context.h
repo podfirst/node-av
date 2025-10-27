@@ -40,6 +40,15 @@ enum RTSPLowerTransport {
     RTSP_LOWER_TRANSPORT_UDP_MULTICAST = 2,
 };
 
+// Forward declaration for RTPDynamicProtocolHandler
+typedef struct RTPDynamicProtocolHandler RTPDynamicProtocolHandler;
+
+// RTPDynamicProtocolHandler structure (from rtpdec.h)
+struct RTPDynamicProtocolHandler {
+    const char *enc_name;          // Encoding name from SDP (e.g., "H264", "PCMA")
+    // ... other fields we don't need to access
+};
+
 // Forward declarations matching FFmpeg's internal structures
 typedef struct RTSPStream {
     void *rtp_handle;              // URLContext* - RTP stream handle (if UDP)
@@ -59,6 +68,11 @@ typedef struct RTSPStream {
     int sdp_ttl;
     int sdp_payload_type;
     enum RTSPSDPDirection sdp_direction;
+    char sdp_fmtp[2048];      // fmtp line from SDP (a=fmtp:PT ...)
+    char sdp_mime_type[128];  // complete MIME type from rtpmap (e.g., "H264/90000" or "PCMA/8000/1")
+
+    // Dynamic protocol handler - contains codec name from SDP
+    const RTPDynamicProtocolHandler *dynamic_handler;
 } RTSPStream;
 
 typedef struct RTSPState {
