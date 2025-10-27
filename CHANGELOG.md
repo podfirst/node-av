@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.2] - 2025-10-27
+
 ### Added
 
 - **RTSP Backchannel/Talkback Support**: New methods for bi-directional RTSP communication with IP cameras
