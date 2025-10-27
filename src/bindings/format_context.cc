@@ -9,10 +9,10 @@
 #include "common.h"
 #include <napi.h>
 #include <memory>
-#include <sys/socket.h>
 
 extern "C" {
 #include <libavformat/internal.h>
+#include <libavformat/network.h>
 }
 
 namespace ffmpeg {
