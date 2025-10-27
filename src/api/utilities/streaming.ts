@@ -1,6 +1,6 @@
 import { avSdpCreate } from '../../lib/utilities.js';
 
-import type { MediaInput } from '../media-input.js';
+import type { FormatContext } from '../../lib/format-context.js';
 import type { MediaOutput } from '../media-output.js';
 
 /**
@@ -46,26 +46,15 @@ export class StreamingUtils {
    * await output2.addAudioStream(encoder2);
    *
    * // Generate SDP for multicast streaming
-   * const sdp = StreamingUtils.createSdp([output1, output2]);
+   * const sdp = StreamingUtils.createSdp([output1.getFormatContext(), output2.getFormatContext()]);
    * if (sdp) {
    *   // Write to file for VLC or other players
    *   await fs.writeFile('stream.sdp', sdp);
    * }
    * ```
    */
-  static createSdp(inouts: MediaInput[] | MediaOutput[]): string | null {
-    if (inouts?.length === 0) {
-      return null;
-    }
-
-    // Extract FormatContext from each MediaOutput
-    const contexts = inouts
-      .map((inout) => {
-        return inout.getFormatContext();
-      })
-      .filter((ctx) => ctx != null);
-
-    if (contexts.length === 0) {
+  static createSdp(contexts: FormatContext[]): string | null {
+    if (contexts?.length === 0) {
       return null;
     }
 
