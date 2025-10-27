@@ -101,7 +101,7 @@
     "typedoc-vitepress-theme": "^1.1.2",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.46.2",
-    "updates": "^16.8.2",
+    "updates": "^16.9.1",
     "vitepress": "^2.0.0-alpha.12",
     "ws": "^8.18.3"
   },

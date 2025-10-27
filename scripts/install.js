@@ -41,11 +41,7 @@ async function extractBinary() {
 
     // Extract to target path
     await new Promise((resolve, reject) => {
-      nodeFile
-        .stream()
-        .pipe(createWriteStream(targetPath))
-        .on('finish', resolve)
-        .on('error', reject);
+      nodeFile.stream().pipe(createWriteStream(targetPath)).on('finish', resolve).on('error', reject);
     });
 
     console.log('Binary extracted successfully');
