@@ -546,7 +546,8 @@ export interface NativeFormatContext extends AsyncDisposable {
       direction: 'sendonly' | 'recvonly' | 'sendrecv' | 'inactive';
     }[]
     | null;
-  sendRTSPPacket(streamIndex: number, rtpData: Buffer): number;
+  sendRTSPPacket(streamIndex: number, rtpData: Buffer): Promise<number>;
+  sendRTSPPacketSync(streamIndex: number, rtpData: Buffer): number;
 
   [Symbol.dispose](): void;
 }

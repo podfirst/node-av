@@ -832,4 +832,141 @@ Napi::Value FormatContext::FlushAsync(const Napi::CallbackInfo& info) {
   return worker->GetPromise();
 }
 
+class FCSendRTSPPacketWorker : public Napi::AsyncWorker {
+public:
+  FCSendRTSPPacketWorker(Napi::Env env, FormatContext* parent, int stream_index,
+                         const uint8_t* data, size_t len)
+    : AsyncWorker(env),
+      parent_(parent),
+      stream_index_(stream_index),
+      rtp_data_(data, data + len),
+      result_(0),
+      deferred_(Napi::Promise::Deferred::New(env)) {}
+
+  void Execute() override {
+    if (!parent_->ctx_) {
+      result_ = AVERROR(EINVAL);
+      return;
+    }
+
+    // Check if this is an RTSP input context
+    if (!parent_->ctx_->iformat || !parent_->ctx_->iformat->name ||
+        (strcmp(parent_->ctx_->iformat->name, "rtsp") != 0)) {
+      result_ = AVERROR(ENOTSUP);
+      return;
+    }
+
+    // Access RTSP private data
+    RTSPState* rt = static_cast<RTSPState*>(parent_->ctx_->priv_data);
+    if (!rt) {
+      result_ = AVERROR(ENOTSUP);
+      return;
+    }
+
+    // Find the RTSP stream by index
+    RTSPStream* rtsp_st = nullptr;
+    for (int i = 0; i < rt->nb_rtsp_streams; i++) {
+      if (rt->rtsp_streams[i] && rt->rtsp_streams[i]->stream_index == stream_index_) {
+        rtsp_st = rt->rtsp_streams[i];
+        break;
+      }
+    }
+
+    if (!rtsp_st) {
+      result_ = AVERROR(EINVAL); // Stream not found
+      return;
+    }
+
+    // Send based on transport type
+    if (rt->lower_transport == RTSP_LOWER_TRANSPORT_TCP) {
+      // TCP: Send with interleaved header over RTSP connection
+      if (!rt->rtsp_hd) {
+        result_ = AVERROR(ENOTSUP); // No TCP connection
+        return;
+      }
+
+      // Build interleaved packet: $ + channel_id + length (2 bytes) + RTP data
+      int channel_id = rtsp_st->interleaved_min;
+      size_t total_len = 4 + rtp_data_.size();
+      std::vector<uint8_t> interleaved_packet(total_len);
+
+      interleaved_packet[0] = '$';
+      interleaved_packet[1] = static_cast<uint8_t>(channel_id);
+      interleaved_packet[2] = static_cast<uint8_t>((rtp_data_.size() >> 8) & 0xFF);
+      interleaved_packet[3] = static_cast<uint8_t>(rtp_data_.size() & 0xFF);
+      memcpy(interleaved_packet.data() + 4, rtp_data_.data(), rtp_data_.size());
+
+      // Write to RTSP TCP socket
+      result_ = ffurl_write(static_cast<URLContext*>(rt->rtsp_hd), interleaved_packet.data(), total_len);
+
+    } else if (rt->lower_transport == RTSP_LOWER_TRANSPORT_UDP ||
+               rt->lower_transport == RTSP_LOWER_TRANSPORT_UDP_MULTICAST) {
+      // UDP: Send raw RTP packet directly over UDP socket
+      if (!rtsp_st->rtp_handle) {
+        result_ = AVERROR(ENOTSUP); // No UDP socket
+        return;
+      }
+
+      // Write raw RTP packet to UDP socket (no interleaved header)
+      result_ = ffurl_write(static_cast<URLContext*>(rtsp_st->rtp_handle),
+                           rtp_data_.data(), rtp_data_.size());
+
+    } else {
+      result_ = AVERROR(ENOTSUP); // Unknown transport
+    }
+  }
+
+  void OnOK() override {
+    Napi::HandleScope scope(Env());
+    deferred_.Resolve(Napi::Number::New(Env(), result_));
+  }
+
+  void OnError(const Napi::Error& error) override {
+    deferred_.Reject(error.Value());
+  }
+
+  Napi::Promise GetPromise() { return deferred_.Promise(); }
+
+private:
+  FormatContext* parent_;
+  int stream_index_;
+  std::vector<uint8_t> rtp_data_;
+  int result_;
+  Napi::Promise::Deferred deferred_;
+};
+
+Napi::Value FormatContext::SendRTSPPacketAsync(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+
+  if (!ctx_) {
+    Napi::Error::New(env, "Format context not allocated").ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+
+  // Parameters: streamIndex (number), rtpPacketData (Buffer)
+  if (info.Length() < 2) {
+    Napi::TypeError::New(env, "Expected 2 arguments: streamIndex and rtpPacketData").ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+
+  if (!info[0].IsNumber()) {
+    Napi::TypeError::New(env, "streamIndex must be a number").ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+
+  if (!info[1].IsBuffer()) {
+    Napi::TypeError::New(env, "rtpPacketData must be a Buffer").ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+
+  int stream_index = info[0].As<Napi::Number>().Int32Value();
+  Napi::Buffer<uint8_t> buffer = info[1].As<Napi::Buffer<uint8_t>>();
+  uint8_t* data = buffer.Data();
+  size_t len = buffer.Length();
+
+  auto* worker = new FCSendRTSPPacketWorker(env, this, stream_index, data, len);
+  worker->Queue();
+  return worker->GetPromise();
+}
+
 } // namespace ffmpeg

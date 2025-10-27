@@ -10,7 +10,73 @@
 extern "C" {
 #include <libavformat/avformat.h>
 #include <libavformat/url.h>
+#include <libavformat/internal.h>
 }
+
+// Platform-specific socket headers for RTSP
+#ifdef _WIN32
+  #ifndef WIN32_LEAN_AND_MEAN
+    #define WIN32_LEAN_AND_MEAN
+  #endif
+  #include <winsock2.h>
+  #include <ws2tcpip.h>
+#else
+  #include <sys/socket.h>
+  #include <netinet/in.h>
+#endif
+
+// SDP direction enum from rtsp.h
+enum RTSPSDPDirection {
+    RTSP_DIRECTION_RECVONLY = 0,
+    RTSP_DIRECTION_SENDONLY = 1,
+    RTSP_DIRECTION_SENDRECV = 2,
+    RTSP_DIRECTION_INACTIVE = 3,
+};
+
+// RTSP lower transport enum from rtsp.h
+enum RTSPLowerTransport {
+    RTSP_LOWER_TRANSPORT_UDP = 0,
+    RTSP_LOWER_TRANSPORT_TCP = 1,
+    RTSP_LOWER_TRANSPORT_UDP_MULTICAST = 2,
+};
+
+// Forward declarations matching FFmpeg's internal structures
+typedef struct RTSPStream {
+    void *rtp_handle;              // URLContext* - RTP stream handle (if UDP)
+    void *transport_priv;          // RTP/RDT parse context if input
+    int stream_index;              // corresponding stream index, -1 if none
+    int interleaved_min;           // interleaved channel IDs for TCP
+    int interleaved_max;
+    char control_url[MAX_URL_SIZE]; // url for this stream (from SDP)
+
+    // SDP fields - need correct layout to access sdp_direction
+    int sdp_port;
+    struct sockaddr_storage sdp_ip; // 128 bytes on most platforms
+    int nb_include_source_addrs;
+    void *include_source_addrs;
+    int nb_exclude_source_addrs;
+    void *exclude_source_addrs;
+    int sdp_ttl;
+    int sdp_payload_type;
+    enum RTSPSDPDirection sdp_direction;
+} RTSPStream;
+
+typedef struct RTSPState {
+    const void *av_class;          // AVClass* - using void* to avoid 'class' keyword
+    void *rtsp_hd;                 // URLContext* - RTSP TCP connection handle
+    int nb_rtsp_streams;           // number of items in rtsp_streams array
+    RTSPStream **rtsp_streams;     // streams in this session
+
+    // Need to include these fields to get correct offset to lower_transport
+    int state;                     // enum RTSPClientState
+    int64_t seek_timestamp;
+    int seq;
+    char session_id[512];
+    int timeout;
+    int64_t last_cmd_time;
+    int transport;                 // enum RTSPTransport
+    enum RTSPLowerTransport lower_transport;  // The field we want!
+} RTSPState;
 
 namespace ffmpeg {
 
@@ -40,6 +106,7 @@ private:
   friend class FCCloseInputWorker;
   friend class FCDisposeWorker;
   friend class FCFlushWorker;
+  friend class FCSendRTSPPacketWorker;
 
   static Napi::FunctionReference constructor;
 
@@ -80,7 +147,8 @@ private:
   Napi::Value DumpFormat(const Napi::CallbackInfo& info);
   Napi::Value FindBestStream(const Napi::CallbackInfo& info);
   Napi::Value GetRTSPStreamInfo(const Napi::CallbackInfo& info);
-  Napi::Value SendRTSPPacket(const Napi::CallbackInfo& info);
+  Napi::Value SendRTSPPacketAsync(const Napi::CallbackInfo& info);
+  Napi::Value SendRTSPPacketSync(const Napi::CallbackInfo& info);
   Napi::Value SetFlagsMethod(const Napi::CallbackInfo& info);
   Napi::Value ClearFlagsMethod(const Napi::CallbackInfo& info);
   Napi::Value DisposeAsync(const Napi::CallbackInfo& info);

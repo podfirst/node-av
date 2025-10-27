@@ -10,21 +10,6 @@
 #include <napi.h>
 #include <memory>
 
-extern "C" {
-#include <libavformat/internal.h>
-}
-
-#ifdef _WIN32
-  #ifndef WIN32_LEAN_AND_MEAN
-    #define WIN32_LEAN_AND_MEAN
-  #endif
-  #include <winsock2.h>
-  #include <ws2tcpip.h>
-#else
-  #include <sys/socket.h>
-  #include <netinet/in.h>
-#endif
-
 namespace ffmpeg {
 
 Napi::FunctionReference FormatContext::constructor;
@@ -63,7 +48,8 @@ Napi::Object FormatContext::Init(Napi::Env env, Napi::Object exports) {
     InstanceMethod<&FormatContext::DumpFormat>("dumpFormat"),
     InstanceMethod<&FormatContext::FindBestStream>("findBestStream"),
     InstanceMethod<&FormatContext::GetRTSPStreamInfo>("getRTSPStreamInfo"),
-    InstanceMethod<&FormatContext::SendRTSPPacket>("sendRTSPPacket"),
+    InstanceMethod<&FormatContext::SendRTSPPacketAsync>("sendRTSPPacket"),
+    InstanceMethod<&FormatContext::SendRTSPPacketSync>("sendRTSPPacketSync"),
     InstanceMethod<&FormatContext::SetFlagsMethod>("setFlags"),
     InstanceMethod<&FormatContext::ClearFlagsMethod>("clearFlags"),
     InstanceMethod(Napi::Symbol::WellKnown(env, "asyncDispose"), &FormatContext::DisposeAsync),
@@ -367,59 +353,6 @@ Napi::Value FormatContext::FindBestStream(const Napi::CallbackInfo& info) {
   return Napi::Number::New(env, ret);
 }
 
-// SDP direction enum from rtsp.h
-enum RTSPSDPDirection {
-    RTSP_DIRECTION_RECVONLY = 0,
-    RTSP_DIRECTION_SENDONLY = 1,
-    RTSP_DIRECTION_SENDRECV = 2,
-    RTSP_DIRECTION_INACTIVE = 3,
-};
-
-// RTSP lower transport enum from rtsp.h
-enum RTSPLowerTransport {
-    RTSP_LOWER_TRANSPORT_UDP = 0,
-    RTSP_LOWER_TRANSPORT_TCP = 1,
-    RTSP_LOWER_TRANSPORT_UDP_MULTICAST = 2,
-};
-
-// Forward declarations matching FFmpeg's internal structures
-typedef struct RTSPStream {
-    void *rtp_handle;              // URLContext* - RTP stream handle (if UDP)
-    void *transport_priv;          // RTP/RDT parse context if input
-    int stream_index;              // corresponding stream index, -1 if none
-    int interleaved_min;           // interleaved channel IDs for TCP
-    int interleaved_max;
-    char control_url[MAX_URL_SIZE]; // url for this stream (from SDP)
-
-    // SDP fields - need correct layout to access sdp_direction
-    int sdp_port;
-    struct sockaddr_storage sdp_ip; // 128 bytes on most platforms
-    int nb_include_source_addrs;
-    void *include_source_addrs;
-    int nb_exclude_source_addrs;
-    void *exclude_source_addrs;
-    int sdp_ttl;
-    int sdp_payload_type;
-    enum RTSPSDPDirection sdp_direction;
-} RTSPStream;
-
-typedef struct RTSPState {
-    const void *av_class;          // AVClass* - using void* to avoid 'class' keyword
-    void *rtsp_hd;                 // URLContext* - RTSP TCP connection handle
-    int nb_rtsp_streams;           // number of items in rtsp_streams array
-    RTSPStream **rtsp_streams;     // streams in this session
-
-    // Need to include these fields to get correct offset to lower_transport
-    int state;                     // enum RTSPClientState
-    int64_t seek_timestamp;
-    int seq;
-    char session_id[512];
-    int timeout;
-    int64_t last_cmd_time;
-    int transport;                 // enum RTSPTransport
-    enum RTSPLowerTransport lower_transport;  // The field we want!
-} RTSPState;
-
 Napi::Value FormatContext::GetRTSPStreamInfo(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
 
@@ -556,100 +489,6 @@ Napi::Value FormatContext::GetRTSPStreamInfo(const Napi::CallbackInfo& info) {
   }
 
   return streams;
-}
-
-Napi::Value FormatContext::SendRTSPPacket(const Napi::CallbackInfo& info) {
-  Napi::Env env = info.Env();
-
-  if (!ctx_) {
-    Napi::Error::New(env, "Format context not allocated").ThrowAsJavaScriptException();
-    return env.Undefined();
-  }
-
-  // Parameters: streamIndex (number), rtpPacketData (Buffer)
-  if (info.Length() < 2) {
-    Napi::TypeError::New(env, "Expected 2 arguments: streamIndex and rtpPacketData").ThrowAsJavaScriptException();
-    return env.Undefined();
-  }
-
-  if (!info[0].IsNumber()) {
-    Napi::TypeError::New(env, "streamIndex must be a number").ThrowAsJavaScriptException();
-    return env.Undefined();
-  }
-
-  if (!info[1].IsBuffer()) {
-    Napi::TypeError::New(env, "rtpPacketData must be a Buffer").ThrowAsJavaScriptException();
-    return env.Undefined();
-  }
-
-  // Check if this is an RTSP input context
-  if (!ctx_->iformat || !ctx_->iformat->name ||
-      (strcmp(ctx_->iformat->name, "rtsp") != 0)) {
-    return Napi::Number::New(env, AVERROR(ENOTSUP));
-  }
-
-  int stream_index = info[0].As<Napi::Number>().Int32Value();
-  Napi::Buffer<uint8_t> buffer = info[1].As<Napi::Buffer<uint8_t>>();
-  uint8_t* data = buffer.Data();
-  size_t len = buffer.Length();
-
-  // Access RTSP private data
-  RTSPState* rt = static_cast<RTSPState*>(ctx_->priv_data);
-  if (!rt) {
-    return Napi::Number::New(env, AVERROR(ENOTSUP));
-  }
-
-  // Find the RTSP stream by index
-  RTSPStream* rtsp_st = nullptr;
-  for (int i = 0; i < rt->nb_rtsp_streams; i++) {
-    if (rt->rtsp_streams[i] && rt->rtsp_streams[i]->stream_index == stream_index) {
-      rtsp_st = rt->rtsp_streams[i];
-      break;
-    }
-  }
-
-  if (!rtsp_st) {
-    return Napi::Number::New(env, AVERROR(EINVAL)); // Stream not found
-  }
-
-  int ret = 0;
-
-  // Send based on transport type
-  if (rt->lower_transport == RTSP_LOWER_TRANSPORT_TCP) {
-    // TCP: Send with interleaved header over RTSP connection
-    if (!rt->rtsp_hd) {
-      return Napi::Number::New(env, AVERROR(ENOTSUP)); // No TCP connection
-    }
-
-    // Build interleaved packet: $ + channel_id + length (2 bytes) + RTP data
-    int channel_id = rtsp_st->interleaved_min;
-    size_t total_len = 4 + len;
-    std::vector<uint8_t> interleaved_packet(total_len);
-
-    interleaved_packet[0] = '$';
-    interleaved_packet[1] = static_cast<uint8_t>(channel_id);
-    interleaved_packet[2] = static_cast<uint8_t>((len >> 8) & 0xFF);
-    interleaved_packet[3] = static_cast<uint8_t>(len & 0xFF);
-    memcpy(interleaved_packet.data() + 4, data, len);
-
-    // Write to RTSP TCP socket
-    ret = ffurl_write(static_cast<URLContext*>(rt->rtsp_hd), interleaved_packet.data(), total_len);
-
-  } else if (rt->lower_transport == RTSP_LOWER_TRANSPORT_UDP ||
-             rt->lower_transport == RTSP_LOWER_TRANSPORT_UDP_MULTICAST) {
-    // UDP: Send raw RTP packet directly over UDP socket
-    if (!rtsp_st->rtp_handle) {
-      return Napi::Number::New(env, AVERROR(ENOTSUP)); // No UDP socket
-    }
-
-    // Write raw RTP packet to UDP socket (no interleaved header)
-    ret = ffurl_write(static_cast<URLContext*>(rtsp_st->rtp_handle), data, len);
-
-  } else {
-    return Napi::Number::New(env, AVERROR(ENOTSUP)); // Unknown transport
-  }
-
-  return Napi::Number::New(env, ret);
 }
 
 Napi::Value FormatContext::SetFlagsMethod(const Napi::CallbackInfo& info) {

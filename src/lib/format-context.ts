@@ -1313,8 +1313,6 @@ export class FormatContext extends OptionMember<NativeFormatContext> implements 
    *   }
    * }
    * ```
-   *
-   * @internal
    */
   // prettier-ignore
   getRTSPStreamInfo():
@@ -1334,7 +1332,46 @@ export class FormatContext extends OptionMember<NativeFormatContext> implements 
   }
 
   /**
-   * Send RTP packet to RTSP stream (supports both TCP and UDP).
+   * Send RTP packet to RTSP stream (supports both TCP and UDP)
+   *
+   * Automatically handles transport-specific packet formatting:
+   * - TCP: Sends with interleaved header ($channelId + length + RTP)
+   * - UDP: Sends raw RTP packet directly to UDP socket
+   *
+   * Used for backchannel/talkback audio streaming.
+   * Only works with RTSP input contexts.
+   *
+   * @param streamIndex - RTSP stream index
+   *
+   * @param rtpData - Raw RTP packet data (12-byte header + payload)
+   *
+   * @returns Promise resolving to number of bytes written on success, negative AVERROR on failure
+   *
+   * @example
+   * ```typescript
+   * // Get backchannel stream info
+   * const streams = ctx.getRTSPStreamInfo();
+   * const backchannel = streams.find(s => s.direction === 'sendonly');
+   *
+   * if (backchannel) {
+   *   // Send to camera (works with both TCP and UDP)
+   *   const ret = await ctx.sendRTSPPacket(backchannel.streamIndex, rtpPacket);
+   *   if (ret < 0) {
+   *     throw new Error(`Failed to send: ${ret}`);
+   *   }
+   * }
+   * ```
+   *
+   * @see {@link sendRTSPPacketSync} For synchronous version
+   * @see {@link getRTSPStreamInfo} For getting stream info and transport type
+   */
+  async sendRTSPPacket(streamIndex: number, rtpData: Buffer): Promise<number> {
+    return this.native.sendRTSPPacket(streamIndex, rtpData);
+  }
+
+  /**
+   * Send RTP packet to RTSP stream (supports both TCP and UDP) synchronously.
+   * Synchronous version of sendRTSPPacket.
    *
    * Automatically handles transport-specific packet formatting:
    * - TCP: Sends with interleaved header ($channelId + length + RTP)
@@ -1357,17 +1394,18 @@ export class FormatContext extends OptionMember<NativeFormatContext> implements 
    *
    * if (backchannel) {
    *   // Send to camera (works with both TCP and UDP)
-   *   const ret = ctx.sendRTSPPacket(backchannel.streamIndex, rtpPacket);
+   *   const ret = ctx.sendRTSPPacketSync(backchannel.streamIndex, rtpPacket);
    *   if (ret < 0) {
    *     throw new Error(`Failed to send: ${ret}`);
    *   }
    * }
    * ```
    *
+   * @see {@link sendRTSPPacket} For asynchronous version
    * @see {@link getRTSPStreamInfo} For getting stream info and transport type
    */
-  sendRTSPPacket(streamIndex: number, rtpData: Buffer): number {
-    return this.native.sendRTSPPacket(streamIndex, rtpData);
+  sendRTSPPacketSync(streamIndex: number, rtpData: Buffer): number {
+    return this.native.sendRTSPPacketSync(streamIndex, rtpData);
   }
 
   /**
