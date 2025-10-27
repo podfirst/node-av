@@ -36,13 +36,13 @@ jobs:
         run: npm run build:tsc
 
       - name: Download all prebuilds
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v6
         with:
           pattern: prebuild-*
           path: prebuilds-artifacts
 
       - name: Download FFmpeg binaries
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v6
         with:
           pattern: ffmpeg-v*
           path: ffmpeg-binaries
