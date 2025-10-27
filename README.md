@@ -431,6 +431,7 @@ NodeAV provides direct bindings to FFmpeg's C APIs, which work with raw memory p
 | `api-muxing` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-muxing.ts) |
 | `api-pipeline-hw-rtsp` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-pipeline-hw-rtsp.ts) |
 | `api-pipeline-raw-muxing` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-pipeline-raw-muxing.ts) |
+| `api-sdp` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-sdp.ts) |
 | `api-stream-input` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-stream-input.ts) |
 | `api-sw-decode-hw-encode` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-sw-decode-hw-encode.ts) |
 | `api-sw-transcode` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-sw-transcode.ts) |
@@ -455,6 +456,7 @@ NodeAV provides direct bindings to FFmpeg's C APIs, which work with raw memory p
 | `mux` | [✓](https://github.com/FFmpeg/FFmpeg/tree/master/doc/examples/mux.c) | [✓](https://github.com/seydx/node-av/tree/main/examples/mux.ts) | |
 | `remux` | [✓](https://github.com/FFmpeg/FFmpeg/tree/master/doc/examples/remux.c) | [✓](https://github.com/seydx/node-av/tree/main/examples/remux.ts) | |
 | `resample-audio` | [✓](https://github.com/FFmpeg/FFmpeg/tree/master/doc/examples/resample_audio.c) | [✓](https://github.com/seydx/node-av/tree/main/examples/resample-audio.ts) | |
+| `rtsp-stream-info` | | [✓](https://github.com/seydx/node-av/tree/main/examples/rtsp-stream-info.ts) | |
 | `scale-video` | [✓](https://github.com/FFmpeg/FFmpeg/tree/master/doc/examples/scale_video.c) | [✓](https://github.com/seydx/node-av/tree/main/examples/scale-video.ts) | |
 | `show-metadata` | [✓](https://github.com/FFmpeg/FFmpeg/tree/master/doc/examples/show_metadata.c) | [✓](https://github.com/seydx/node-av/tree/main/examples/show-metadata.ts) | |
 | `transcode-aac` | [✓](https://github.com/FFmpeg/FFmpeg/tree/master/doc/examples/transcode_aac.c) | [✓](https://github.com/seydx/node-av/tree/main/examples/transcode-aac.ts) | |
