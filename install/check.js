@@ -19,30 +19,41 @@ const tryLoadPrebuilt = () => {
     if (useMingW) {
       try {
         const packageName = `@seydx/node-av-${platform}-${arch}-mingw`;
-        return require(`${packageName}/node-av.node`);
+        // Check if the package is installed (don't check for .node file yet - it may be extracted by postinstall)
+        const packageJsonPath = require.resolve(`${packageName}/package.json`);
+        if (existsSync(packageJsonPath)) {
+          log(`Using prebuilt binary from ${packageName}`);
+          return true;
+        }
       } catch {
-        // Package not installed or file not found
+        // Package not installed
       }
     }
 
     // Fallback to MSVC
     try {
       const packageName = `@seydx/node-av-${platform}-${arch}-msvc`;
-      return require(`${packageName}/node-av.node`);
+      // Check if the package is installed (don't check for .node file yet - it may be extracted by postinstall)
+      const packageJsonPath = require.resolve(`${packageName}/package.json`);
+      if (existsSync(packageJsonPath)) {
+        log(`Using prebuilt binary from ${packageName}`);
+        return true;
+      }
     } catch {
-      // Package not installed or file not found
+      // Package not installed
     }
   } else {
     const packageName = `@seydx/node-av-${platform}-${arch}`;
 
     try {
-      const packagePath = require.resolve(`${packageName}/node-av.node`);
-      if (existsSync(packagePath)) {
+      // Check if the package is installed (don't check for .node file yet - it may be extracted by postinstall)
+      const packageJsonPath = require.resolve(`${packageName}/package.json`);
+      if (existsSync(packageJsonPath)) {
         log(`Using prebuilt binary from ${packageName}`);
         return true;
       }
     } catch {
-      // Package not installed or file not found
+      // Package not installed
     }
   }
 
