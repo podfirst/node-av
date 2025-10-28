@@ -3,7 +3,9 @@ import { describe, it } from 'node:test';
 
 import { Decoder } from '../src/api/decoder.js';
 import { MediaInput } from '../src/api/media-input.js';
-import { Packet } from '../src/lib/index.js';
+import { AV_CODEC_ID_H264 } from '../src/constants/constants.js';
+import { FF_DECODER_AAC, FF_DECODER_H264 } from '../src/constants/decoders.js';
+import { Codec, Packet } from '../src/lib/index.js';
 import { getInputFile, prepareTestEnvironment } from './index.js';
 
 prepareTestEnvironment();
@@ -208,6 +210,260 @@ describe('Decoder', () => {
       // This test would need a file with an unsupported codec
       // For now, we'll skip it as our test files use standard codecs
       assert.ok(true, 'Skipped - needs special test file');
+    });
+  });
+
+  describe('explicit codec selection', () => {
+    it('should create decoder with explicit codec name (async)', async () => {
+      const media = await MediaInput.open(inputFile);
+      const videoStream = media.video();
+      assert.ok(videoStream);
+
+      // Use explicit decoder codec name
+      const decoder = await Decoder.create(videoStream, FF_DECODER_H264, {
+        threads: 2,
+      });
+      assert.ok(decoder);
+      assert.equal(decoder.isDecoderOpen, true);
+      assert.equal(decoder.getStream().index, videoStream.index);
+
+      decoder.close();
+      await media.close();
+    });
+
+    it('should create decoder with explicit codec name (sync)', () => {
+      const media = MediaInput.openSync(inputFile);
+      const videoStream = media.video();
+      assert.ok(videoStream);
+
+      // Use explicit decoder codec name
+      const decoder = Decoder.createSync(videoStream, FF_DECODER_H264, {
+        threads: 2,
+      });
+      assert.ok(decoder);
+      assert.equal(decoder.isDecoderOpen, true);
+      assert.equal(decoder.getStream().index, videoStream.index);
+
+      decoder.close();
+      media.closeSync();
+    });
+
+    it('should create decoder with explicit codec ID (async)', async () => {
+      const media = await MediaInput.open(inputFile);
+      const videoStream = media.video();
+      assert.ok(videoStream);
+
+      // Use explicit codec ID
+      const decoder = await Decoder.create(videoStream, AV_CODEC_ID_H264, {
+        threads: 2,
+      });
+      assert.ok(decoder);
+      assert.equal(decoder.isDecoderOpen, true);
+
+      decoder.close();
+      await media.close();
+    });
+
+    it('should create decoder with explicit codec ID (sync)', () => {
+      const media = MediaInput.openSync(inputFile);
+      const videoStream = media.video();
+      assert.ok(videoStream);
+
+      // Use explicit codec ID
+      const decoder = Decoder.createSync(videoStream, AV_CODEC_ID_H264, {
+        threads: 2,
+      });
+      assert.ok(decoder);
+      assert.equal(decoder.isDecoderOpen, true);
+
+      decoder.close();
+      media.closeSync();
+    });
+
+    it('should create decoder with Codec instance (async)', async () => {
+      const media = await MediaInput.open(inputFile);
+      const videoStream = media.video();
+      assert.ok(videoStream);
+
+      // Get codec instance and use it explicitly
+      const codec = Codec.findDecoder(AV_CODEC_ID_H264);
+      assert.ok(codec);
+
+      const decoder = await Decoder.create(videoStream, codec, {
+        threads: 2,
+      });
+      assert.ok(decoder);
+      assert.equal(decoder.isDecoderOpen, true);
+      assert.equal(decoder.getCodec().id, codec.id);
+
+      decoder.close();
+      await media.close();
+    });
+
+    it('should create decoder with Codec instance (sync)', () => {
+      const media = MediaInput.openSync(inputFile);
+      const videoStream = media.video();
+      assert.ok(videoStream);
+
+      // Get codec instance and use it explicitly
+      const codec = Codec.findDecoder(AV_CODEC_ID_H264);
+      assert.ok(codec);
+
+      const decoder = Decoder.createSync(videoStream, codec, {
+        threads: 2,
+      });
+      assert.ok(decoder);
+      assert.equal(decoder.isDecoderOpen, true);
+      assert.equal(decoder.getCodec().id, codec.id);
+
+      decoder.close();
+      media.closeSync();
+    });
+
+    it('should create audio decoder with explicit codec name (async)', async () => {
+      const media = await MediaInput.open(inputFile);
+      const audioStream = media.audio();
+      assert.ok(audioStream);
+
+      // Use explicit audio decoder
+      const decoder = await Decoder.create(audioStream, FF_DECODER_AAC);
+      assert.ok(decoder);
+      assert.equal(decoder.isDecoderOpen, true);
+
+      decoder.close();
+      await media.close();
+    });
+
+    it('should create audio decoder with explicit codec name (sync)', () => {
+      const media = MediaInput.openSync(inputFile);
+      const audioStream = media.audio();
+      assert.ok(audioStream);
+
+      // Use explicit audio decoder
+      const decoder = Decoder.createSync(audioStream, FF_DECODER_AAC);
+      assert.ok(decoder);
+      assert.equal(decoder.isDecoderOpen, true);
+
+      decoder.close();
+      media.closeSync();
+    });
+
+    it('should throw for invalid codec name (async)', async () => {
+      const media = await MediaInput.open(inputFile);
+      const videoStream = media.video();
+      assert.ok(videoStream);
+
+      // Try to create decoder with non-existent codec
+      await assert.rejects(async () => await Decoder.create(videoStream, 'invalid_codec_name_12345' as any), {
+        message: /Decoder 'invalid_codec_name_12345' not found/,
+      });
+
+      await media.close();
+    });
+
+    it('should throw for invalid codec name (sync)', () => {
+      const media = MediaInput.openSync(inputFile);
+      const videoStream = media.video();
+      assert.ok(videoStream);
+
+      // Try to create decoder with non-existent codec
+      assert.throws(() => Decoder.createSync(videoStream, 'invalid_codec_name_12345' as any), {
+        message: /Decoder 'invalid_codec_name_12345' not found/,
+      });
+
+      media.closeSync();
+    });
+
+    it('should throw for invalid codec ID (async)', async () => {
+      const media = await MediaInput.open(inputFile);
+      const videoStream = media.video();
+      assert.ok(videoStream);
+
+      // Try to create decoder with invalid codec ID
+      await assert.rejects(async () => await Decoder.create(videoStream, 999999 as any), {
+        message: /Decoder not found for codec ID/,
+      });
+
+      await media.close();
+    });
+
+    it('should throw for invalid codec ID (sync)', () => {
+      const media = MediaInput.openSync(inputFile);
+      const videoStream = media.video();
+      assert.ok(videoStream);
+
+      // Try to create decoder with invalid codec ID
+      assert.throws(() => Decoder.createSync(videoStream, 999999 as any), {
+        message: /Decoder not found for codec ID/,
+      });
+
+      media.closeSync();
+    });
+
+    it('should decode with explicitly selected codec (async)', async () => {
+      const media = await MediaInput.open(inputFile);
+      const videoStream = media.video();
+      assert.ok(videoStream);
+
+      // Create decoder with explicit codec
+      const decoder = await Decoder.create(videoStream, FF_DECODER_H264);
+
+      let frameCount = 0;
+      let packetCount = 0;
+      const maxPackets = 10;
+
+      for await (const packet of media.packets()) {
+        if (packet.streamIndex === videoStream.index) {
+          const frame = await decoder.decode(packet);
+          if (frame) {
+            assert.ok(frame.width > 0);
+            assert.ok(frame.height > 0);
+            frameCount++;
+            frame.free();
+          }
+
+          packetCount++;
+          if (packetCount >= maxPackets) break;
+        }
+      }
+
+      assert.ok(frameCount > 0, 'Should decode at least one frame with explicit codec');
+
+      decoder.close();
+      await media.close();
+    });
+
+    it('should decode with explicitly selected codec (sync)', () => {
+      const media = MediaInput.openSync(inputFile);
+      const videoStream = media.video();
+      assert.ok(videoStream);
+
+      // Create decoder with explicit codec
+      const decoder = Decoder.createSync(videoStream, FF_DECODER_H264);
+
+      let frameCount = 0;
+      let packetCount = 0;
+      const maxPackets = 10;
+
+      for (const packet of media.packetsSync()) {
+        if (packet.streamIndex === videoStream.index) {
+          const frame = decoder.decodeSync(packet);
+          if (frame) {
+            assert.ok(frame.width > 0);
+            assert.ok(frame.height > 0);
+            frameCount++;
+            frame.free();
+          }
+
+          packetCount++;
+          if (packetCount >= maxPackets) break;
+        }
+      }
+
+      assert.ok(frameCount > 0, 'Should decode at least one frame with explicit codec');
+
+      decoder.close();
+      media.closeSync();
     });
   });
 

@@ -1,6 +1,7 @@
-import { AVERROR_EAGAIN, AVERROR_EOF } from '../constants/constants.js';
+import { AVERROR_EAGAIN, AVERROR_EOF, type AVCodecID } from '../constants/constants.js';
 import { Codec, CodecContext, Dictionary, FFmpegError, Frame } from '../lib/index.js';
 
+import type { FFDecoderCodec } from '../constants/decoders.js';
 import type { Packet, Stream } from '../lib/index.js';
 import type { DecoderOptions } from './types.js';
 
@@ -123,26 +124,77 @@ export class Decoder implements Disposable {
    * });
    * ```
    *
+   * @example
+   * ```typescript
+   * using decoder = await Decoder.create(stream, FF_DECODER_H264_AMF, {
+   *   hardware: hw,
+   *   threads: 2,
+   * });
+   * ```
+   *
    * @see {@link HardwareContext} For GPU acceleration setup
    * @see {@link DecoderOptions} For configuration options
    */
-  static async create(stream: Stream, options: DecoderOptions = {}): Promise<Decoder> {
-    let codec: Codec | null = null;
+  static async create(stream: Stream, options?: DecoderOptions): Promise<Decoder>;
+  static async create(stream: Stream, decoderCodec?: FFDecoderCodec | AVCodecID | Codec, options?: DecoderOptions): Promise<Decoder>;
+  static async create(stream: Stream, optionsOrCodec?: DecoderOptions | FFDecoderCodec | AVCodecID | Codec, maybeOptions?: DecoderOptions): Promise<Decoder> {
+    // Parse arguments
+    let options: DecoderOptions = {};
+    let explicitCodec: FFDecoderCodec | AVCodecID | Codec | undefined;
 
-    // If hardware acceleration requested, try to find hardware decoder first
-    if (options.hardware) {
-      codec = options.hardware.getDecoderCodec(stream.codecpar.codecId);
-      if (!codec) {
-        // No hardware decoder available, fall back to software
-        options.hardware = undefined;
+    if (optionsOrCodec !== undefined) {
+      // Check if first argument is a codec or options
+      if (
+        typeof optionsOrCodec === 'string' || // FFDecoderCodec
+        typeof optionsOrCodec === 'number' || // AVCodecID
+        optionsOrCodec instanceof Codec // Codec instance
+      ) {
+        // First argument is a codec
+        explicitCodec = optionsOrCodec;
+        options = maybeOptions ?? {};
+      } else {
+        // First argument is options
+        options = optionsOrCodec;
       }
     }
 
-    // If no hardware decoder or no hardware requested, use software decoder
-    if (!codec) {
-      codec = Codec.findDecoder(stream.codecpar.codecId);
+    let codec: Codec | null = null;
+
+    // If explicit codec provided, use it
+    if (explicitCodec !== undefined) {
+      if (typeof explicitCodec === 'object' && 'id' in explicitCodec) {
+        // Already a Codec instance
+        codec = explicitCodec;
+      } else if (typeof explicitCodec === 'string') {
+        // FFDecoderCodec string
+        codec = Codec.findDecoderByName(explicitCodec);
+        if (!codec) {
+          throw new Error(`Decoder '${explicitCodec}' not found`);
+        }
+      } else {
+        // AVCodecID number
+        codec = Codec.findDecoder(explicitCodec);
+        if (!codec) {
+          throw new Error(`Decoder not found for codec ID ${explicitCodec}`);
+        }
+      }
+    } else {
+      // No explicit codec - use auto-detection logic
+      // If hardware acceleration requested, try to find hardware decoder first
+      if (options.hardware) {
+        codec = options.hardware.getDecoderCodec(stream.codecpar.codecId);
+        if (!codec) {
+          // No hardware decoder available, fall back to software
+          options.hardware = undefined;
+        }
+      }
+
+      // If no hardware decoder or no hardware requested, use software decoder
       if (!codec) {
-        throw new Error(`Decoder not found for codec ${stream.codecpar.codecId}`);
+        codec = Codec.findDecoder(stream.codecpar.codecId);
+        if (!codec) {
+          throw new Error(`Decoder not found for codec ${stream.codecpar.codecId}`);
+        }
       }
     }
 
@@ -217,12 +269,12 @@ export class Decoder implements Disposable {
    * import { MediaInput, Decoder } from 'node-av/api';
    *
    * await using input = await MediaInput.open('video.mp4');
-   * using decoder = await Decoder.create(input.video());
+   * using decoder = Decoder.createSync(input.video());
    * ```
    *
    * @example
    * ```typescript
-   * using decoder = await Decoder.create(stream, {
+   * using decoder = Decoder.createSync(stream, {
    *   threads: 4,
    *   options: {
    *     'refcounted_frames': '1',
@@ -234,31 +286,81 @@ export class Decoder implements Disposable {
    * @example
    * ```typescript
    * const hw = HardwareContext.auto();
-   * using decoder = await Decoder.create(stream, {
+   * using decoder = Decoder.createSync(stream, {
    *   hardware: hw,
    *   threads: 0  // Auto-detect thread count
    * });
    * ```
    *
+   * @example
+   * ```typescript
+   * using decoder = Decoder.createSync(stream, FF_DECODER_H264_NVDEC, {
+   *   hardware: hw
+   * });
+   * ```
+   *
    * @see {@link create} For async version
    */
-  static createSync(stream: Stream, options: DecoderOptions = {}): Decoder {
-    let codec: Codec | null = null;
+  static createSync(stream: Stream, options?: DecoderOptions): Decoder;
+  static createSync(stream: Stream, decoderCodec?: FFDecoderCodec | AVCodecID | Codec, options?: DecoderOptions): Decoder;
+  static createSync(stream: Stream, optionsOrCodec?: DecoderOptions | FFDecoderCodec | AVCodecID | Codec, maybeOptions?: DecoderOptions): Decoder {
+    // Parse arguments
+    let options: DecoderOptions = {};
+    let explicitCodec: FFDecoderCodec | AVCodecID | Codec | undefined;
 
-    // If hardware acceleration requested, try to find hardware decoder first
-    if (options.hardware) {
-      codec = options.hardware.getDecoderCodec(stream.codecpar.codecId);
-      if (!codec) {
-        // No hardware decoder available, fall back to software
-        options.hardware = undefined;
+    if (optionsOrCodec !== undefined) {
+      // Check if first argument is a codec or options
+      if (
+        typeof optionsOrCodec === 'string' || // FFDecoderCodec
+        typeof optionsOrCodec === 'number' || // AVCodecID
+        optionsOrCodec instanceof Codec // Codec instance
+      ) {
+        // First argument is a codec
+        explicitCodec = optionsOrCodec;
+        options = maybeOptions ?? {};
+      } else {
+        // First argument is options
+        options = optionsOrCodec;
       }
     }
 
-    // If no hardware decoder or no hardware requested, use software decoder
-    if (!codec) {
-      codec = Codec.findDecoder(stream.codecpar.codecId);
+    let codec: Codec | null = null;
+
+    // If explicit codec provided, use it
+    if (explicitCodec !== undefined) {
+      if (typeof explicitCodec === 'object' && 'id' in explicitCodec) {
+        // Already a Codec instance
+        codec = explicitCodec;
+      } else if (typeof explicitCodec === 'string') {
+        // FFDecoderCodec string
+        codec = Codec.findDecoderByName(explicitCodec);
+        if (!codec) {
+          throw new Error(`Decoder '${explicitCodec}' not found`);
+        }
+      } else {
+        // AVCodecID number
+        codec = Codec.findDecoder(explicitCodec);
+        if (!codec) {
+          throw new Error(`Decoder not found for codec ID ${explicitCodec}`);
+        }
+      }
+    } else {
+      // No explicit codec - use auto-detection logic
+      // If hardware acceleration requested, try to find hardware decoder first
+      if (options.hardware) {
+        codec = options.hardware.getDecoderCodec(stream.codecpar.codecId);
+        if (!codec) {
+          // No hardware decoder available, fall back to software
+          options.hardware = undefined;
+        }
+      }
+
+      // If no hardware decoder or no hardware requested, use software decoder
       if (!codec) {
-        throw new Error(`Decoder not found for codec ${stream.codecpar.codecId}`);
+        codec = Codec.findDecoder(stream.codecpar.codecId);
+        if (!codec) {
+          throw new Error(`Decoder not found for codec ${stream.codecpar.codecId}`);
+        }
       }
     }
 
@@ -295,6 +397,8 @@ export class Decoder implements Disposable {
     } else {
       options.hardware = undefined;
     }
+
+    options.exitOnError = options.exitOnError ?? true;
 
     const opts = options.options ? Dictionary.fromObject(options.options) : undefined;
 
@@ -482,7 +586,7 @@ export class Decoder implements Disposable {
       }
 
       // If still failing, it's an error
-      if (sendRet !== AVERROR_EAGAIN) {
+      if (sendRet !== AVERROR_EAGAIN && this.options.exitOnError) {
         FFmpegError.throwIfError(sendRet, 'Failed to send packet');
       }
     }
