@@ -1030,7 +1030,7 @@ export class WebRTCSession implements Disposable {
         const [track] = await transceiver.onTrack.asPromise();
         const ctx = this.stream.input.getFormatContext();
         const streams = ctx?.getRTSPStreamInfo();
-        const backchannel = streams?.find((s) => s.direction === 'sendonly');
+        const backchannel = streams?.find((s) => s.direction === 'sendonly' && s.mediaType === 'audio');
 
         track.onReceiveRtp.subscribe(async (rtp) => {
           if (backchannel && this.stream.isStreamActive) {
