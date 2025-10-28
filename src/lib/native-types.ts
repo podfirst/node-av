@@ -45,7 +45,7 @@ import type {
   AVStreamEventFlag,
   SwsFlags,
 } from '../constants/index.js';
-import type { ChannelLayout, CodecProfile, FilterPad, ImageOptions, IRational } from './types.js';
+import type { ChannelLayout, CodecProfile, FilterPad, ImageOptions, IRational, RTSPStreamInfo } from './types.js';
 
 /**
  * Native AVPacket binding interface
@@ -532,21 +532,7 @@ export interface NativeFormatContext extends AsyncDisposable {
   ): number | { streamIndex: number; decoder: NativeCodec | null };
   setFlags(...flags: AVFormatFlag[]): void;
   clearFlags(...flags: AVFormatFlag[]): void;
-  // prettier-ignore
-  getRTSPStreamInfo():
-    | {
-      streamIndex: number;
-      controlUrl: string;
-      transport: 'tcp' | 'udp' | 'udp_multicast' | 'unknown';
-      payloadType: number;
-      codecId: AVCodecID;
-      mimeType: string; // RTP MIME type from SDP (e.g., "H264/90000", "PCMA/8000/1")
-      sampleRate?: number; // Only for audio streams
-      channels?: number; // Only for audio streams
-      direction: 'sendonly' | 'recvonly' | 'sendrecv' | 'inactive';
-      fmtp?: string; // FMTP parameters from SDP (e.g., "packetization-mode=1; sprop-parameter-sets=...")
-    }[]
-    | null;
+  getRTSPStreamInfo(): RTSPStreamInfo[] | null;
   sendRTSPPacket(streamIndex: number, rtpData: Buffer): Promise<number>;
   sendRTSPPacketSync(streamIndex: number, rtpData: Buffer): number;
 

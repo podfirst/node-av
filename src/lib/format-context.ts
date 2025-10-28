@@ -7,10 +7,11 @@ import { OptionMember } from './option.js';
 import { OutputFormat } from './output-format.js';
 import { Stream } from './stream.js';
 
-import type { AVCodecID, AVFormatFlag, AVMediaType, AVSeekFlag } from '../constants/constants.js';
+import type { AVFormatFlag, AVMediaType, AVSeekFlag } from '../constants/constants.js';
 import type { IOContext } from './io-context.js';
 import type { NativeFormatContext, NativeWrapper } from './native-types.js';
 import type { Packet } from './packet.js';
+import type { RTSPStreamInfo } from './types.js';
 
 /**
  * Container format context for reading/writing multimedia files.
@@ -1314,21 +1315,7 @@ export class FormatContext extends OptionMember<NativeFormatContext> implements 
    * }
    * ```
    */
-  // prettier-ignore
-  getRTSPStreamInfo():
-    | {
-      streamIndex: number;
-      controlUrl: string;
-      transport: 'tcp' | 'udp' | 'udp_multicast' | 'unknown';
-      payloadType: number;
-      codecId: AVCodecID;
-      mimeType: string; // RTP MIME type from SDP (e.g., "H264/90000", "PCMA/8000/1")
-      sampleRate?: number; // Only for audio streams
-      channels?: number; // Only for audio streams
-      direction: 'sendonly' | 'recvonly' | 'sendrecv' | 'inactive';
-      fmtp?: string; // FMTP parameters from SDP (e.g., "packetization-mode=1; sprop-parameter-sets=...")
-    }[]
-    | null {
+  getRTSPStreamInfo(): RTSPStreamInfo[] | null {
     return this.native.getRTSPStreamInfo();
   }
 

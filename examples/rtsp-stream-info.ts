@@ -2,6 +2,7 @@
  * RTSP Stream Info Example - Low Level API
  *
  * Demonstrates retrieving detailed RTSP stream information including:
+ * - Media type (video/audio/data/subtitle)
  * - Transport type (TCP/UDP)
  * - Stream direction (recvonly/sendonly/sendrecv)
  * - Codec information (ID, MIME type, payload type)
@@ -68,6 +69,7 @@ async function getRTSPStreamInfo(rtspUrl: string, rtspTransport = 'tcp'): Promis
 
     for (const stream of rtspStreams) {
       console.log(`Stream ${stream.streamIndex}:`);
+      console.log(`  Media Type: ${stream.mediaType}`);
       console.log(`  Control URL: ${stream.controlUrl}`);
       console.log(`  Transport: ${stream.transport}`);
       console.log(`  Direction: ${stream.direction}`);
@@ -86,15 +88,15 @@ async function getRTSPStreamInfo(rtspUrl: string, rtspTransport = 'tcp'): Promis
         console.log(`  Channels: ${stream.channels}`);
       }
 
-      // Identify sendonly stream (backchannel)
-      if (stream.direction === 'sendonly') {
-        console.log('  → BACKCHANNEL (sendonly) - for talkback audio ←');
+      // Identify sendonly audio stream (backchannel)
+      if (stream.direction === 'sendonly' && stream.mediaType === 'audio') {
+        console.log('  → BACKCHANNEL (sendonly audio) - for talkback ←');
       }
       console.log('');
     }
 
     // Summary: Find and highlight backchannel stream
-    const backchannelStream = rtspStreams.find((s) => s.direction === 'sendonly');
+    const backchannelStream = rtspStreams.find((s) => s.direction === 'sendonly' && s.mediaType === 'audio');
 
     if (backchannelStream) {
       console.log('='.repeat(60));

@@ -5,7 +5,7 @@
  * directly from FFmpeg constants.
  */
 
-import type { AVLogLevel, AVMediaType } from '../constants/constants.ts';
+import type { AVCodecID, AVLogLevel, AVMediaType } from '../constants/constants.ts';
 
 /**
  * Rational number (fraction) interface
@@ -106,4 +106,22 @@ export interface ImageOptions {
   format?: ImageFormat;
   crop?: ImageCrop;
   resize?: ImageResize;
+}
+
+/**
+ * RTSP stream information interface
+ * Maps to RTSPStreamInfo returned by FormatContext.getRTSPStreamInfo()
+ */
+export interface RTSPStreamInfo {
+  streamIndex: number;
+  controlUrl: string;
+  transport: 'tcp' | 'udp' | 'udp_multicast' | 'unknown';
+  payloadType: number;
+  codecId: AVCodecID;
+  mediaType: 'video' | 'audio' | 'data' | 'subtitle' | 'unknown';
+  mimeType: string; // RTP MIME type from SDP (e.g., "H264/90000", "PCMA/8000/1")
+  sampleRate?: number; // Only for audio streams
+  channels?: number; // Only for audio streams
+  direction: 'sendonly' | 'recvonly' | 'sendrecv' | 'inactive';
+  fmtp?: string; // FMTP parameters from SDP (e.g., "packetization-mode=1; sprop-parameter-sets=...")
 }

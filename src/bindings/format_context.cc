@@ -406,6 +406,24 @@ Napi::Value FormatContext::GetRTSPStreamInfo(const Napi::CallbackInfo& info) {
       if (stream && stream->codecpar) {
         streamInfo.Set("codecId", Napi::Number::New(env, stream->codecpar->codec_id));
 
+        // Add media type
+        const char* media_type_str = "unknown";
+        switch (stream->codecpar->codec_type) {
+          case AVMEDIA_TYPE_VIDEO:
+            media_type_str = "video";
+            break;
+          case AVMEDIA_TYPE_AUDIO:
+            media_type_str = "audio";
+            break;
+          case AVMEDIA_TYPE_DATA:
+            media_type_str = "data";
+            break;
+          case AVMEDIA_TYPE_SUBTITLE:
+            media_type_str = "subtitle";
+            break;
+        }
+        streamInfo.Set("mediaType", Napi::String::New(env, media_type_str));
+
         // Use MIME type directly from SDP if available, otherwise build from parsed values
         if (rtsp_st->sdp_mime_type[0] != '\0') {
           // Use the complete MIME type string from SDP rtpmap line
