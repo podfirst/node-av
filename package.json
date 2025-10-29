@@ -78,7 +78,7 @@
   },
   "devDependencies": {
     "@stylistic/eslint-plugin": "^5.5.0",
-    "@types/node": "^24.9.1",
+    "@types/node": "^24.9.2",
     "@types/node-abi": "^3.0.3",
     "@types/semver": "^7.7.1",
     "@types/unzipper": "^0.10.11",
@@ -88,7 +88,7 @@
     "cpy-cli": "^6.0.0",
     "cross-env": "^10.1.0",
     "eslint": "^9.38.0",
-    "eslint-plugin-jsdoc": "^61.1.9",
+    "eslint-plugin-jsdoc": "^61.1.10",
     "globals": "^16.4.0",
     "node-addon-api": "^8.5.0",
     "node-gyp": "^11.5.0",
