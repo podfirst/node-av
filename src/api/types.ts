@@ -82,6 +82,16 @@ export interface MediaInputOptions {
   format?: string;
 
   /**
+   * Skip reading stream information on open.
+   *
+   * If true, stream info (codecs, formats, etc.) will not be read during opening.
+   * This can speed up opening time for certain use cases where stream info is not needed.
+   *
+   * @default false
+   */
+  skipStreamInfo?: boolean;
+
+  /**
    * FFmpeg format options passed directly to the input.
    */
   options?: Record<string, string | number | boolean | undefined | null>;
@@ -324,4 +334,7 @@ export interface RTPMediaInput {
 
   /** Cleanup function - closes input and UDP socket. */
   close: () => Promise<void>;
+
+  /** Synchronous cleanup function - closes input and UDP socket. */
+  closeSync: () => void;
 }
