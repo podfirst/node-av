@@ -1,14 +1,26 @@
+import { createSocket } from 'dgram';
 import { closeSync, openSync, readSync } from 'fs';
 import { open } from 'fs/promises';
 import { resolve } from 'path';
+import { RtpPacket } from 'werift';
 
-import { AVFLAG_NONE, AVFMT_FLAG_CUSTOM_IO, AVFMT_FLAG_NONBLOCK, AVMEDIA_TYPE_AUDIO, AVMEDIA_TYPE_VIDEO } from '../constants/constants.js';
+import {
+  AVFLAG_NONE,
+  AVFMT_FLAG_CUSTOM_IO,
+  AVFMT_FLAG_NONBLOCK,
+  AVMEDIA_TYPE_AUDIO,
+  AVMEDIA_TYPE_VIDEO,
+  AVSEEK_CUR,
+  AVSEEK_END,
+  AVSEEK_SET,
+} from '../constants/constants.js';
 import { avGetPixFmtName, avGetSampleFmtName, Dictionary, FFmpegError, FormatContext, InputFormat, IOContext, Packet, Rational } from '../lib/index.js';
 import { IOStream } from './io-stream.js';
+import { StreamingUtils } from './utilities/streaming.js';
 
-import type { AVMediaType, AVSeekFlag } from '../constants/constants.js';
+import type { AVMediaType, AVSeekFlag, AVSeekWhence } from '../constants/constants.js';
 import type { Stream } from '../lib/index.js';
-import type { IOInputCallbacks, MediaInputOptions, RawData } from './types.js';
+import type { IOInputCallbacks, MediaInputOptions, RawData, RTPMediaInput } from './types.js';
 
 /**
  * High-level media input for reading and demuxing media files.
@@ -444,6 +456,123 @@ export class MediaInput implements AsyncDisposable, Disposable {
       if (optionsDict) {
         optionsDict.free();
       }
+    }
+  }
+
+  /**
+   * Open RTP/SRTP input stream via localhost UDP.
+   *
+   * Creates a MediaInput from SDP string received via UDP socket.
+   * Opens UDP socket and configures FFmpeg to receive and parse RTP packets.
+   *
+   * @param sdpContent - SDP content string describing the RTP stream
+   *
+   * @param options - Optional FFmpeg input options
+   *
+   * @returns Object with MediaInput, sendPacket function and cleanup
+   *
+   * @example
+   * ```typescript
+   * import { MediaInput, StreamingUtils } from 'node-av/api';
+   * import { AV_CODEC_ID_OPUS } from 'node-av/constants';
+   *
+   * // Generate SDP for SRTP encrypted Opus
+   * const sdp = StreamingUtils.createRTPInputSDP([{
+   *   port: 5004,
+   *   codecId: AV_CODEC_ID_OPUS,
+   *   payloadType: 111,
+   *   clockRate: 16000,
+   *   channels: 1,
+   *   srtp: { key: srtpKey, salt: srtpSalt }
+   * }]);
+   *
+   * // Open RTP input
+   * const { input, sendPacket, close } = await MediaInput.openSDP(sdp);
+   *
+   * // Route encrypted RTP packets from network
+   * socket.on('message', (msg) => sendPacket(msg));
+   *
+   * // Decode audio
+   * const decoder = await Decoder.create(input.audio()!);
+   * for await (const packet of input.packets()) {
+   *   const frame = await decoder.decode(packet);
+   *   // Process frame...
+   * }
+   *
+   * // Cleanup
+   * await close();
+   * ```
+   *
+   * @see {@link StreamingUtils.createRTPInputSDP} to generate SDP content.
+   */
+  static async openSDP(sdpContent: string, options?: MediaInputOptions): Promise<RTPMediaInput> {
+    // 1. Extract all ports from SDP (supports multi-stream: video + audio)
+    const ports = StreamingUtils.extractPortsFromSDP(sdpContent);
+    if (ports.length === 0) {
+      throw new Error('Failed to extract any ports from SDP content');
+    }
+
+    // 2. Convert SDP to buffer for custom I/O
+    const sdpBuffer = Buffer.from(sdpContent);
+    let position = 0;
+
+    // 3. Create custom I/O callbacks for SDP content
+    const callbacks: IOInputCallbacks = {
+      read: (size: number) => {
+        if (position >= sdpBuffer.length) {
+          return null; // EOF
+        }
+        const chunk = sdpBuffer.subarray(position, Math.min(position + size, sdpBuffer.length));
+        position += chunk.length;
+        return chunk;
+      },
+      seek: (offset: bigint, whence: AVSeekWhence) => {
+        const offsetNum = Number(offset);
+        if (whence === AVSEEK_SET) {
+          position = offsetNum;
+        } else if (whence === AVSEEK_CUR) {
+          position += offsetNum;
+        } else if (whence === AVSEEK_END) {
+          position = sdpBuffer.length + offsetNum;
+        }
+        return position;
+      },
+    };
+
+    // 4. Create UDP socket for sending packets to FFmpeg
+    const udpSocket = createSocket('udp4');
+
+    try {
+      // 5. Open MediaInput with SDP format using custom I/O
+      const input = await MediaInput.open(callbacks, {
+        format: 'sdp',
+        options: {
+          protocol_whitelist: 'pipe,udp,rtp,file,crypto',
+          ...options?.options,
+        },
+      });
+
+      // 6. Helper function to send RTP packets
+      const sendPacket = (rtpPacket: Buffer | RtpPacket, streamIndex = 0) => {
+        const port = ports[streamIndex];
+        if (!port) {
+          throw new Error(`No port found for stream index ${streamIndex}. Available streams: ${ports.length}`);
+        }
+        const data = rtpPacket instanceof RtpPacket ? rtpPacket.serialize() : rtpPacket;
+        udpSocket.send(data, port, '127.0.0.1');
+      };
+
+      // 7. Cleanup function
+      const close = async () => {
+        await input.close();
+        udpSocket.close();
+      };
+
+      return { input, sendPacket, close };
+    } catch (error) {
+      // Cleanup on error
+      udpSocket.close();
+      throw error;
     }
   }
 

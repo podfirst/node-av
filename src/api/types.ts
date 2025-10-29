@@ -1,6 +1,8 @@
+import type { RtpPacket } from 'werift';
 import type { AVPixelFormat, AVSampleFormat, AVSeekWhence } from '../constants/constants.js';
 import type { IRational } from '../lib/index.js';
 import type { HardwareContext } from './hardware.js';
+import type { MediaInput } from './media-input.js';
 
 /**
  * Raw video data configuration.
@@ -312,3 +314,14 @@ export type BaseCodecName =
   | 'vp9' // VP9 (mediacodec, qsv, vaapi)
   | 'mjpeg' // Motion JPEG (qsv, vaapi, rkmpp, videotoolbox)
   | 'prores'; // ProRes (videotoolbox only)
+
+export interface RTPMediaInput {
+  /** MediaInput configured for RTP/SRTP reception via localhost UDP. */
+  input: MediaInput;
+
+  /** Send RTP packet to FFmpeg for decoding. */
+  sendPacket: (rtpPacket: Buffer | RtpPacket, streamIndex?: number) => void;
+
+  /** Cleanup function - closes input and UDP socket. */
+  close: () => Promise<void>;
+}
