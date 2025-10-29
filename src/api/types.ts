@@ -11,8 +11,8 @@ export interface VideoRawData {
   /** Type discriminator for TypeScript */
   type: 'video';
 
-  /** Raw audio input source (file path, Buffer, or stream) */
-  input: string | Buffer;
+  /** Raw audio input source (file path, Buffer, or callbacks) */
+  input: string | Buffer | IOInputCallbacks;
 
   /** Video width */
   width: number;
@@ -36,8 +36,8 @@ export interface AudioRawData {
   /** Type discriminator for TypeScript */
   type: 'audio';
 
-  /** Raw audio input source (file path, Buffer, or stream) */
-  input: string | Buffer;
+  /** Raw audio input source (file path, Buffer, or callbacks) */
+  input: string | Buffer | IOInputCallbacks;
 
   /** Sample rate in Hz (e.g., 44100, 48000) */
   sampleRate: number;

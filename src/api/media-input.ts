@@ -332,7 +332,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
     // Check if input is raw data
     if (typeof input === 'object' && 'type' in input && ('width' in input || 'sampleRate' in input)) {
       // Build options for raw data
-      const rawOptions: MediaInputOptions = {
+      const rawOptions: MediaInputOptions & { format: string } = {
         bufferSize: options.bufferSize,
         format: options.format ?? (input.type === 'video' ? 'rawvideo' : 's16le'),
         options: {
@@ -356,8 +356,8 @@ export class MediaInput implements AsyncDisposable, Disposable {
         };
       }
 
-      // Open with the raw data source
-      return MediaInput.open(input.input, rawOptions);
+      input = input.input;
+      options = rawOptions;
     }
 
     // Original implementation for non-raw data
@@ -522,7 +522,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
     // Check if input is raw data
     if (typeof input === 'object' && 'type' in input && ('width' in input || 'sampleRate' in input)) {
       // Build options for raw data
-      const rawOptions: MediaInputOptions = {
+      const rawOptions: MediaInputOptions & { format: string } = {
         bufferSize: options.bufferSize,
         format: options.format ?? (input.type === 'video' ? 'rawvideo' : 's16le'),
         options: {
@@ -546,8 +546,8 @@ export class MediaInput implements AsyncDisposable, Disposable {
         };
       }
 
-      // Open with the raw data source
-      return MediaInput.openSync(input.input, rawOptions);
+      input = input.input;
+      options = rawOptions;
     }
 
     // Original implementation for non-raw data
