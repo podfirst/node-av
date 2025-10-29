@@ -27,7 +27,7 @@ import {
   avImageGetBufferSize,
 } from '../src/index.js';
 
-import type { AVHWDeviceType, AVPixelFormat } from '../src/index.js';
+import type { AVHWDeviceType, AVPixelFormat, FFHWDeviceType } from '../src/index.js';
 
 let hwDeviceCtx: HardwareDeviceContext | null = null;
 let hwPixFmt: AVPixelFormat = AV_PIX_FMT_NONE;
@@ -124,7 +124,7 @@ async function main(): Promise<number> {
   const [deviceTypeName, inputFile, outputFilePath] = args;
 
   // Find hardware device type
-  const type = HardwareDeviceContext.findTypeByName(deviceTypeName);
+  const type = HardwareDeviceContext.findTypeByName(deviceTypeName as FFHWDeviceType);
   if (type === AV_HWDEVICE_TYPE_NONE) {
     console.error(`Device type ${deviceTypeName} is not supported.`);
     console.error('Available device types:');

@@ -39,7 +39,7 @@ import {
   Rational,
 } from '../src/index.js';
 
-import type { AVHWDeviceType, AVPixelFormat, FFEncoderCodec } from '../src/index.js';
+import type { AVHWDeviceType, AVPixelFormat, FFEncoderCodec, FFHWDeviceType } from '../src/index.js';
 
 let hwDeviceCtx: HardwareDeviceContext | null = null;
 let width: number;
@@ -230,7 +230,7 @@ async function main(): Promise<number> {
   const size = width * height;
 
   // Find hardware device type
-  const type = HardwareDeviceContext.findTypeByName(deviceTypeName);
+  const type = HardwareDeviceContext.findTypeByName(deviceTypeName as FFHWDeviceType);
   if (type === AV_HWDEVICE_TYPE_NONE) {
     console.error(`Device type ${deviceTypeName} is not supported.`);
     console.error('Available device types:');

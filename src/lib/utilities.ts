@@ -1,7 +1,9 @@
+import { FF_HWDEVICE_TYPE_NONE } from '../constants/hardware.js';
 import { bindings } from './binding.js';
 import { FFmpegError } from './error.js';
 
 import type { AVCodecID, AVHWDeviceType, AVMediaType, AVPixelFormat, AVSampleFormat } from '../constants/constants.js';
+import type { FFHWDeviceType } from '../constants/hardware.js';
 import type { FormatContext } from './format-context.js';
 import type { NativeCodecParameters, NativeWrapper } from './native-types.js';
 import type { ChannelLayout, IRational } from './types.js';
@@ -430,8 +432,9 @@ export function avIsHardwarePixelFormat(pixFmt: AVPixelFormat): boolean {
  *
  * @see [av_hwdevice_get_type_name](https://ffmpeg.org/doxygen/7.1/hwcontext_8h.html#afb2b99a15f3fdde25a2fd19353ac5a67) - FFmpeg Doxygen
  */
-export function avGetHardwareDeviceTypeName(type: AVHWDeviceType): string | null {
-  return bindings.avGetHardwareDeviceTypeName(type);
+export function avGetHardwareDeviceTypeName(type: AVHWDeviceType): FFHWDeviceType {
+  const name = bindings.avGetHardwareDeviceTypeName(type) as FFHWDeviceType | null;
+  return name ?? FF_HWDEVICE_TYPE_NONE;
 }
 
 /**
@@ -457,7 +460,7 @@ export function avGetHardwareDeviceTypeName(type: AVHWDeviceType): string | null
  *
  * @see [av_hwdevice_find_type_by_name](https://ffmpeg.org/doxygen/7.1/hwcontext_8h.html#a541943ddced791765349645a30adfa4d) - FFmpeg Doxygen
  */
-export function avGetHardwareDeviceTypeFromName(name: string): AVHWDeviceType {
+export function avGetHardwareDeviceTypeFromName(name: FFHWDeviceType): AVHWDeviceType {
   return bindings.avGetHardwareDeviceTypeFromName(name);
 }
 

@@ -19,6 +19,7 @@ import { MediaInput } from './media-input.js';
 import { MediaOutput } from './media-output.js';
 
 import type { AVCodecID, AVHWDeviceType } from '../constants/constants.js';
+import type { FFHWDeviceType } from '../constants/hardware.js';
 import type { IOOutputCallbacks } from './types.js';
 
 /**
@@ -69,7 +70,7 @@ export interface FMP4StreamOptions {
    *
    * @default { deviceType: AV_HWDEVICE_TYPE_NONE }
    */
-  hardware?: 'auto' | { deviceType: AVHWDeviceType; device?: string; options?: Record<string, string> };
+  hardware?: 'auto' | { deviceType: AVHWDeviceType | FFHWDeviceType; device?: string; options?: Record<string, string> };
 
   /**
    * FFmpeg input options passed directly to the input.

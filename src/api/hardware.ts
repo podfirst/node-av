@@ -42,9 +42,9 @@ import {
   AV_PIX_FMT_VIDEOTOOLBOX,
   AV_PIX_FMT_VULKAN,
 } from '../constants/constants.js';
-import { Codec, Dictionary, FFmpegError, HardwareDeviceContext } from '../lib/index.js';
+import { avGetHardwareDeviceTypeFromName, Codec, Dictionary, FFmpegError, HardwareDeviceContext } from '../lib/index.js';
 
-import type { AVCodecID, AVHWDeviceType, AVPixelFormat, FFDecoderCodec, FFEncoderCodec } from '../constants/index.js';
+import type { AVCodecID, AVHWDeviceType, AVPixelFormat, FFDecoderCodec, FFEncoderCodec, FFHWDeviceType } from '../constants/index.js';
 import type { Packet } from '../lib/index.js';
 import type { BaseCodecName, HardwareOptions } from './types.js';
 
@@ -89,7 +89,7 @@ const hevcData = join(__dirname, 'data', 'test_hevc.h265');
 export class HardwareContext implements Disposable {
   private _deviceContext: HardwareDeviceContext;
   private _deviceType: AVHWDeviceType;
-  private _deviceTypeName: string;
+  private _deviceTypeName: FFHWDeviceType;
   private _devicePixelFormat: AVPixelFormat;
   private _isDisposed = false;
 
@@ -102,7 +102,7 @@ export class HardwareContext implements Disposable {
    *
    * @internal
    */
-  private constructor(deviceContext: HardwareDeviceContext, deviceType: AVHWDeviceType, deviceTypeName: string) {
+  private constructor(deviceContext: HardwareDeviceContext, deviceType: AVHWDeviceType, deviceTypeName: FFHWDeviceType) {
     this._deviceContext = deviceContext;
     this._deviceType = deviceType;
     this._deviceTypeName = deviceTypeName;
@@ -207,7 +207,11 @@ export class HardwareContext implements Disposable {
    * @see {@link auto} For automatic detection
    * @see {@link HardwareDeviceContext} For low-level API
    */
-  static create(deviceType: AVHWDeviceType, device?: string, options?: Record<string, string>): HardwareContext | null {
+  static create(deviceType: AVHWDeviceType | FFHWDeviceType, device?: string, options?: Record<string, string>): HardwareContext | null {
+    if (typeof deviceType === 'string') {
+      deviceType = avGetHardwareDeviceTypeFromName(deviceType);
+    }
+
     if (deviceType === AV_HWDEVICE_TYPE_NONE) {
       return null;
     }
@@ -296,7 +300,7 @@ export class HardwareContext implements Disposable {
    * // Output: "cuda" or "videotoolbox" etc.
    * ```
    */
-  get deviceTypeName(): string {
+  get deviceTypeName(): FFHWDeviceType {
     return this._deviceTypeName;
   }
 

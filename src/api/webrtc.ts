@@ -22,6 +22,7 @@ import { MediaInput } from './media-input.js';
 import { MediaOutput } from './media-output.js';
 
 import type { AVCodecID, AVHWDeviceType } from '../constants/constants.js';
+import type { FFHWDeviceType } from '../constants/hardware.js';
 
 /**
  * Codec information for WebRTC streaming.
@@ -83,7 +84,7 @@ export interface WebRTCStreamOptions {
    *
    * @default { deviceType: AV_HWDEVICE_TYPE_NONE }
    */
-  hardware?: 'auto' | { deviceType: AVHWDeviceType; device?: string; options?: Record<string, string> };
+  hardware?: 'auto' | { deviceType: AVHWDeviceType | FFHWDeviceType; device?: string; options?: Record<string, string> };
 
   /**
    * FFmpeg input options passed directly to the input.

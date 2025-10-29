@@ -7,7 +7,16 @@ import {
   AV_HWDEVICE_TYPE_VAAPI,
   AV_HWDEVICE_TYPE_VDPAU,
   AV_HWDEVICE_TYPE_VIDEOTOOLBOX,
+  FF_HWDEVICE_TYPE_CUDA,
+  FF_HWDEVICE_TYPE_D3D11VA,
+  FF_HWDEVICE_TYPE_OPENCL,
+  FF_HWDEVICE_TYPE_QSV,
+  FF_HWDEVICE_TYPE_VAAPI,
+  FF_HWDEVICE_TYPE_VDPAU,
+  FF_HWDEVICE_TYPE_VIDEOTOOLBOX,
+  FF_HWDEVICE_TYPE_VULKAN,
   HardwareDeviceContext,
+  type FFHWDeviceType,
 } from '../src/index.js';
 
 describe('HardwareDeviceContext', () => {
@@ -45,7 +54,15 @@ describe('HardwareDeviceContext', () => {
 
     it('should find device type by name', () => {
       // Test with common type names
-      const names = ['cuda', 'vaapi', 'vdpau', 'videotoolbox', 'qsv', 'opencl', 'vulkan'];
+      const names: FFHWDeviceType[] = [
+        FF_HWDEVICE_TYPE_CUDA,
+        FF_HWDEVICE_TYPE_VAAPI,
+        FF_HWDEVICE_TYPE_VDPAU,
+        FF_HWDEVICE_TYPE_VIDEOTOOLBOX,
+        FF_HWDEVICE_TYPE_QSV,
+        FF_HWDEVICE_TYPE_OPENCL,
+        FF_HWDEVICE_TYPE_VULKAN,
+      ];
 
       for (const name of names) {
         const type = HardwareDeviceContext.findTypeByName(name);
@@ -62,7 +79,7 @@ describe('HardwareDeviceContext', () => {
     });
 
     it('should return NONE for unknown device type names', () => {
-      const type = HardwareDeviceContext.findTypeByName('nonexistent_device');
+      const type = HardwareDeviceContext.findTypeByName('nonexistent_device' as any);
       assert.equal(type, 0, 'Should return AV_HWDEVICE_TYPE_NONE (0)');
     });
 
@@ -313,18 +330,18 @@ describe('HardwareDeviceContext', () => {
 
       if (platform === 'darwin') {
         // macOS should have VideoToolbox
-        const hasVideoToolbox = typeNames.includes('videotoolbox');
+        const hasVideoToolbox = typeNames.includes(FF_HWDEVICE_TYPE_VIDEOTOOLBOX);
         console.log('macOS - VideoToolbox available:', hasVideoToolbox);
       } else if (platform === 'linux') {
         // Linux might have VAAPI, VDPAU, CUDA
-        const hasVaapi = typeNames.includes('vaapi');
-        const hasCuda = typeNames.includes('cuda');
+        const hasVaapi = typeNames.includes(FF_HWDEVICE_TYPE_VAAPI);
+        const hasCuda = typeNames.includes(FF_HWDEVICE_TYPE_CUDA);
         console.log('Linux - VAAPI available:', hasVaapi);
         console.log('Linux - CUDA available:', hasCuda);
       } else if (platform === 'win32') {
         // Windows might have D3D11VA, DXVA2, QSV, CUDA
-        const hasD3d11va = typeNames.includes('d3d11va');
-        const hasQsv = typeNames.includes('qsv');
+        const hasD3d11va = typeNames.includes(FF_HWDEVICE_TYPE_D3D11VA);
+        const hasQsv = typeNames.includes(FF_HWDEVICE_TYPE_QSV);
         console.log('Windows - D3D11VA available:', hasD3d11va);
         console.log('Windows - QSV available:', hasQsv);
       }

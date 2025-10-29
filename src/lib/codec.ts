@@ -1,10 +1,12 @@
 import { AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX, AV_CODEC_HW_CONFIG_METHOD_HW_FRAMES_CTX } from '../constants/constants.js';
 import { bindings } from './binding.js';
 import { Rational } from './rational.js';
+import { avGetHardwareDeviceTypeFromName } from './utilities.js';
 
 import type { AVCodecCap, AVCodecID, AVHWDeviceType, AVMediaType, AVPixelFormat, AVSampleFormat } from '../constants/constants.js';
 import type { FFDecoderCodec } from '../constants/decoders.js';
 import type { FFEncoderCodec } from '../constants/encoders.js';
+import type { FFHWDeviceType } from '../constants/hardware.js';
 import type { NativeCodec, NativeWrapper } from './native-types.js';
 import type { ChannelLayout, CodecProfile } from './types.js';
 
@@ -513,10 +515,14 @@ export class Codec implements NativeWrapper<NativeCodec> {
    *
    * @see {@link getSupportedDeviceTypes} For all supported types
    */
-  supportsDevice(deviceType: AVHWDeviceType): boolean {
+  supportsDevice(deviceType: AVHWDeviceType | FFHWDeviceType): boolean {
     for (let i = 0; ; i++) {
       const config = this.getHwConfig(i);
       if (!config) break;
+
+      if (typeof deviceType === 'string') {
+        deviceType = avGetHardwareDeviceTypeFromName(deviceType);
+      }
 
       // Check if this config is for the requested device type
       if (config.deviceType === deviceType) {
@@ -552,7 +558,7 @@ export class Codec implements NativeWrapper<NativeCodec> {
    * }
    * ```
    */
-  isHardwareAcceleratedDecoder(deviceType?: AVHWDeviceType): boolean {
+  isHardwareAcceleratedDecoder(deviceType?: AVHWDeviceType | FFHWDeviceType): boolean {
     if (!this.isDecoder()) return false;
 
     if (deviceType !== undefined) {
@@ -584,7 +590,7 @@ export class Codec implements NativeWrapper<NativeCodec> {
    * }
    * ```
    */
-  isHardwareAcceleratedEncoder(deviceType?: AVHWDeviceType): boolean {
+  isHardwareAcceleratedEncoder(deviceType?: AVHWDeviceType | FFHWDeviceType): boolean {
     if (!this.isEncoder()) return false;
 
     if (deviceType !== undefined) {
@@ -652,10 +658,14 @@ export class Codec implements NativeWrapper<NativeCodec> {
    * }
    * ```
    */
-  getHardwareMethod(deviceType: AVHWDeviceType): number | null {
+  getHardwareMethod(deviceType: AVHWDeviceType | FFHWDeviceType): number | null {
     for (let i = 0; ; i++) {
       const config = this.getHwConfig(i);
       if (!config) break;
+
+      if (typeof deviceType === 'string') {
+        deviceType = avGetHardwareDeviceTypeFromName(deviceType);
+      }
 
       if (config.deviceType === deviceType) {
         return config.methods;

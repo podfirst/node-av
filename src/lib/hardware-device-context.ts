@@ -1,6 +1,7 @@
 import { bindings } from './binding.js';
 
 import type { AVHWDeviceType } from '../constants/constants.js';
+import type { FFHWDeviceType } from '../constants/hardware.js';
 import type { Dictionary } from './dictionary.js';
 import type { NativeHardwareDeviceContext, NativeWrapper } from './native-types.js';
 
@@ -76,8 +77,8 @@ export class HardwareDeviceContext implements Disposable, NativeWrapper<NativeHa
    *
    * @see {@link findTypeByName} For reverse lookup
    */
-  static getTypeName(type: AVHWDeviceType): string | null {
-    return bindings.HardwareDeviceContext.getTypeName(type);
+  static getTypeName(type: AVHWDeviceType): FFHWDeviceType | null {
+    return bindings.HardwareDeviceContext.getTypeName(type) as FFHWDeviceType | null;
   }
 
   /**
@@ -125,7 +126,7 @@ export class HardwareDeviceContext implements Disposable, NativeWrapper<NativeHa
    *
    * @see {@link getTypeName} For type to name conversion
    */
-  static findTypeByName(name: string): AVHWDeviceType {
+  static findTypeByName(name: FFHWDeviceType): AVHWDeviceType {
     return bindings.HardwareDeviceContext.findTypeByName(name);
   }
 
