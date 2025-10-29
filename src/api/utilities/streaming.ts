@@ -1,5 +1,8 @@
+import { AVMEDIA_TYPE_VIDEO } from '../../constants/constants.js';
+import { Codec } from '../../lib/codec.js';
 import { avSdpCreate } from '../../lib/utilities.js';
 
+import type { AVCodecID } from '../../constants/constants.js';
 import type { FormatContext } from '../../lib/format-context.js';
 import type { MediaOutput } from '../media-output.js';
 
@@ -34,6 +37,7 @@ export class StreamingUtils {
    * format and have their streams set up before calling this method.
    *
    * @param inouts - Array of MediaInput or MediaOutput objects configured for RTP
+   *
    * @returns SDP string if successful, null if failed
    *
    * @example
@@ -133,5 +137,127 @@ export class StreamingUtils {
     }
 
     return url;
+  }
+
+  /**
+   * Create SDP for RTP/SRTP input stream(s)
+   *
+   * Generates SDP content for receiving RTP packets via localhost UDP.
+   * Supports single stream or multi-stream (video + audio).
+   * Supports optional SRTP encryption via crypto line.
+   *
+   * @param config - RTP stream configuration array
+   *
+   * @param sessionName - Optional session name
+   *
+   * @returns SDP content string
+   *
+   * @example
+   * ```typescript
+   * // Multi-stream: Video + Audio
+   * const sdp = StreamingUtils.createRTPInputSDP([
+   *   {
+   *     port: 5006,
+   *     codecId: AV_CODEC_ID_H264,
+   *     payloadType: 96,
+   *     clockRate: 90000,
+   *   },
+   *   {
+   *     port: 5004,
+   *     codecId: AV_CODEC_ID_OPUS,
+   *     payloadType: 111,
+   *     clockRate: 48000,
+   *     channels: 2,
+   *   }
+   * ], 'Video+Audio Stream');
+   * ```
+   */
+  static createRTPInputSDP(
+    config: {
+      /** UDP port for RTP packets */
+      port: number;
+      /** Codec ID */
+      codecId: AVCodecID;
+      /** RTP payload type (e.g., 111 for Opus, 96 for H.264) */
+      payloadType: number;
+      /** RTP clock rate (e.g., 48000 for audio, 90000 for video) */
+      clockRate: number;
+      /** Number of audio channels (optional, audio only) */
+      channels?: number;
+      /** Optional format parameters (fmtp line content) */
+      fmtp?: string;
+      /** Optional SRTP encryption */
+      srtp?: {
+        /** SRTP master key (16 bytes for AES-128) */
+        key: Buffer;
+        /** SRTP salt (14 bytes) */
+        salt: Buffer;
+        /** Crypto suite (default: AES_CM_128_HMAC_SHA1_80) */
+        suite?: 'AES_CM_128_HMAC_SHA1_80' | 'AES_CM_128_HMAC_SHA1_32';
+      };
+    }[],
+    sessionName?: string,
+  ): string {
+    // Handle array of streams (multi-stream SDP)
+
+    const lines = ['v=0', 'o=- 0 0 IN IP4 127.0.0.1', `s=${sessionName ?? 'node-av'}`, 'c=IN IP4 127.0.0.1', 't=0 0'];
+
+    for (const streamConfig of config) {
+      const codec = Codec.findDecoder(streamConfig.codecId);
+      if (!codec) {
+        continue;
+      }
+
+      const isVideo = codec.type === AVMEDIA_TYPE_VIDEO;
+      const mediaType = isVideo ? 'video' : 'audio';
+
+      lines.push(`m=${mediaType} ${streamConfig.port} RTP/AVP ${streamConfig.payloadType}`);
+
+      // Add rtpmap
+      const rtpmap =
+        streamConfig.channels !== undefined
+          ? `${streamConfig.payloadType} ${codec.name}/${streamConfig.clockRate}/${streamConfig.channels}`
+          : `${streamConfig.payloadType} ${codec.name}/${streamConfig.clockRate}`;
+      lines.push(`a=rtpmap:${rtpmap}`);
+
+      // Add fmtp if provided
+      if (streamConfig.fmtp) {
+        lines.push(`a=fmtp:${streamConfig.payloadType} ${streamConfig.fmtp}`);
+      }
+
+      // Add SRTP crypto line if provided
+      if (streamConfig.srtp) {
+        const suite = streamConfig.srtp.suite ?? 'AES_CM_128_HMAC_SHA1_80';
+        const keyMaterial = Buffer.concat([streamConfig.srtp.key, streamConfig.srtp.salt]).toString('base64');
+        lines.push(`a=crypto:1 ${suite} inline:${keyMaterial}`);
+      }
+    }
+
+    return lines.join('\n');
+  }
+
+  /**
+   * Extract all UDP ports from SDP content
+   *
+   * @param sdp - SDP content string
+   *
+   * @returns Array of port numbers (one per stream)
+   */
+  static extractPortsFromSDP(sdp: string): number[] {
+    const ports: number[] = [];
+    const lines = sdp.split('\n');
+
+    for (const line of lines) {
+      if (line.startsWith('m=')) {
+        // m=audio 5004 RTP/AVP 111
+        // m=video 5006 RTP/AVP 96
+        const match = /m=\w+\s+(\d+)/.exec(line);
+        if (match) {
+          ports.push(parseInt(match[1], 10));
+        }
+      }
+    }
+
+    return ports;
   }
 }
