@@ -41,6 +41,10 @@ Napi::Object Utilities::Init(Napi::Env env, Napi::Object exports) {
   exports.Set("avGetPixFmtFromName", Napi::Function::New(env, GetPixFmtFromName));
   exports.Set("avIsHardwarePixelFormat", Napi::Function::New(env, IsHardwarePixelFormat));
 
+  // Hardware device type utilities
+  exports.Set("avGetHardwareDeviceTypeName", Napi::Function::New(env, GetHardwareDeviceTypeName));
+  exports.Set("avGetHardwareDeviceTypeFromName", Napi::Function::New(env, GetHardwareDeviceTypeFromName));
+
   // Media type utilities
   exports.Set("avGetMediaTypeString", Napi::Function::New(env, GetMediaTypeString));
 
@@ -285,6 +289,39 @@ Napi::Value Utilities::IsHardwarePixelFormat(const Napi::CallbackInfo& info) {
   // Check if the pixel format has the HWACCEL flag
   bool is_hw = (desc->flags & AV_PIX_FMT_FLAG_HWACCEL) != 0;
   return Napi::Boolean::New(env, is_hw);
+}
+
+// === Hardware device type utilities ===
+
+Napi::Value Utilities::GetHardwareDeviceTypeName(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+
+  if (info.Length() < 1 || !info[0].IsNumber()) {
+    Napi::TypeError::New(env, "Expected hardware device type as number").ThrowAsJavaScriptException();
+    return env.Null();
+  }
+
+  int type = info[0].As<Napi::Number>().Int32Value();
+  const char* name = av_hwdevice_get_type_name(static_cast<AVHWDeviceType>(type));
+
+  if (name) {
+    return Napi::String::New(env, name);
+  }
+  return env.Null();
+}
+
+Napi::Value Utilities::GetHardwareDeviceTypeFromName(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+
+  if (info.Length() < 1 || !info[0].IsString()) {
+    Napi::TypeError::New(env, "Expected hardware device type name as string").ThrowAsJavaScriptException();
+    return Napi::Number::New(env, AV_HWDEVICE_TYPE_NONE);
+  }
+
+  std::string name = info[0].As<Napi::String>().Utf8Value();
+  AVHWDeviceType type = av_hwdevice_find_type_by_name(name.c_str());
+
+  return Napi::Number::New(env, static_cast<int>(type));
 }
 
 // === Media type utilities ===

@@ -264,6 +264,8 @@ export interface NativeBinding {
   avGetPixFmtName: (pixFmt: AVPixelFormat) => string | null;
   avGetPixFmtFromName: (name: string) => AVPixelFormat;
   avIsHardwarePixelFormat: (pixFmt: AVPixelFormat) => boolean;
+  avGetHardwareDeviceTypeName: (type: AVHWDeviceType) => string | null;
+  avGetHardwareDeviceTypeFromName: (name: string) => AVHWDeviceType;
   avGetMediaTypeString: (mediaType: AVMediaType) => string | null;
   avImageAlloc: (width: number, height: number, pixFmt: AVPixelFormat, align: number) => { buffer: Buffer; size: number; linesizes: number[] } | number;
   avImageCopy2: (dstData: Buffer[], dstLinesizes: number[], srcData: Buffer[], srcLinesizes: number[], pixFmt: AVPixelFormat, width: number, height: number) => void;

@@ -1,7 +1,7 @@
 import { bindings } from './binding.js';
 import { FFmpegError } from './error.js';
 
-import type { AVCodecID, AVMediaType, AVPixelFormat, AVSampleFormat } from '../constants/constants.js';
+import type { AVCodecID, AVHWDeviceType, AVMediaType, AVPixelFormat, AVSampleFormat } from '../constants/constants.js';
 import type { FormatContext } from './format-context.js';
 import type { NativeCodecParameters, NativeWrapper } from './native-types.js';
 import type { ChannelLayout, IRational } from './types.js';
@@ -407,6 +407,58 @@ export function avGetPixFmtFromName(name: string): AVPixelFormat {
  */
 export function avIsHardwarePixelFormat(pixFmt: AVPixelFormat): boolean {
   return bindings.avIsHardwarePixelFormat(pixFmt);
+}
+
+/**
+ * Get hardware device type name.
+ *
+ * Returns the string name for a hardware device type enum value.
+ *
+ * Direct mapping to av_hwdevice_get_type_name().
+ *
+ * @param type - Hardware device type enum
+ *
+ * @returns Device type name (e.g. "videotoolbox", "cuda"), or null if unknown
+ *
+ * @example
+ * ```typescript
+ * import { AV_HWDEVICE_TYPE_VIDEOTOOLBOX, AV_HWDEVICE_TYPE_CUDA } from 'node-av/constants';
+ *
+ * const name1 = avGetHardwareDeviceTypeName(AV_HWDEVICE_TYPE_VIDEOTOOLBOX); // Returns "videotoolbox"
+ * const name2 = avGetHardwareDeviceTypeName(AV_HWDEVICE_TYPE_CUDA);         // Returns "cuda"
+ * ```
+ *
+ * @see [av_hwdevice_get_type_name](https://ffmpeg.org/doxygen/7.1/hwcontext_8h.html#afb2b99a15f3fdde25a2fd19353ac5a67) - FFmpeg Doxygen
+ */
+export function avGetHardwareDeviceTypeName(type: AVHWDeviceType): string | null {
+  return bindings.avGetHardwareDeviceTypeName(type);
+}
+
+/**
+ * Get hardware device type from name.
+ *
+ * Looks up the hardware device type enum from its string name.
+ * Returns AV_HWDEVICE_TYPE_NONE if the name is not recognized.
+ *
+ * Direct mapping to av_hwdevice_find_type_by_name().
+ *
+ * @param name - Hardware device type name (e.g. "videotoolbox", "cuda")
+ *
+ * @returns Hardware device type enum, or AV_HWDEVICE_TYPE_NONE if not found
+ *
+ * @example
+ * ```typescript
+ * import { avGetHardwareDeviceTypeFromName } from 'node-av/lib';
+ *
+ * const type1 = avGetHardwareDeviceTypeFromName("videotoolbox"); // Returns AV_HWDEVICE_TYPE_VIDEOTOOLBOX
+ * const type2 = avGetHardwareDeviceTypeFromName("cuda");         // Returns AV_HWDEVICE_TYPE_CUDA
+ * const none = avGetHardwareDeviceTypeFromName("invalid");       // Returns AV_HWDEVICE_TYPE_NONE
+ * ```
+ *
+ * @see [av_hwdevice_find_type_by_name](https://ffmpeg.org/doxygen/7.1/hwcontext_8h.html#a541943ddced791765349645a30adfa4d) - FFmpeg Doxygen
+ */
+export function avGetHardwareDeviceTypeFromName(name: string): AVHWDeviceType {
+  return bindings.avGetHardwareDeviceTypeFromName(name);
 }
 
 /**
