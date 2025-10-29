@@ -137,6 +137,11 @@ const parseEnums = (headerPath) => {
           isFirstValue = false;
         }
 
+        // Skip _NB (boundary markers)
+        if (name.endsWith('HWDEVICE_TYPE_NB')) {
+          continue;
+        }
+
         values.push({ name, value: currentValue });
       }
     }
@@ -193,7 +198,7 @@ const groupConstantsByPrefix = (constants) => {
 
   for (const [name, info] of constants) {
     // Skip certain patterns
-    if (name.endsWith('_NE') || name === 'AV_NB' || name.includes('(')) {
+    if (name.endsWith('_NE') || name === 'AV_NB' || name === 'AV_HWDEVICE_TYPE_NB' || name.includes('(')) {
       continue;
     }
 
