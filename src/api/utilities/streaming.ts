@@ -1,9 +1,10 @@
 import { AVMEDIA_TYPE_VIDEO } from '../../constants/constants.js';
 import { Codec } from '../../lib/codec.js';
+import { FormatContext } from '../../lib/format-context.js';
+import { Rational } from '../../lib/rational.js';
 import { avSdpCreate } from '../../lib/utilities.js';
 
 import type { AVCodecID } from '../../constants/constants.js';
-import type { FormatContext } from '../../lib/format-context.js';
 import type { MediaOutput } from '../media-output.js';
 
 /**
@@ -63,6 +64,164 @@ export class StreamingUtils {
     }
 
     return avSdpCreate(contexts);
+  }
+
+  /**
+   * Generate SDP for RTP/SRTP input using FFmpeg's native SDP generator
+   *
+   * Creates an RFC-compliant SDP description using FFmpeg's internal logic.
+   * This ensures correct codec names, clock rates, and formatting for all codecs.
+   *
+   * @param configs - Array of stream configurations
+   * @param sessionName - Optional session name for the SDP (default: 'RTP Stream')
+   *
+   * @returns SDP string with proper rtpmap and optional crypto attributes
+   *
+   * @example
+   * ```typescript
+   * import { StreamingUtils } from 'node-av/api';
+   * import { AV_CODEC_ID_OPUS, AV_CODEC_ID_H264 } from 'node-av/constants';
+   *
+   * // Single audio stream with SRTP
+   * const sdp = StreamingUtils.createInputSDP([{
+   *   port: 5004,
+   *   codecId: AV_CODEC_ID_OPUS,
+   *   payloadType: 111,
+   *   clockRate: 48000,
+   *   channels: 2,
+   *   srtp: {
+   *     key: Buffer.alloc(16, 0x12),
+   *     salt: Buffer.alloc(14, 0x34)
+   *   }
+   * }]);
+   *
+   * // Multi-stream (video + audio)
+   * const sdp = StreamingUtils.createInputSDP([
+   *   { port: 5006, codecId: AV_CODEC_ID_H264, payloadType: 96, clockRate: 90000 },
+   *   { port: 5004, codecId: AV_CODEC_ID_OPUS, payloadType: 111, clockRate: 48000, channels: 2 }
+   * ], 'My Stream');
+   * ```
+   */
+  static createInputSDP(
+    configs: {
+      port: number;
+      codecId: AVCodecID;
+      payloadType: number;
+      clockRate: number;
+      channels?: number;
+      fmtp?: string;
+      srtp?: {
+        key: Buffer;
+        salt: Buffer;
+        suite?: 'AES_CM_128_HMAC_SHA1_80' | 'AES_CM_128_HMAC_SHA1_32';
+      };
+    }[],
+    sessionName = 'RTP Stream',
+  ): string {
+    const contexts: FormatContext[] = [];
+
+    try {
+      // Create one FormatContext per stream with individual URL (port)
+      for (const streamConfig of configs) {
+        const codec = Codec.findDecoder(streamConfig.codecId);
+        if (!codec) {
+          throw new Error(`Codec not found for codec ID: ${streamConfig.codecId}`);
+        }
+
+        // Create format context with URL containing the port
+        const ctx = new FormatContext();
+        ctx.allocContext();
+        ctx.url = `rtp://127.0.0.1:${streamConfig.port}`;
+
+        // Create stream with codec parameters
+        const stream = ctx.newStream(null);
+        stream.codecpar.codecId = streamConfig.codecId;
+        stream.codecpar.codecType = codec.type;
+
+        // Set audio-specific parameters
+        if (codec.type !== AVMEDIA_TYPE_VIDEO) {
+          if (streamConfig.clockRate) {
+            stream.codecpar.sampleRate = streamConfig.clockRate;
+          }
+          if (streamConfig.channels) {
+            stream.codecpar.channels = streamConfig.channels;
+          }
+        }
+
+        // Set time base (required for SDP generation)
+        stream.timeBase = new Rational(1, streamConfig.clockRate);
+
+        contexts.push(ctx);
+      }
+
+      // Generate SDP using FFmpeg's native generator
+      // FFmpeg will automatically use the port from each context's URL and generate RFC-compliant codec names
+      let sdp = avSdpCreate(contexts);
+
+      if (!sdp) {
+        throw new Error('Failed to generate SDP');
+      }
+
+      // Post-process: Replace session name if provided
+      if (sessionName !== 'RTP Stream') {
+        sdp = sdp.replace(/^s=.*$/m, `s=${sessionName}`);
+      }
+
+      // Post-process: Replace payload types, add SRTP crypto lines, and/or custom fmtp
+      // Note: We always need to process because FFmpeg assigns payload types automatically
+      const sdpLines = sdp.split('\n');
+      const newLines: string[] = [];
+      let streamIndex = -1;
+
+      for (let i = 0; i < sdpLines.length; i++) {
+        const line = sdpLines[i];
+
+        if (line.startsWith('m=')) {
+          // New media section
+          streamIndex++;
+          const streamCfg = configs[streamIndex];
+
+          // Replace FFmpeg's auto-assigned payload type with user-specified one
+          const replaced = line.replace(/RTP\/AVP\s+(\d+)/, `RTP/AVP ${streamCfg.payloadType}`);
+          newLines.push(replaced);
+
+          // Add SRTP crypto line right after m= line if configured
+          if (streamCfg?.srtp) {
+            const suite = streamCfg.srtp.suite ?? 'AES_CM_128_HMAC_SHA1_80';
+            const keyMaterial = Buffer.concat([streamCfg.srtp.key, streamCfg.srtp.salt]).toString('base64');
+            newLines.push(`a=crypto:1 ${suite} inline:${keyMaterial}`);
+          }
+        } else if (line.startsWith('a=rtpmap:')) {
+          // Replace payload type in rtpmap line
+          const streamCfg = configs[streamIndex];
+          const replaced = line.replace(/^a=rtpmap:(\d+)/, `a=rtpmap:${streamCfg.payloadType}`);
+          newLines.push(replaced);
+
+          // If custom fmtp is provided but FFmpeg didn't generate one, add it
+          if (streamCfg?.fmtp && !sdpLines[i + 1]?.startsWith('a=fmtp:')) {
+            newLines.push(`a=fmtp:${streamCfg.payloadType} ${streamCfg.fmtp}`);
+          }
+        } else if (line.startsWith('a=fmtp:')) {
+          // Replace payload type in fmtp line and optionally replace content
+          const streamCfg = configs[streamIndex];
+          if (streamCfg?.fmtp) {
+            newLines.push(`a=fmtp:${streamCfg.payloadType} ${streamCfg.fmtp}`);
+          } else {
+            const replaced = line.replace(/^a=fmtp:(\d+)/, `a=fmtp:${streamCfg.payloadType}`);
+            newLines.push(replaced);
+          }
+        } else {
+          newLines.push(line);
+        }
+      }
+
+      return newLines.join('\n');
+    } finally {
+      // Cleanup all contexts
+      for (const ctx of contexts) {
+        ctx.freeContext();
+      }
+    }
   }
 
   /**
@@ -137,103 +296,6 @@ export class StreamingUtils {
     }
 
     return url;
-  }
-
-  /**
-   * Create SDP for RTP/SRTP input stream(s)
-   *
-   * Generates SDP content for receiving RTP packets via localhost UDP.
-   * Supports single stream or multi-stream (video + audio).
-   * Supports optional SRTP encryption via crypto line.
-   *
-   * @param config - RTP stream configuration array
-   *
-   * @param sessionName - Optional session name
-   *
-   * @returns SDP content string
-   *
-   * @example
-   * ```typescript
-   * // Multi-stream: Video + Audio
-   * const sdp = StreamingUtils.createRTPInputSDP([
-   *   {
-   *     port: 5006,
-   *     codecId: AV_CODEC_ID_H264,
-   *     payloadType: 96,
-   *     clockRate: 90000,
-   *   },
-   *   {
-   *     port: 5004,
-   *     codecId: AV_CODEC_ID_OPUS,
-   *     payloadType: 111,
-   *     clockRate: 48000,
-   *     channels: 2,
-   *   }
-   * ], 'Video+Audio Stream');
-   * ```
-   */
-  static createRTPInputSDP(
-    config: {
-      /** UDP port for RTP packets */
-      port: number;
-      /** Codec ID */
-      codecId: AVCodecID;
-      /** RTP payload type (e.g., 111 for Opus, 96 for H.264) */
-      payloadType: number;
-      /** RTP clock rate (e.g., 48000 for audio, 90000 for video) */
-      clockRate: number;
-      /** Number of audio channels (optional, audio only) */
-      channels?: number;
-      /** Optional format parameters (fmtp line content) */
-      fmtp?: string;
-      /** Optional SRTP encryption */
-      srtp?: {
-        /** SRTP master key (16 bytes for AES-128) */
-        key: Buffer;
-        /** SRTP salt (14 bytes) */
-        salt: Buffer;
-        /** Crypto suite (default: AES_CM_128_HMAC_SHA1_80) */
-        suite?: 'AES_CM_128_HMAC_SHA1_80' | 'AES_CM_128_HMAC_SHA1_32';
-      };
-    }[],
-    sessionName?: string,
-  ): string {
-    // Handle array of streams (multi-stream SDP)
-
-    const lines = ['v=0', 'o=- 0 0 IN IP4 127.0.0.1', `s=${sessionName ?? 'node-av'}`, 'c=IN IP4 127.0.0.1', 't=0 0'];
-
-    for (const streamConfig of config) {
-      const codec = Codec.findDecoder(streamConfig.codecId);
-      if (!codec) {
-        continue;
-      }
-
-      const isVideo = codec.type === AVMEDIA_TYPE_VIDEO;
-      const mediaType = isVideo ? 'video' : 'audio';
-
-      lines.push(`m=${mediaType} ${streamConfig.port} RTP/AVP ${streamConfig.payloadType}`);
-
-      // Add rtpmap
-      const rtpmap =
-        streamConfig.channels !== undefined
-          ? `${streamConfig.payloadType} ${codec.name}/${streamConfig.clockRate}/${streamConfig.channels}`
-          : `${streamConfig.payloadType} ${codec.name}/${streamConfig.clockRate}`;
-      lines.push(`a=rtpmap:${rtpmap}`);
-
-      // Add fmtp if provided
-      if (streamConfig.fmtp) {
-        lines.push(`a=fmtp:${streamConfig.payloadType} ${streamConfig.fmtp}`);
-      }
-
-      // Add SRTP crypto line if provided
-      if (streamConfig.srtp) {
-        const suite = streamConfig.srtp.suite ?? 'AES_CM_128_HMAC_SHA1_80';
-        const keyMaterial = Buffer.concat([streamConfig.srtp.key, streamConfig.srtp.salt]).toString('base64');
-        lines.push(`a=crypto:1 ${suite} inline:${keyMaterial}`);
-      }
-    }
-
-    return lines.join('\n');
   }
 
   /**
