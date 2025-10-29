@@ -1,9 +1,5 @@
-#!/usr/bin/env tsx
 /**
- * Example: RTP/SRTP Input with MediaInput
- *
- * Demonstrates how to receive RTP packets (with optional SRTP encryption)
- * and decode them using MediaInput.openRTP() and StreamingUtils.
+ * Example: SDP Generation for RTP/SRTP Input
  */
 
 import { StreamingUtils } from '../src/api/index.js';

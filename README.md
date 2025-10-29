@@ -431,8 +431,8 @@ NodeAV provides direct bindings to FFmpeg's C APIs, which work with raw memory p
 | `api-muxing` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-muxing.ts) |
 | `api-pipeline-hw-rtsp` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-pipeline-hw-rtsp.ts) |
 | `api-pipeline-raw-muxing` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-pipeline-raw-muxing.ts) |
-| `api-rtp-srtp-input` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-rtp-srtp-input.ts) |
 | `api-sdp` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-sdp.ts) |
+| `api-sdp-gen` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-sdp-gen.ts) |
 | `api-stream-input` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-stream-input.ts) |
 | `api-sw-decode-hw-encode` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-sw-decode-hw-encode.ts) |
 | `api-sw-transcode` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-sw-transcode.ts) |
