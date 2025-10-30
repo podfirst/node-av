@@ -852,12 +852,12 @@ describe('MediaInput', () => {
           srtp: {
             key: srtpKey,
             salt: srtpSalt,
-            suite: 'AES_CM_128_HMAC_SHA1_32',
+            suite: 'AES_CM_128_HMAC_SHA1_80',
           },
         },
       ]);
 
-      assert.ok(sdp.includes('a=crypto:1 AES_CM_128_HMAC_SHA1_32'), 'SDP should use specified crypto suite');
+      assert.ok(sdp.includes('a=crypto:1 AES_CM_128_HMAC_SHA1_80'), 'SDP should use specified crypto suite');
 
       const rtpInput = await MediaInput.openSDP(sdp);
       assert.ok(rtpInput, 'Should create RTP input with custom crypto suite');
@@ -1095,12 +1095,12 @@ describe('MediaInput', () => {
           srtp: {
             key: srtpKey,
             salt: srtpSalt,
-            suite: 'AES_CM_128_HMAC_SHA1_32',
+            suite: 'AES_CM_128_HMAC_SHA1_80',
           },
         },
       ]);
 
-      assert.ok(sdp.includes('a=crypto:1 AES_CM_128_HMAC_SHA1_32'), 'SDP should use specified crypto suite');
+      assert.ok(sdp.includes('a=crypto:1 AES_CM_128_HMAC_SHA1_80'), 'SDP should use specified crypto suite');
 
       const rtpInput = MediaInput.openSDPSync(sdp);
       assert.ok(rtpInput, 'Should create RTP input with custom crypto suite');
