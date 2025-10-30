@@ -70,6 +70,13 @@ export interface FMP4StreamOptions {
   onData?: (data: Buffer, info: FMP4Data) => void;
 
   /**
+   * Callback invoked when the stream is closed or encounters an error.
+   *
+   * @param error - Optional error if stream closed due to an error
+   */
+  onClose?: (error?: Error) => void;
+
+  /**
    * Supported codec strings from client.
    * Comma-separated list (e.g., "avc1.640029,hvc1.1.6.L153.B0,mp4a.40.2,flac,opus").
    *
@@ -194,20 +201,28 @@ export class FMP4Stream {
   /**
    * @param inputUrl - Media input URL
    *
-   * @param inputOptions - FFmpeg input options
-   *
    * @param options - Stream configuration options
    *
    * Use {@link create} factory method
    *
    * @internal
    */
-  private constructor(inputUrl: string, inputOptions: Record<string, string | number | boolean | null | undefined>, options: FMP4StreamOptions) {
+  private constructor(inputUrl: string, options: FMP4StreamOptions) {
     this.inputUrl = inputUrl;
-    this.inputOptions = inputOptions;
+
+    this.inputOptions = {
+      flags: 'low_delay',
+      fflags: 'nobuffer',
+      analyzeduration: 0,
+      probesize: 32,
+      timeout: 5000000,
+      rtsp_transport: inputUrl.toLowerCase().startsWith('rtsp') ? 'tcp' : undefined,
+      ...options.inputOptions,
+    };
 
     this.options = {
       onData: options.onData ?? (() => {}),
+      onClose: options.onClose ?? (() => {}),
       supportedCodecs: options.supportedCodecs ?? '',
       fragDuration: options.fragDuration ?? 1,
       hardware: options.hardware ?? { deviceType: AV_HWDEVICE_TYPE_NONE },
@@ -257,21 +272,7 @@ export class FMP4Stream {
    * ```
    */
   static create(inputUrl: string, options: FMP4StreamOptions = {}): FMP4Stream {
-    const isRtsp = inputUrl.toLowerCase().startsWith('rtsp');
-
-    options.inputOptions = options.inputOptions ?? {};
-
-    const inputOptions = {
-      flags: 'low_delay',
-      fflags: 'nobuffer',
-      analyzeduration: 0,
-      probesize: 32,
-      timeout: 5000000,
-      rtsp_transport: isRtsp ? 'tcp' : undefined,
-      ...options.inputOptions,
-    };
-
-    return new FMP4Stream(inputUrl, inputOptions, options);
+    return new FMP4Stream(inputUrl, options);
   }
 
   /**
@@ -508,9 +509,15 @@ export class FMP4Stream {
       },
     });
 
-    this.runPipeline().catch(async () => {
-      await this.stop();
-    });
+    this.runPipeline()
+      .then(() => {
+        // Pipeline completed successfully
+        this.options.onClose?.();
+      })
+      .catch(async (error) => {
+        await this.stop();
+        this.options.onClose?.(error);
+      });
   }
 
   /**

@@ -49,6 +49,19 @@ wss.on('connection', async (ws: WebSocket) => {
               ws.send(chunk);
             }
           },
+          onClose: (error) => {
+            if (error) {
+              console.error('[fMP4] Stream closed with error:', error);
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'error', value: String(error) }));
+              }
+            } else {
+              console.log('[fMP4] Stream closed');
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'end' }));
+              }
+            }
+          },
         });
 
         console.log('[Server] Starting streaming...');
