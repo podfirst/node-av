@@ -92,6 +92,14 @@ export interface MediaInputOptions {
   skipStreamInfo?: boolean;
 
   /**
+   * Start reading packets from the first keyframe.
+   * If true, all packets before the first keyframe will be skipped.
+   *
+   * @default false
+   */
+  startWithKeyframe?: boolean;
+
+  /**
    * FFmpeg format options passed directly to the input.
    */
   options?: Record<string, string | number | boolean | undefined | null>;

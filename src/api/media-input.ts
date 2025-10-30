@@ -66,16 +66,20 @@ export class MediaInput implements AsyncDisposable, Disposable {
   private _streams: Stream[] = [];
   private ioContext?: IOContext;
   private isClosed = false;
+  private startWithKeyframe: boolean;
 
   /**
    * @param formatContext - Opened format context
    *
    * @param ioContext - Optional IO context for custom I/O (e.g., from Buffer)
    *
+   * @param startWithKeyframe - Whether to skip packets until first keyframe
+   *
    * @internal
    */
-  private constructor(formatContext: FormatContext, ioContext?: IOContext) {
+  private constructor(formatContext: FormatContext, ioContext?: IOContext, startWithKeyframe = false) {
     this.formatContext = formatContext;
+    this.startWithKeyframe = startWithKeyframe;
     this.ioContext = ioContext;
     this._streams = formatContext.streams ?? [];
   }
@@ -439,7 +443,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
         FFmpegError.throwIfError(ret, 'Failed to find stream info');
       }
 
-      const mediaInput = new MediaInput(formatContext, ioContext);
+      const mediaInput = new MediaInput(formatContext, ioContext, options.startWithKeyframe);
 
       return mediaInput;
     } catch (error) {
@@ -631,7 +635,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
         FFmpegError.throwIfError(ret, 'Failed to find stream info');
       }
 
-      const mediaInput = new MediaInput(formatContext, ioContext);
+      const mediaInput = new MediaInput(formatContext, ioContext, options.startWithKeyframe);
 
       return mediaInput;
     } catch (error) {
@@ -737,6 +741,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
 
     // Create UDP socket for sending packets to FFmpeg
     const udpSocket = createSocket('udp4');
+    udpSocket.setSendBufferSize(1024 * 1024); // 1MB buffer
 
     try {
       // Open MediaInput with SDP format using custom I/O
@@ -745,6 +750,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
         skipStreamInfo: true,
         options: {
           protocol_whitelist: 'pipe,udp,rtp,file,crypto',
+          listen_timeout: -1,
         },
       });
 
@@ -861,6 +867,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
 
     // Create UDP socket for sending packets to FFmpeg
     const udpSocket = createSocket('udp4');
+    udpSocket.setSendBufferSize(1024 * 1024); // 1MB buffer
 
     try {
       // Open MediaInput with SDP format using custom I/O
@@ -869,6 +876,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
         skipStreamInfo: true,
         options: {
           protocol_whitelist: 'pipe,udp,rtp,file,crypto',
+          listen_timeout: -1,
         },
       });
 
@@ -1236,16 +1244,32 @@ export class MediaInput implements AsyncDisposable, Disposable {
   async *packets(index?: number): AsyncGenerator<Packet> {
     const packet = new Packet();
     packet.alloc();
+    let hasSeenKeyframe = !this.startWithKeyframe;
 
     try {
       while (!this.isClosed) {
         const ret = await this.formatContext.readFrame(packet);
         if (ret < 0) {
-          // End of file or error
           break;
         }
 
         if (index === undefined || packet.streamIndex === index) {
+          // If startWithKeyframe is enabled, skip packets until we see a keyframe
+          // Only apply to video streams - audio packets should always pass through
+          if (!hasSeenKeyframe) {
+            const stream = this._streams[packet.streamIndex];
+            const isVideoStream = stream?.codecpar.codecType === AVMEDIA_TYPE_VIDEO;
+
+            if (isVideoStream && packet.isKeyframe) {
+              hasSeenKeyframe = true;
+            } else if (isVideoStream && !packet.isKeyframe) {
+              // Skip video P-frames until first keyframe
+              packet.unref();
+              continue;
+            }
+            // Non-video streams (audio, etc.) always pass through
+          }
+
           // Clone the packet for the user
           // This creates a new Packet object that shares the same data buffer
           // through reference counting. The data won't be freed until both
@@ -1256,6 +1280,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
           }
           yield cloned;
         }
+
         // Unreference the original packet's data buffer
         // This allows us to reuse the packet object for the next readFrame()
         // The data itself is still alive because the clone has a reference
@@ -1306,16 +1331,32 @@ export class MediaInput implements AsyncDisposable, Disposable {
   *packetsSync(index?: number): Generator<Packet> {
     const packet = new Packet();
     packet.alloc();
+    let hasSeenKeyframe = !this.startWithKeyframe;
 
     try {
       while (!this.isClosed) {
         const ret = this.formatContext.readFrameSync(packet);
         if (ret < 0) {
-          // End of file or error
           break;
         }
 
         if (index === undefined || packet.streamIndex === index) {
+          // If startWithKeyframe is enabled, skip packets until we see a keyframe
+          // Only apply to video streams - audio packets should always pass through
+          if (!hasSeenKeyframe) {
+            const stream = this._streams[packet.streamIndex];
+            const isVideoStream = stream?.codecpar.codecType === AVMEDIA_TYPE_VIDEO;
+
+            if (isVideoStream && packet.isKeyframe) {
+              hasSeenKeyframe = true;
+            } else if (isVideoStream && !packet.isKeyframe) {
+              // Skip video P-frames until first keyframe
+              packet.unref();
+              continue;
+            }
+            // Non-video streams (audio, etc.) always pass through
+          }
+
           // Clone the packet for the user
           // This creates a new Packet object that shares the same data buffer
           // through reference counting. The data won't be freed until both
@@ -1326,6 +1367,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
           }
           yield cloned;
         }
+
         // Unreference the original packet's data buffer
         // This allows us to reuse the packet object for the next readFrame()
         // The data itself is still alive because the clone has a reference
