@@ -19,7 +19,7 @@ export type StreamName = 'video' | 'audio';
 // Better type definitions with proper inference
 export type NamedInputs<K extends StreamName = StreamName> = Pick<Record<StreamName, MediaInput>, K>;
 export type NamedStages<K extends StreamName = StreamName> = Pick<
-  Record<StreamName, (Decoder | FilterAPI | FilterAPI[] | Encoder | BitStreamFilterAPI | BitStreamFilterAPI[])[] | 'passthrough'>,
+  Record<StreamName, (Decoder | FilterAPI | FilterAPI[] | Encoder | BitStreamFilterAPI | BitStreamFilterAPI[] | undefined)[] | 'passthrough'>,
   K
 >;
 export type NamedOutputs<K extends StreamName = StreamName> = Pick<Record<StreamName, MediaOutput>, K>;
@@ -711,7 +711,7 @@ class PipelineControlImpl implements PipelineControl {
 function runMediaInputPipeline(input: MediaInput, output: MediaOutput): PipelineControl {
   let control: PipelineControl;
   // eslint-disable-next-line prefer-const
-  control = new PipelineControlImpl(runMediaInputPipelineAsync(input, output, () => control.isStopped()));
+  control = new PipelineControlImpl(runMediaInputPipelineAsync(input, output, () => control?.isStopped() ?? false));
   return control;
 }
 
@@ -842,7 +842,7 @@ function runSimplePipeline(args: any[]): PipelineControl | AsyncGenerator<Packet
   if (isOutput) {
     let control: PipelineControl;
     // eslint-disable-next-line prefer-const
-    control = new PipelineControlImpl(consumeSimplePipeline(generator, lastStage, metadata, () => control.isStopped()));
+    control = new PipelineControlImpl(consumeSimplePipeline(generator, lastStage, metadata, () => control?.isStopped() ?? false));
     return control;
   }
 
@@ -968,7 +968,7 @@ function runNamedPartialPipeline<K extends StreamName>(inputs: NamedInputs<K>, s
 
   for (const [streamName, streamStages] of Object.entries(stages) as [
     StreamName,
-    (Decoder | FilterAPI | FilterAPI[] | Encoder | BitStreamFilterAPI | BitStreamFilterAPI[])[] | 'passthrough',
+    (Decoder | FilterAPI | FilterAPI[] | Encoder | BitStreamFilterAPI | BitStreamFilterAPI[] | undefined)[] | 'passthrough',
   ][]) {
     const input = (inputs as any)[streamName] as MediaInput;
     if (!input) {
@@ -993,7 +993,19 @@ function runNamedPartialPipeline<K extends StreamName>(inputs: NamedInputs<K>, s
       throw new Error(`No ${streamName} stream found in input.`);
     }
 
-    if (streamStages === 'passthrough') {
+    // Normalize stages: if array contains only undefined, treat as passthrough
+    // Also filter out undefined entries from the array
+    let normalizedStages: typeof streamStages = streamStages;
+    if (Array.isArray(streamStages)) {
+      const definedStages = streamStages.filter((stage) => stage !== undefined);
+      if (definedStages.length === 0) {
+        normalizedStages = 'passthrough';
+      } else {
+        normalizedStages = definedStages;
+      }
+    }
+
+    if (normalizedStages === 'passthrough') {
       // Direct passthrough - return input packets for this specific stream
       (result as any)[streamName] = (async function* () {
         for await (const packet of input.packets(stream.index)) {
@@ -1004,7 +1016,8 @@ function runNamedPartialPipeline<K extends StreamName>(inputs: NamedInputs<K>, s
       // Process the stream - pass packets for this specific stream only
       // Build pipeline for this stream (can return frames or packets)
       const metadata: StreamMetadata = {};
-      (result as any)[streamName] = buildFlexibleNamedStreamPipeline(input.packets(stream.index), streamStages, metadata);
+      const stages = normalizedStages;
+      (result as any)[streamName] = buildFlexibleNamedStreamPipeline(input.packets(stream.index), stages, metadata);
     }
   }
 
@@ -1027,8 +1040,109 @@ function runNamedPartialPipeline<K extends StreamName>(inputs: NamedInputs<K>, s
 function runNamedPipeline<K extends StreamName>(inputs: NamedInputs<K>, stages: NamedStages<K>, output: MediaOutput | NamedOutputs<K>): PipelineControl {
   let control: PipelineControl;
   // eslint-disable-next-line prefer-const
-  control = new PipelineControlImpl(runNamedPipelineAsync(inputs, stages, output, () => control.isStopped()));
+  control = new PipelineControlImpl(runNamedPipelineAsync(inputs, stages, output, () => control?.isStopped() ?? false));
   return control;
+}
+
+/**
+ * Demux a shared packet stream into separate streams by stream index.
+ *
+ * @param packets - Shared packet stream (all packets)
+ *
+ * @param streamIndexMap - Map of stream names to stream indices
+ *
+ * @param shouldStop - Function to check if pipeline should stop
+ *
+ * @returns Record of demuxed packet streams
+ *
+ * @internal
+ */
+function demuxPacketStream<K extends StreamName>(
+  packets: AsyncIterable<Packet>,
+  streamIndexMap: Record<K, number>,
+  shouldStop: () => boolean,
+): Record<K, AsyncIterable<Packet>> {
+  const result = {} as Record<K, AsyncIterable<Packet>>;
+
+  // Create a promise-based queue for each stream
+  const queues: Record<K, (Packet | null)[]> = {} as any;
+  const resolvers: Record<K, ((value: Packet | null) => void)[]> = {} as any;
+
+  // Initialize queues
+  for (const streamName of Object.keys(streamIndexMap) as K[]) {
+    (queues as any)[streamName] = [];
+    (resolvers as any)[streamName] = [];
+  }
+
+  // Start reading packets in background and distribute to queues
+  (async () => {
+    try {
+      for await (const packet of packets) {
+        if (shouldStop()) {
+          packet.free();
+          break;
+        }
+
+        // Find which stream this packet belongs to
+        for (const [streamName, streamIndex] of Object.entries(streamIndexMap) as [K, number][]) {
+          if (packet.streamIndex === streamIndex) {
+            const queue = (queues as any)[streamName];
+            const resolver = (resolvers as any)[streamName].shift();
+
+            if (resolver) {
+              // Someone is waiting for a packet
+              resolver(packet);
+            } else {
+              // Queue the packet
+              queue.push(packet);
+            }
+            break;
+          }
+        }
+      }
+    } finally {
+      // Signal end to all streams
+      for (const streamName of Object.keys(streamIndexMap) as K[]) {
+        const resolver = (resolvers as any)[streamName].shift();
+        if (resolver) {
+          resolver(null);
+        } else {
+          (queues as any)[streamName].push(null);
+        }
+      }
+    }
+  })();
+
+  // Create async generators for each stream
+  for (const streamName of Object.keys(streamIndexMap) as K[]) {
+    (result as any)[streamName] = (async function* () {
+      const queue = (queues as any)[streamName];
+      const resolverQueue = (resolvers as any)[streamName];
+
+      while (!shouldStop()) {
+        let packet: Packet | null;
+
+        if (queue.length > 0) {
+          // Get packet from queue
+          packet = queue.shift()!;
+        } else {
+          // Wait for packet
+          packet = await new Promise<Packet | null>((resolve) => {
+            resolverQueue.push(resolve);
+          });
+        }
+
+        if (packet === null) {
+          // End of stream
+          break;
+        }
+
+        yield packet;
+      }
+    })();
+  }
+
+  return result;
 }
 
 /**
@@ -1050,87 +1164,204 @@ async function runNamedPipelineAsync<K extends StreamName>(
   output: MediaOutput | NamedOutputs<K>,
   shouldStop: () => boolean,
 ): Promise<void> {
+  // Check if all inputs reference the same MediaInput instance
+  const inputValues: MediaInput[] = Object.values(inputs);
+  const allSameInput = inputValues.length > 1 && inputValues.every((input) => input === inputValues[0]);
+
   // Track metadata for each stream
   const streamMetadata: Record<StreamName, StreamMetadata> = {} as any;
 
   // Process each named stream into generators
   const processedStreams: Record<StreamName, AsyncIterable<Packet>> = {} as any;
 
-  for (const [streamName, streamStages] of Object.entries(stages) as [
-    StreamName,
-    (Decoder | FilterAPI | FilterAPI[] | Encoder | BitStreamFilterAPI | BitStreamFilterAPI[])[] | 'passthrough',
-  ][]) {
-    const metadata: StreamMetadata = {};
-    (streamMetadata as any)[streamName] = metadata;
+  // If all inputs are the same instance, use shared packet stream with demuxing
+  if (allSameInput) {
+    const sharedInput = inputValues[0];
+    const streamIndexMap: Record<StreamName, number> = {} as any;
 
-    const input = (inputs as any)[streamName] as MediaInput;
-    if (!input) {
-      throw new Error(`No input found for stream: ${streamName}`);
-    }
+    // First pass: collect stream indices and metadata
+    for (const [streamName, streamStages] of Object.entries(stages) as [
+      StreamName,
+      (Decoder | FilterAPI | FilterAPI[] | Encoder | BitStreamFilterAPI | BitStreamFilterAPI[] | undefined)[] | 'passthrough',
+    ][]) {
+      const metadata: StreamMetadata = {};
+      (streamMetadata as any)[streamName] = metadata;
 
-    if (streamStages === 'passthrough') {
-      // Direct passthrough - no processing
-      let stream: Stream | null = null;
-
-      switch (streamName) {
-        case 'video':
-          stream = input.video() ?? null;
-          metadata.type = 'video';
-          break;
-        case 'audio':
-          stream = input.audio() ?? null;
-          metadata.type = 'audio';
-          break;
-      }
-
-      if (!stream) {
-        throw new Error(`No ${streamName} stream found in input for passthrough.`);
-      }
-
-      (processedStreams as any)[streamName] = input.packets(stream.index);
-      metadata.mediaInput = input; // Track MediaInput for passthrough
-    } else {
-      // Process the stream
-      // Pre-populate metadata by walking through stages
-      for (const stage of streamStages) {
-        if (isDecoder(stage)) {
-          metadata.decoder = stage;
-        } else if (isEncoder(stage)) {
-          metadata.encoder = stage;
-        } else if (isBitStreamFilterAPI(stage)) {
-          metadata.bitStreamFilter = stage;
+      // Normalize stages
+      let normalizedStages: typeof streamStages = streamStages;
+      if (Array.isArray(streamStages)) {
+        const definedStages = streamStages.filter((stage) => stage !== undefined);
+        if (definedStages.length === 0) {
+          normalizedStages = 'passthrough';
+        } else {
+          normalizedStages = definedStages;
         }
       }
 
-      // Get packets - filter by stream index based on decoder, BSF, or stream type
-      let packets: AsyncIterable<Packet>;
-      if (metadata.decoder) {
-        const streamIndex = metadata.decoder.getStream().index;
-        packets = input.packets(streamIndex);
-      } else if (metadata.bitStreamFilter) {
-        const streamIndex = metadata.bitStreamFilter.getStream().index;
-        packets = input.packets(streamIndex);
+      // Determine stream index
+      let streamIndex: number | undefined;
+      if (normalizedStages !== 'passthrough') {
+        const stages = normalizedStages;
+        // Find decoder/BSF to get stream index
+        for (const stage of stages) {
+          if (isDecoder(stage)) {
+            metadata.decoder = stage;
+            streamIndex = stage.getStream().index;
+            break;
+          } else if (isBitStreamFilterAPI(stage)) {
+            metadata.bitStreamFilter = stage;
+            streamIndex = stage.getStream().index;
+            break;
+          } else if (isEncoder(stage)) {
+            metadata.encoder = stage;
+          }
+        }
+
+        // If no decoder/BSF, use stream name to determine index
+        if (streamIndex === undefined) {
+          const stream = streamName === 'video' ? sharedInput.video() : sharedInput.audio();
+          if (!stream) {
+            throw new Error(`No ${streamName} stream found in input.`);
+          }
+          streamIndex = stream.index;
+        }
       } else {
-        // No decoder or BSF - determine stream by name
+        // Passthrough
+        metadata.type = streamName;
+        metadata.mediaInput = sharedInput;
+        const stream = streamName === 'video' ? sharedInput.video() : sharedInput.audio();
+        if (!stream) {
+          throw new Error(`No ${streamName} stream found in input for passthrough.`);
+        }
+        streamIndex = stream.index;
+      }
+
+      (streamIndexMap as any)[streamName] = streamIndex;
+    }
+
+    // Create demuxed packet streams
+    const demuxedPackets = demuxPacketStream(sharedInput.packets(), streamIndexMap, shouldStop);
+
+    // Second pass: build pipelines for each stream
+    for (const [streamName, streamStages] of Object.entries(stages) as [
+      StreamName,
+      (Decoder | FilterAPI | FilterAPI[] | Encoder | BitStreamFilterAPI | BitStreamFilterAPI[] | undefined)[] | 'passthrough',
+    ][]) {
+      const metadata = streamMetadata[streamName];
+      const packets = (demuxedPackets as any)[streamName];
+
+      // Normalize stages again
+      let normalizedStages: typeof streamStages = streamStages;
+      if (Array.isArray(streamStages)) {
+        const definedStages = streamStages.filter((stage) => stage !== undefined);
+        if (definedStages.length === 0) {
+          normalizedStages = 'passthrough';
+        } else {
+          normalizedStages = definedStages;
+        }
+      }
+
+      if (normalizedStages === 'passthrough') {
+        // Direct passthrough
+        (processedStreams as any)[streamName] = packets;
+      } else {
+        // Build pipeline
+        const stages = normalizedStages;
+        (processedStreams as any)[streamName] = buildNamedStreamPipeline(packets, stages, metadata);
+      }
+    }
+  } else {
+    // Original logic: separate inputs or single input
+    for (const [streamName, streamStages] of Object.entries(stages) as [
+      StreamName,
+      (Decoder | FilterAPI | FilterAPI[] | Encoder | BitStreamFilterAPI | BitStreamFilterAPI[] | undefined)[] | 'passthrough',
+    ][]) {
+      const metadata: StreamMetadata = {};
+      (streamMetadata as any)[streamName] = metadata;
+
+      const input = (inputs as any)[streamName] as MediaInput;
+      if (!input) {
+        throw new Error(`No input found for stream: ${streamName}`);
+      }
+
+      // Normalize stages: if array contains only undefined, treat as passthrough
+      // Also filter out undefined entries from the array
+      let normalizedStages: typeof streamStages = streamStages;
+      if (Array.isArray(streamStages)) {
+        const definedStages = streamStages.filter((stage) => stage !== undefined);
+        if (definedStages.length === 0) {
+          normalizedStages = 'passthrough';
+        } else {
+          normalizedStages = definedStages;
+        }
+      }
+
+      if (normalizedStages === 'passthrough') {
+        // Direct passthrough - no processing
         let stream: Stream | null = null;
+
         switch (streamName) {
           case 'video':
             stream = input.video() ?? null;
+            metadata.type = 'video';
             break;
           case 'audio':
             stream = input.audio() ?? null;
+            metadata.type = 'audio';
             break;
         }
 
         if (!stream) {
-          throw new Error(`No ${streamName} stream found in input.`);
+          throw new Error(`No ${streamName} stream found in input for passthrough.`);
         }
 
-        packets = input.packets(stream.index);
-      }
+        (processedStreams as any)[streamName] = input.packets(stream.index);
+        metadata.mediaInput = input; // Track MediaInput for passthrough
+      } else {
+        // Process the stream - normalizedStages is guaranteed to be an array here
+        const stages = normalizedStages;
 
-      // Build pipeline for this stream
-      (processedStreams as any)[streamName] = buildNamedStreamPipeline(packets, streamStages, metadata);
+        // Pre-populate metadata by walking through stages
+        for (const stage of stages) {
+          if (isDecoder(stage)) {
+            metadata.decoder = stage;
+          } else if (isEncoder(stage)) {
+            metadata.encoder = stage;
+          } else if (isBitStreamFilterAPI(stage)) {
+            metadata.bitStreamFilter = stage;
+          }
+        }
+
+        // Get packets - filter by stream index based on decoder, BSF, or stream type
+        let packets: AsyncIterable<Packet>;
+        if (metadata.decoder) {
+          const streamIndex = metadata.decoder.getStream().index;
+          packets = input.packets(streamIndex);
+        } else if (metadata.bitStreamFilter) {
+          const streamIndex = metadata.bitStreamFilter.getStream().index;
+          packets = input.packets(streamIndex);
+        } else {
+          // No decoder or BSF - determine stream by name
+          let stream: Stream | null = null;
+          switch (streamName) {
+            case 'video':
+              stream = input.video() ?? null;
+              break;
+            case 'audio':
+              stream = input.audio() ?? null;
+              break;
+          }
+
+          if (!stream) {
+            throw new Error(`No ${streamName} stream found in input.`);
+          }
+
+          packets = input.packets(stream.index);
+        }
+
+        // Build pipeline for this stream
+        (processedStreams as any)[streamName] = buildNamedStreamPipeline(packets, stages, metadata);
+      }
     }
   }
 
@@ -1170,7 +1401,7 @@ async function runNamedPipelineAsync<K extends StreamName>(
  */
 async function* buildFlexibleNamedStreamPipeline(
   source: AsyncIterable<Packet>,
-  stages: (Decoder | FilterAPI | FilterAPI[] | Encoder | BitStreamFilterAPI | BitStreamFilterAPI[])[],
+  stages: (Decoder | FilterAPI | FilterAPI[] | Encoder | BitStreamFilterAPI | BitStreamFilterAPI[] | undefined)[],
   metadata: StreamMetadata,
 ): AsyncGenerator<Packet | Frame> {
   let stream: AsyncIterable<any> = source;
@@ -1218,7 +1449,7 @@ async function* buildFlexibleNamedStreamPipeline(
  */
 async function* buildNamedStreamPipeline(
   source: AsyncIterable<Packet>,
-  stages: (Decoder | FilterAPI | FilterAPI[] | Encoder | BitStreamFilterAPI | BitStreamFilterAPI[])[],
+  stages: (Decoder | FilterAPI | FilterAPI[] | Encoder | BitStreamFilterAPI | BitStreamFilterAPI[] | undefined)[],
   metadata: StreamMetadata,
 ): AsyncGenerator<Packet> {
   let stream: AsyncIterable<any> = source;
