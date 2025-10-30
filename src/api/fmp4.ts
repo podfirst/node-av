@@ -17,9 +17,11 @@ import { FilterAPI } from './filter.js';
 import { HardwareContext } from './hardware.js';
 import { MediaInput } from './media-input.js';
 import { MediaOutput } from './media-output.js';
+import { pipeline } from './pipeline.js';
 
 import type { AVCodecID, AVHWDeviceType } from '../constants/constants.js';
 import type { FFHWDeviceType } from '../constants/hardware.js';
+import type { PipelineControl } from './pipeline.js';
 import type { IOOutputCallbacks } from './types.js';
 
 /**
@@ -62,7 +64,6 @@ export interface FMP4Data {
 export interface FMP4StreamOptions {
   /**
    * Callback invoked for fMP4 data (chunks or complete boxes).
-   * Use this to send data to your client (WebSocket, HTTP, etc.).
    *
    * @param data - fMP4 data information with buffer and box details
    */
@@ -98,14 +99,12 @@ export interface FMP4StreamOptions {
   /**
    * FFmpeg input options passed directly to the input.
    *
-   * @default { flags: 'low_delay' }
+   * @default { flags: 'low_delay', fflags: 'nobuffer', analyzeduration: 0, probesize: 32, timeout: 5000000 }
    */
   inputOptions?: Record<string, string | number | boolean | null | undefined>;
 
   /**
    * Buffer size for I/O operations in bytes.
-   * Smaller values send data more frequently but with more overhead.
-   * Larger values reduce overhead but increase latency.
    *
    * @default 4096
    */
@@ -149,19 +148,22 @@ export const FMP4_CODECS = {
  * const supportedCodecs = 'avc1.640029,hvc1.1.6.L153.B0,mp4a.40.2,flac';
  *
  * // Create stream with codec negotiation
- * const stream = await FMP4Stream.create('rtsp://camera.local/stream', {
+ * const stream = FMP4Stream.create('rtsp://camera.local/stream', {
  *   supportedCodecs,
  *   onData: (data) => ws.send(data.data)
  * });
  *
  * // Start streaming (auto-transcodes if needed)
  * await stream.start();
+ *
+ * // Stop when done
+ * await stream.stop();
  * ```
  *
  * @example
  * ```typescript
  * // Stream with hardware acceleration
- * const stream = await FMP4Stream.create('input.mp4', {
+ * const stream = FMP4Stream.create('input.mp4', {
  *   supportedCodecs: 'avc1.640029,mp4a.40.2',
  *   hardware: 'auto',
  *   fragDuration: 1,
@@ -169,30 +171,30 @@ export const FMP4_CODECS = {
  * });
  *
  * await stream.start();
- * stream.stop();
- * stream.dispose();
+ * await stream.stop();
  * ```
- *
- * @see {@link MediaInput} For input media handling
- * @see {@link MediaOutput} For fMP4 generation
- * @see {@link HardwareContext} For GPU acceleration
  */
-export class FMP4Stream implements Disposable {
-  private input: MediaInput;
+export class FMP4Stream {
   private options: Required<FMP4StreamOptions>;
-  private output: MediaOutput | null = null;
-  private hardwareContext: HardwareContext | null = null;
-  private videoDecoder: Decoder | null = null;
-  private videoEncoder: Encoder | null = null;
-  private audioDecoder: Decoder | null = null;
-  private audioFilter: FilterAPI | null = null;
-  private audioEncoder: Encoder | null = null;
-  private streamActive = false;
+
+  private inputUrl: string;
+  private inputOptions: Record<string, string | number | boolean | null | undefined>;
+  private input?: MediaInput;
+  private output?: MediaOutput;
+  private hardwareContext?: HardwareContext | null;
+  private videoDecoder?: Decoder;
+  private videoEncoder?: Encoder;
+  private audioDecoder?: Decoder;
+  private audioFilter?: FilterAPI;
+  private audioEncoder?: Encoder;
+  private pipeline?: PipelineControl;
   private supportedCodecs: Set<string>;
   private incompleteBoxBuffer: Buffer | null = null;
 
   /**
-   * @param input - Media input source
+   * @param inputUrl - Media input URL
+   *
+   * @param inputOptions - FFmpeg input options
    *
    * @param options - Stream configuration options
    *
@@ -200,8 +202,10 @@ export class FMP4Stream implements Disposable {
    *
    * @internal
    */
-  private constructor(input: MediaInput, options: FMP4StreamOptions) {
-    this.input = input;
+  private constructor(inputUrl: string, inputOptions: Record<string, string | number | boolean | null | undefined>, options: FMP4StreamOptions) {
+    this.inputUrl = inputUrl;
+    this.inputOptions = inputOptions;
+
     this.options = {
       onData: options.onData ?? (() => {}),
       supportedCodecs: options.supportedCodecs ?? '',
@@ -224,9 +228,8 @@ export class FMP4Stream implements Disposable {
   /**
    * Create a fMP4 stream from a media source.
    *
-   * Opens the input media, detects video and audio codecs, and prepares
-   * transcoding pipelines based on client-supported codecs.
-   * Automatically transcodes to H.264 and AAC if necessary.
+   * Configures the stream with input URL and options. The input is not opened
+   * until start() is called, allowing the stream to be reused after stop().
    *
    * @param inputUrl - Media source URL (RTSP, file path, HTTP, etc.)
    *
@@ -234,14 +237,10 @@ export class FMP4Stream implements Disposable {
    *
    * @returns Configured fMP4 stream instance
    *
-   * @throws {Error} If no video stream found in input
-   *
-   * @throws {FFmpegError} If input cannot be opened
-   *
    * @example
    * ```typescript
    * // Stream from file with codec negotiation
-   * const stream = await FMP4Stream.create('video.mp4', {
+   * const stream = FMP4Stream.create('video.mp4', {
    *   supportedCodecs: 'avc1.640029,mp4a.40.2',
    *   onData: (data) => ws.send(data.data)
    * });
@@ -250,43 +249,40 @@ export class FMP4Stream implements Disposable {
    * @example
    * ```typescript
    * // Stream from RTSP with auto hardware acceleration
-   * const stream = await FMP4Stream.create('rtsp://camera.local/stream', {
+   * const stream = FMP4Stream.create('rtsp://camera.local/stream', {
    *   supportedCodecs: 'avc1.640029,hvc1.1.6.L153.B0,mp4a.40.2',
    *   hardware: 'auto',
    *   fragDuration: 0.5
    * });
    * ```
    */
-  static async create(inputUrl: string, options: FMP4StreamOptions = {}): Promise<FMP4Stream> {
+  static create(inputUrl: string, options: FMP4StreamOptions = {}): FMP4Stream {
     const isRtsp = inputUrl.toLowerCase().startsWith('rtsp');
 
     options.inputOptions = options.inputOptions ?? {};
 
-    options.inputOptions = {
+    const inputOptions = {
       flags: 'low_delay',
+      fflags: 'nobuffer',
+      analyzeduration: 0,
+      probesize: 32,
+      timeout: 5000000,
       rtsp_transport: isRtsp ? 'tcp' : undefined,
       ...options.inputOptions,
     };
 
-    const input = await MediaInput.open(inputUrl, {
-      options: options.inputOptions,
-    });
-
-    const videoStream = input.video();
-    if (!videoStream) {
-      throw new Error('No video stream found in input');
-    }
-
-    return new FMP4Stream(input, options);
+    return new FMP4Stream(inputUrl, inputOptions, options);
   }
 
   /**
    * Get the codec string that will be used by client.
    *
    * Returns the MIME type codec string based on input codecs and transcoding decisions.
-   * Call this after creating the stream to know what codec string to use for addSourceBuffer().
+   * Call this after start() is called to know what codec string to use for addSourceBuffer().
    *
    * @returns MIME type codec string (e.g., "avc1.640029,mp4a.40.2")
+   *
+   * @throws {Error} If called before start() is called
    *
    * @example
    * ```typescript
@@ -294,12 +290,17 @@ export class FMP4Stream implements Disposable {
    *   supportedCodecs: 'avc1.640029,mp4a.40.2'
    * });
    *
+   * await stream.start(); // Must start first
    * const codecString = stream.getCodecString();
    * console.log(codecString); // "avc1.640029,mp4a.40.2"
    * // Use this for: sourceBuffer = mediaSource.addSourceBuffer(`video/mp4; codecs="${codecString}"`);
    * ```
    */
   getCodecString(): string {
+    if (!this.input) {
+      throw new Error('Input not opened. Call start() first to open the input.');
+    }
+
     const videoStream = this.input.video()!;
     const audioStream = this.input.audio();
 
@@ -362,17 +363,24 @@ export class FMP4Stream implements Disposable {
    *
    * @returns Object with width and height properties
    *
+   * @throws {Error} If called before start() is called
+   *
    * @example
    * ```typescript
    * const stream = await FMP4Stream.create('input.mp4', {
    *   supportedCodecs: 'avc1.640029,mp4a.40.2'
    * });
    *
+   * await stream.start(); // Must start first
    * const resolution = stream.getResolution();
    * console.log(`Width: ${resolution.width}, Height: ${resolution.height}`);
    * ```
    */
   getResolution(): { width: number; height: number } {
+    if (!this.input) {
+      throw new Error('Input not opened. Call start() first to open the input.');
+    }
+
     const videoStream = this.input.video()!;
     return {
       width: videoStream.codecpar.width,
@@ -387,11 +395,11 @@ export class FMP4Stream implements Disposable {
    * transcoding based on supported codecs, and generating fMP4 chunks.
    * Video transcodes to H.264 if H.264/H.265 not supported.
    * Audio transcodes to AAC if AAC/FLAC/Opus not supported.
-   * This method blocks until streaming completes or {@link stop} is called.
+   * This method returns immediately after starting the pipeline.
    *
-   * @returns Promise that resolves when streaming completes
+   * @returns Promise that resolves when pipeline is started
    *
-   * @throws {FFmpegError} If transcoding or muxing fails
+   * @throws {FFmpegError} If setup fails
    *
    * @example
    * ```typescript
@@ -400,29 +408,31 @@ export class FMP4Stream implements Disposable {
    *   onData: (data) => sendToClient(data.data)
    * });
    *
-   * // Start streaming (blocks until complete)
+   * // Start streaming (returns immediately)
    * await stream.start();
-   * ```
-   *
-   * @example
-   * ```typescript
-   * // Non-blocking start with background promise
-   * const stream = await FMP4Stream.create('input.mp4', {
-   *   supportedCodecs: 'avc1.640029,mp4a.40.2'
-   * });
-   * const streamPromise = stream.start();
    *
    * // Later: stop streaming
-   * stream.stop();
-   * await streamPromise;
+   * await stream.stop();
    * ```
    */
   async start(): Promise<void> {
-    if (this.streamActive) {
+    if (this.pipeline) {
       return;
     }
 
-    this.streamActive = true;
+    // Open input if not already open
+    if (!this.input) {
+      this.input = await MediaInput.open(this.inputUrl, {
+        options: this.inputOptions,
+      });
+
+      const videoStream = this.input.video();
+      if (!videoStream) {
+        await this.input.close();
+        this.input = undefined;
+        throw new Error('No video stream found in input');
+      }
+    }
 
     const videoStream = this.input.video()!;
     const audioStream = this.input.audio();
@@ -440,7 +450,7 @@ export class FMP4Stream implements Disposable {
     if (needsVideoTranscode) {
       // Transcode to H.264
       this.videoDecoder = await Decoder.create(videoStream, {
-        hardware: this.hardwareContext ?? undefined,
+        hardware: this.hardwareContext,
         exitOnError: false,
       });
 
@@ -498,101 +508,17 @@ export class FMP4Stream implements Disposable {
       },
     });
 
-    // Add streams to output
-    const videoStreamIndex = this.videoEncoder ? this.output.addStream(this.videoEncoder) : this.output.addStream(videoStream);
-    const audioStreamIndex = this.audioEncoder ? this.output.addStream(this.audioEncoder) : audioStream ? this.output.addStream(audioStream) : null;
-
-    const hasAudio = audioStreamIndex !== null && audioStream !== undefined;
-
-    // Start processing loop
-    for await (using packet of this.input.packets()) {
-      if (!this.streamActive) {
-        break;
-      }
-
-      if (packet.streamIndex === videoStream.index) {
-        if (this.videoDecoder && this.videoEncoder) {
-          // Transcode video
-          using decodedFrame = await this.videoDecoder.decode(packet);
-          if (!decodedFrame) {
-            continue;
-          }
-
-          using encodedPacket = await this.videoEncoder.encode(decodedFrame);
-          if (!encodedPacket) {
-            continue;
-          }
-
-          await this.output.writePacket(encodedPacket, videoStreamIndex);
-        } else {
-          // Stream copy video
-          await this.output.writePacket(packet, videoStreamIndex);
-        }
-      } else if (hasAudio && packet.streamIndex === audioStream.index) {
-        if (this.audioDecoder && this.audioFilter && this.audioEncoder) {
-          // Transcode audio
-          using decodedFrame = await this.audioDecoder.decode(packet);
-          if (!decodedFrame) {
-            continue;
-          }
-
-          using filteredFrame = await this.audioFilter.process(decodedFrame);
-          if (!filteredFrame) {
-            continue;
-          }
-
-          using encodedPacket = await this.audioEncoder.encode(filteredFrame);
-          if (!encodedPacket) {
-            continue;
-          }
-
-          await this.output.writePacket(encodedPacket, audioStreamIndex);
-        } else {
-          // Stream copy audio
-          await this.output.writePacket(packet, audioStreamIndex);
-        }
-      }
-    }
-
-    // Flush pipelines
-    await Promise.allSettled([this.flushVideo(videoStreamIndex), this.flushAudio(audioStreamIndex)]);
-
-    // Close output - remaining data will be written via callback
-    await this.output.close();
+    this.runPipeline().catch(async () => {
+      await this.stop();
+    });
   }
 
   /**
-   * Stop streaming gracefully.
+   * Stop streaming gracefully and clean up all resources.
    *
-   * Signals the streaming loop to exit after the current packet is processed.
-   * Does not immediately close resources - use {@link dispose} for cleanup.
-   * Safe to call multiple times.
-   *
-   * @example
-   * ```typescript
-   * const stream = await FMP4Stream.create('input.mp4', {
-   *   supportedCodecs: 'avc1.640029,mp4a.40.2'
-   * });
-   * const streamPromise = stream.start();
-   *
-   * // Stop after 10 seconds
-   * setTimeout(() => stream.stop(), 10000);
-   *
-   * await streamPromise; // Resolves when stopped
-   * stream.dispose();
-   * ```
-   */
-  stop(): void {
-    this.streamActive = false;
-  }
-
-  /**
-   * Clean up all resources and close the stream.
-   *
-   * Stops streaming if active and releases all FFmpeg resources including
-   * decoders, encoders, filters, output, and input. Should be called when
-   * done with the stream to prevent memory leaks.
-   * Safe to call multiple times.
+   * Stops the pipeline, closes output, and releases all FFmpeg resources.
+   * Safe to call multiple times. After stopping, you can call start() again
+   * to restart the stream.
    *
    * @example
    * ```typescript
@@ -600,31 +526,85 @@ export class FMP4Stream implements Disposable {
    *   supportedCodecs: 'avc1.640029,mp4a.40.2'
    * });
    * await stream.start();
-   * stream.dispose();
-   * ```
    *
-   * @example
-   * ```typescript
-   * // Using automatic cleanup
-   * {
-   *   await using stream = await FMP4Stream.create('input.mp4', {
-   *     supportedCodecs: 'avc1.640029,mp4a.40.2'
-   *   });
-   *   await stream.start();
-   * } // Automatically disposed
+   * // Stop after 10 seconds
+   * setTimeout(async () => await stream.stop(), 10000);
    * ```
    */
-  dispose(): void {
-    this.stop();
-    this.output?.close();
-    this.videoDecoder?.close();
+  async stop(): Promise<void> {
+    // Stop pipeline if running and wait for completion
+    if (this.pipeline && !this.pipeline.isStopped()) {
+      this.pipeline.stop();
+      await this.pipeline.completion;
+      this.pipeline = undefined;
+    }
+
+    // Close all resources
+    await this.output?.close();
+    this.output = undefined;
+
     this.videoEncoder?.close();
-    this.audioDecoder?.close();
-    this.audioFilter?.close();
+    this.videoEncoder = undefined;
+    this.videoDecoder?.close();
+    this.videoDecoder = undefined;
+
     this.audioEncoder?.close();
+    this.audioEncoder = undefined;
+    this.audioFilter?.close();
+    this.audioFilter = undefined;
+    this.audioDecoder?.close();
+    this.audioDecoder = undefined;
+
     this.hardwareContext?.dispose();
-    this.hardwareContext = null;
-    this.input.close();
+    this.hardwareContext = undefined;
+
+    await this.input?.close();
+    this.input = undefined;
+  }
+
+  /**
+   * Run the streaming pipeline until completion or stopped.
+   *
+   * @internal
+   */
+  private async runPipeline(): Promise<void> {
+    if (!this.input || !this.output) {
+      return;
+    }
+
+    const hasAudio = this.input?.audio() !== undefined;
+
+    if (hasAudio) {
+      this.pipeline = pipeline(
+        {
+          video: this.input,
+          audio: this.input,
+        },
+        {
+          video: [this.videoDecoder, this.videoEncoder],
+          audio: [this.audioDecoder, this.audioFilter, this.audioEncoder],
+        },
+        {
+          video: this.output,
+          audio: this.output,
+        },
+      );
+    } else {
+      this.pipeline = pipeline(
+        {
+          video: this.input,
+        },
+        {
+          video: [this.videoDecoder, this.videoEncoder],
+        },
+        {
+          video: this.output,
+        },
+      );
+    }
+
+    await this.pipeline.completion;
+    this.pipeline = undefined;
   }
 
   /**
@@ -731,74 +711,5 @@ export class FMP4Stream implements Disposable {
         boxes,
       });
     }
-  }
-
-  /**
-   * Flush video encoder pipeline.
-   *
-   * @param videoStreamIndex - Output video stream index
-   *
-   * @internal
-   */
-  private async flushVideo(videoStreamIndex: number): Promise<void> {
-    if (!this.videoDecoder || !this.videoEncoder || !this.output) {
-      return;
-    }
-
-    for await (using frame of this.videoDecoder.flushFrames()) {
-      using encodedPacket = await this.videoEncoder.encode(frame);
-      if (encodedPacket) {
-        await this.output.writePacket(encodedPacket, videoStreamIndex);
-      }
-    }
-
-    for await (using packet of this.videoEncoder.flushPackets()) {
-      await this.output.writePacket(packet, videoStreamIndex);
-    }
-  }
-
-  /**
-   * Flush audio encoder pipeline.
-   *
-   * @param audioStreamIndex - Output audio stream index
-   *
-   * @internal
-   */
-  private async flushAudio(audioStreamIndex: number | null): Promise<void> {
-    if (!this.audioDecoder || !this.audioFilter || !this.audioEncoder || audioStreamIndex === null || !this.output) {
-      return;
-    }
-
-    for await (using frame of this.audioDecoder.flushFrames()) {
-      using filteredFrame = await this.audioFilter.process(frame);
-      if (!filteredFrame) {
-        continue;
-      }
-
-      using encodedPacket = await this.audioEncoder.encode(filteredFrame);
-      if (encodedPacket) {
-        await this.output.writePacket(encodedPacket, audioStreamIndex);
-      }
-    }
-
-    for await (using frame of this.audioFilter.flushFrames()) {
-      using encodedPacket = await this.audioEncoder.encode(frame);
-      if (encodedPacket) {
-        await this.output.writePacket(encodedPacket, audioStreamIndex);
-      }
-    }
-
-    for await (using packet of this.audioEncoder.flushPackets()) {
-      await this.output.writePacket(packet, audioStreamIndex);
-    }
-  }
-
-  /**
-   * Symbol.dispose implementation for automatic cleanup.
-   *
-   * @internal
-   */
-  [Symbol.dispose](): void {
-    this.dispose();
   }
 }
