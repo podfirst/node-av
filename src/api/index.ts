@@ -22,10 +22,13 @@ export { BitStreamFilterAPI } from './bitstream-filter.js';
 // Pipeline
 export { pipeline, type NamedInputs, type NamedOutputs, type NamedStages, type PipelineControl, type StreamName } from './pipeline.js';
 
-// WebRTC
-export { WebRTCSession, WebRTCStream, type WebRTCCodecInfo, type WebRTCSessionOptions, type WebRTCStreamOptions } from './webrtc.js';
+// WebRTC Stream
+export { WebRTCStream, type WebRTCCodecInfo, type WebRTCStreamOptions } from './webrtc-stream.js';
 
-// fMP4
+// RTP Stream
+export { RTPStream, type RTPStreamOptions } from './rtp-stream.js';
+
+// fMP4 Stream
 export { FMP4_CODECS, FMP4Stream, type FMP4Data, type FMP4StreamOptions, type MP4Box } from './fmp4-stream.js';
 
 // Utilities
