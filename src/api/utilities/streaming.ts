@@ -113,7 +113,7 @@ export class StreamingUtils {
       srtp?: {
         key: Buffer;
         salt: Buffer;
-        suite?: 'AES_CM_128_HMAC_SHA1_80' | 'AES_CM_128_HMAC_SHA1_32';
+        suite?: 'AES_CM_128_HMAC_SHA1_80' | 'AES_CM_256_HMAC_SHA1_80';
       };
     }[],
     sessionName = 'RTP Stream',
