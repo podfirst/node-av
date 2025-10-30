@@ -346,6 +346,12 @@
         updateStatus(true, 'Streaming');
 
         sourceBuffer.addEventListener('updateend', () => {
+          // Check if video has error or MediaSource is closed
+          if (video.error || !mediaSource || mediaSource.readyState !== 'open') {
+            bufLen = 0; // Clear buffer
+            return;
+          }
+
           // Flush buffered data if available
           if (!sourceBuffer.updating && bufLen > 0) {
             try {
@@ -390,6 +396,18 @@
           return;
         }
 
+        // Check if video element has an error
+        if (video.error) {
+          console.error('Video element has error, cannot append buffer:', video.error);
+          return;
+        }
+
+        // Check if MediaSource is in correct state
+        if (!mediaSource || mediaSource.readyState !== 'open') {
+          console.warn('MediaSource not open, dropping chunk');
+          return;
+        }
+
         if (sourceBuffer.updating || bufLen > 0) {
           // Buffer while SourceBuffer is busy
           if (bufLen + chunk.byteLength <= buf.byteLength) {
@@ -404,6 +422,9 @@
             sourceBuffer.appendBuffer(arrayBuffer);
           } catch (error) {
             console.error('Error appending:', error);
+            if (video.error) {
+              console.error('Video error details:', video.error);
+            }
           }
         }
       }

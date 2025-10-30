@@ -40,15 +40,7 @@ wss.on('connection', async (ws: WebSocket) => {
         console.log('  Supported codecs:', message.supportedCodecs);
 
         // Create fMP4 stream with codec negotiation
-        stream = await FMP4Stream.create(message.url, {
-          inputOptions: {
-            flags: 'low_delay',
-            fflags: 'nobuffer',
-            rtsp_transport: 'tcp',
-            analyzeduration: 0,
-            probesize: 32,
-            timeout: '5000000',
-          },
+        stream = FMP4Stream.create(message.url, {
           supportedCodecs: message.supportedCodecs,
           fragDuration: 1,
           hardware: 'auto',
@@ -59,7 +51,12 @@ wss.on('connection', async (ws: WebSocket) => {
           },
         });
 
-        // Get the codec string that will be used for MSE
+        console.log('[Server] Starting streaming...');
+
+        // Start streaming (opens input and starts pipeline)
+        await stream.start();
+
+        // Get codec info after start (input is now open)
         const codecString = stream.getCodecString();
         console.log('[Server] MSE codec string:', codecString);
 
@@ -68,27 +65,8 @@ wss.on('connection', async (ws: WebSocket) => {
           ws.send(JSON.stringify({ type: 'mse', value: codecString, resolution: stream.getResolution() }));
         }
 
-        console.log('[Server] Starting streaming...');
-
-        // Start streaming
-        stream
-          .start()
-          .then(() => {
-            console.log('[Server] Streaming complete');
-            if (ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify({ type: 'end' }));
-            }
-          })
-          .catch((error) => {
-            console.error('[Server] Streaming error:', error);
-            if (ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify({ type: 'error', value: String(error) }));
-            }
-          })
-          .finally(() => {
-            stream?.dispose();
-            stream = null;
-          });
+        // Wait for user to stop or stream to end naturally
+        // Note: stream.start() returns immediately, pipeline runs in background
       }
     } catch (error) {
       console.error('[WebSocket] Error:', error);
@@ -98,15 +76,15 @@ wss.on('connection', async (ws: WebSocket) => {
     }
   });
 
-  ws.on('close', () => {
+  ws.on('close', async () => {
     console.log('[WebSocket] Client disconnected');
-    stream?.dispose();
+    await stream?.stop();
     stream = null;
   });
 
-  ws.on('error', (error: Error) => {
+  ws.on('error', async (error: Error) => {
     console.error('[WebSocket] Error:', error);
-    stream?.dispose();
+    await stream?.stop();
     stream = null;
   });
 });

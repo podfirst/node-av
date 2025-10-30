@@ -23,7 +23,7 @@
  *   tsx examples/api-fmp4.ts rtsp://server/live --chunk-mode --buffer 8192
  */
 
-import { AV_HWDEVICE_TYPE_NONE, FMP4_CODECS, FMP4Stream } from '../src/index.js';
+import { AV_HWDEVICE_TYPE_NONE, FMP4_CODECS, FMP4Stream, type FMP4Data } from '../src/index.js';
 import { prepareTestEnvironment } from './index.js';
 
 // Parse command line arguments
@@ -99,96 +99,85 @@ let totalBytes = 0;
 let ftypReceived = false;
 let moovReceived = false;
 
-// Detect RTSP and configure accordingly
-const isRtsp = inputUrl.toLowerCase().startsWith('rtsp');
-
 console.log('\nCreating fMP4 stream...');
-const stream = await FMP4Stream.create(inputUrl, {
-  inputOptions: isRtsp
-    ? {
-        flags: 'low_delay',
-        fflags: 'nobuffer',
-        rtsp_transport: 'tcp',
-        analyzeduration: 0,
-        probesize: 32,
-        timeout: '5000000',
+
+const onData = (data: Buffer, info: FMP4Data) => {
+  if (stop) return;
+
+  totalBytes += data.length;
+
+  if (info.isComplete) {
+    // Box mode: data contains complete boxes
+    boxCount += info.boxes.length;
+
+    for (const box of info.boxes) {
+      // Track initialization segments
+      if (box.type === 'ftyp' && !ftypReceived) {
+        ftypReceived = true;
+        console.log(`\n✓ Initialization Segment (${box.type}) received (${box.size} bytes)`);
+        console.log(`Codec string for client: ${stream.getCodecString()}`);
+        const resolution = stream.getResolution();
+        console.log(`Video resolution: ${resolution.width}x${resolution.height}`);
       }
-    : undefined,
+      if (box.type === 'moov' && !moovReceived) {
+        moovReceived = true;
+        console.log(`✓ Media metadata (${box.type}) received (${box.size} bytes)`);
+      }
+
+      // Log fragment info
+      if (box.type === 'moof') {
+        const mdat = info.boxes.find((b) => b.type === 'mdat');
+        if (mdat) {
+          const fragmentSize = box.size + mdat.size;
+          console.log(`Fragment #${Math.floor(boxCount / 2)}: moof (${box.size}b) + mdat (${mdat.size}b) = ${fragmentSize} bytes`);
+        } else {
+          console.log(`Fragment #${Math.floor(boxCount / 2)}: moof (${box.size} bytes) - mdat pending...`);
+        }
+      } else if (box.type === 'mdat' && !info.boxes.some((b) => b.type === 'moof')) {
+        // mdat without moof in same callback (was buffered separately)
+        console.log(`  → mdat completed (${box.size} bytes)`);
+      }
+    }
+  } else {
+    // Chunk mode: data contains raw chunks
+    chunkCount++;
+    if (chunkCount % 10 === 0) {
+      console.log(`Received ${chunkCount} chunks, total ${totalBytes} bytes`);
+    }
+  }
+};
+
+const stream = FMP4Stream.create(inputUrl, {
   supportedCodecs,
   fragDuration,
   hardware: useHardware ? 'auto' : { deviceType: AV_HWDEVICE_TYPE_NONE },
   boxMode,
   bufferSize,
-  onData: (data, info) => {
-    if (stop) return;
-
-    totalBytes += data.length;
-
-    if (info.isComplete) {
-      // Box mode: data contains complete boxes
-      boxCount += info.boxes.length;
-
-      for (const box of info.boxes) {
-        // Track initialization segments
-        if (box.type === 'ftyp' && !ftypReceived) {
-          ftypReceived = true;
-          console.log(`\n✓ Initialization Segment (${box.type}) received (${box.size} bytes)`);
-        }
-        if (box.type === 'moov' && !moovReceived) {
-          moovReceived = true;
-          console.log(`✓ Media metadata (${box.type}) received (${box.size} bytes)`);
-        }
-
-        // Log fragment info
-        if (box.type === 'moof') {
-          const mdat = info.boxes.find((b) => b.type === 'mdat');
-          if (mdat) {
-            const fragmentSize = box.size + mdat.size;
-            console.log(`Fragment #${Math.floor(boxCount / 2)}: moof (${box.size}b) + mdat (${mdat.size}b) = ${fragmentSize} bytes`);
-          } else {
-            console.log(`Fragment #${Math.floor(boxCount / 2)}: moof (${box.size} bytes) - mdat pending...`);
-          }
-        } else if (box.type === 'mdat' && !info.boxes.some((b) => b.type === 'moof')) {
-          // mdat without moof in same callback (was buffered separately)
-          console.log(`  → mdat completed (${box.size} bytes)`);
-        }
-      }
-    } else {
-      // Chunk mode: data contains raw chunks
-      chunkCount++;
-      if (chunkCount % 10 === 0) {
-        console.log(`Received ${chunkCount} chunks, total ${totalBytes} bytes`);
-      }
-    }
-  },
+  onData: onData,
 });
 
-console.log(`Codec string for client: ${stream.getCodecString()}`);
-const resolution = stream.getResolution();
-console.log(`Video resolution: ${resolution.width}x${resolution.height}`);
 console.log('\nStarting stream...');
 console.log('Press Ctrl+C to stop\n');
 
-// Set up timeout for recording duration
-const timeout = setTimeout(() => {
-  console.log(`\nDuration reached (${duration}s), stopping...`);
-  stop = true;
-  stream.stop();
-}, duration * 1000);
+// Start streaming (returns immediately)
+await stream.start();
 
-// Handle graceful shutdown
-process.on('SIGINT', () => {
-  console.log('\nReceived SIGINT, stopping...');
-  stop = true;
-  stream.stop();
-  clearTimeout(timeout);
+// Wait for duration or SIGINT
+await new Promise<void>((resolve) => {
+  // Set up timeout for recording duration
+  const timeout = setTimeout(async () => {
+    console.log(`\nDuration reached (${duration}s), stopping...`);
+    stop = true;
+    await stream.stop();
+    resolve();
+  }, duration * 1000);
+
+  // Handle graceful shutdown
+  process.on('SIGINT', async () => {
+    console.log('\nReceived SIGINT, stopping...');
+    stop = true;
+    clearTimeout(timeout);
+    await stream.stop();
+    resolve();
+  });
 });
-
-try {
-  await stream.start();
-} catch (error) {
-  console.error('Stream error:', error);
-} finally {
-  clearTimeout(timeout);
-  stream.dispose();
-}
