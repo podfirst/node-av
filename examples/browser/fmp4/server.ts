@@ -41,10 +41,18 @@ wss.on('connection', async (ws: WebSocket) => {
 
         // Create fMP4 stream with codec negotiation
         stream = await FMP4Stream.create(message.url, {
+          inputOptions: {
+            flags: 'low_delay',
+            fflags: 'nobuffer',
+            rtsp_transport: 'tcp',
+            analyzeduration: 0,
+            probesize: 32,
+            timeout: '5000000',
+          },
           supportedCodecs: message.supportedCodecs,
           fragDuration: 1,
           hardware: 'auto',
-          onChunk: (chunk: Buffer) => {
+          onData: (chunk: Buffer) => {
             if (ws.readyState === WebSocket.OPEN) {
               ws.send(chunk);
             }
