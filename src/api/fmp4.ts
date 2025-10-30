@@ -23,28 +23,50 @@ import type { FFHWDeviceType } from '../constants/hardware.js';
 import type { IOOutputCallbacks } from './types.js';
 
 /**
- * Target codec strings for fMP4 streaming.
+ * MP4 box information.
  */
-export const FMP4_CODECS = {
-  H264: 'avc1.640029',
-  H265: 'hvc1.1.6.L153.B0',
-  AV1: 'av01.0.00M.08',
-  AAC: 'mp4a.40.2',
-  FLAC: 'flac',
-  OPUS: 'opus',
-} as const;
+export interface MP4Box {
+  /** Four-character code identifying the box type (e.g., 'ftyp', 'moov', 'moof') */
+  type: string;
+
+  /** Total size of the box in bytes (including 8-byte header) */
+  size: number;
+
+  /** Box payload data (excluding the 8-byte header) */
+  data: Buffer;
+
+  /** Offset of this box in the original buffer */
+  offset: number;
+}
+
+/**
+ * fMP4 data information provided in onData callback.
+ */
+export interface FMP4Data {
+  /**
+   * True if data contains complete MP4 boxes, false if raw chunks.
+   * When boxMode is enabled, this is always true.
+   */
+  isComplete: boolean;
+
+  /**
+   * Parsed MP4 boxes (only available when isComplete is true).
+   * Array is empty when isComplete is false.
+   */
+  boxes: MP4Box[];
+}
 
 /**
  * Options for configuring fMP4 streaming.
  */
 export interface FMP4StreamOptions {
   /**
-   * Callback invoked for each fMP4 chunk.
-   * Use this to send chunks to your client (WebSocket, HTTP, etc.).
+   * Callback invoked for fMP4 data (chunks or complete boxes).
+   * Use this to send data to your client (WebSocket, HTTP, etc.).
    *
-   * @param chunk - fMP4 data chunk
+   * @param data - fMP4 data information with buffer and box details
    */
-  onChunk?: (chunk: Buffer) => void;
+  onData?: (data: Buffer, info: FMP4Data) => void;
 
   /**
    * Supported codec strings from client.
@@ -55,8 +77,9 @@ export interface FMP4StreamOptions {
   supportedCodecs?: string;
 
   /**
-   * Fragment duration in seconds.
+   * Fragment duration in microseconds.
    * Smaller values reduce latency but increase overhead.
+   * Set to 1 to send data as soon as possible.
    *
    * @default 1
    */
@@ -78,7 +101,37 @@ export interface FMP4StreamOptions {
    * @default { flags: 'low_delay' }
    */
   inputOptions?: Record<string, string | number | boolean | null | undefined>;
+
+  /**
+   * Buffer size for I/O operations in bytes.
+   * Smaller values send data more frequently but with more overhead.
+   * Larger values reduce overhead but increase latency.
+   *
+   * @default 4096
+   */
+  bufferSize?: number;
+
+  /**
+   * Enable box mode - buffers data until complete MP4 boxes are available.
+   * When true, onData receives complete boxes with parsed box information.
+   * When false, onData receives raw chunks as they arrive from FFmpeg.
+   *
+   * @default false
+   */
+  boxMode?: boolean;
 }
+
+/**
+ * Target codec strings for fMP4 streaming.
+ */
+export const FMP4_CODECS = {
+  H264: 'avc1.640029',
+  H265: 'hvc1.1.6.L153.B0',
+  AV1: 'av01.0.00M.08',
+  AAC: 'mp4a.40.2',
+  FLAC: 'flac',
+  OPUS: 'opus',
+} as const;
 
 /**
  * High-level fMP4 streaming with automatic codec detection and transcoding.
@@ -98,7 +151,7 @@ export interface FMP4StreamOptions {
  * // Create stream with codec negotiation
  * const stream = await FMP4Stream.create('rtsp://camera.local/stream', {
  *   supportedCodecs,
- *   onChunk: (chunk) => ws.send(chunk)
+ *   onData: (data) => ws.send(data.data)
  * });
  *
  * // Start streaming (auto-transcodes if needed)
@@ -112,7 +165,7 @@ export interface FMP4StreamOptions {
  *   supportedCodecs: 'avc1.640029,mp4a.40.2',
  *   hardware: 'auto',
  *   fragDuration: 1,
- *   onChunk: (chunk) => sendToClient(chunk)
+ *   onData: (data) => sendToClient(data.data)
  * });
  *
  * await stream.start();
@@ -136,6 +189,7 @@ export class FMP4Stream implements Disposable {
   private audioEncoder: Encoder | null = null;
   private streamActive = false;
   private supportedCodecs: Set<string>;
+  private incompleteBoxBuffer: Buffer | null = null;
 
   /**
    * @param input - Media input source
@@ -149,11 +203,13 @@ export class FMP4Stream implements Disposable {
   private constructor(input: MediaInput, options: FMP4StreamOptions) {
     this.input = input;
     this.options = {
-      onChunk: options.onChunk ?? (() => {}),
+      onData: options.onData ?? (() => {}),
       supportedCodecs: options.supportedCodecs ?? '',
       fragDuration: options.fragDuration ?? 1,
       hardware: options.hardware ?? { deviceType: AV_HWDEVICE_TYPE_NONE },
       inputOptions: options.inputOptions!,
+      bufferSize: options.bufferSize ?? 4096,
+      boxMode: options.boxMode ?? false,
     };
 
     // Parse supported codecs
@@ -187,7 +243,7 @@ export class FMP4Stream implements Disposable {
    * // Stream from file with codec negotiation
    * const stream = await FMP4Stream.create('video.mp4', {
    *   supportedCodecs: 'avc1.640029,mp4a.40.2',
-   *   onChunk: (chunk) => ws.send(chunk)
+   *   onData: (data) => ws.send(data.data)
    * });
    * ```
    *
@@ -341,7 +397,7 @@ export class FMP4Stream implements Disposable {
    * ```typescript
    * const stream = await FMP4Stream.create('input.mp4', {
    *   supportedCodecs: 'avc1.640029,mp4a.40.2',
-   *   onChunk: (chunk) => sendToClient(chunk)
+   *   onData: (data) => sendToClient(data.data)
    * });
    *
    * // Start streaming (blocks until complete)
@@ -419,13 +475,23 @@ export class FMP4Stream implements Disposable {
     // Setup output with callback
     const cb: IOOutputCallbacks = {
       write: (buffer: Buffer) => {
-        this.options.onChunk(buffer);
+        if (this.options.boxMode) {
+          // Box mode: buffer until we have complete boxes
+          this.processBoxMode(buffer);
+        } else {
+          // Chunk mode: send raw data immediately
+          this.options.onData(buffer, {
+            isComplete: false,
+            boxes: [],
+          });
+        }
         return buffer.length;
       },
     };
 
     this.output = await MediaOutput.open(cb, {
       format: 'mp4',
+      bufferSize: this.options.bufferSize,
       options: {
         movflags: '+frag_keyframe+separate_moof+default_base_moof+empty_moov',
         frag_duration: this.options.fragDuration,
@@ -609,6 +675,62 @@ export class FMP4Stream implements Disposable {
     }
 
     return false;
+  }
+
+  /**
+   * Process buffer in box mode - buffers until complete boxes are available.
+   *
+   * @param chunk - Incoming data chunk from FFmpeg
+   *
+   * @internal
+   */
+  private processBoxMode(chunk: Buffer): void {
+    // If we have an incomplete box from previous chunk, append to it
+    if (this.incompleteBoxBuffer) {
+      chunk = Buffer.concat([this.incompleteBoxBuffer, chunk]);
+      this.incompleteBoxBuffer = null;
+    }
+
+    let offset = 0;
+    const boxes: MP4Box[] = [];
+
+    while (offset + 8 <= chunk.length) {
+      // Read box header
+      const boxSize = chunk.readUInt32BE(offset);
+      const boxType = chunk.toString('ascii', offset + 4, offset + 8);
+
+      // Check if we have the complete box
+      if (offset + boxSize > chunk.length) {
+        // Box is incomplete - save for next chunk
+        this.incompleteBoxBuffer = chunk.subarray(offset);
+        break;
+      }
+
+      // We have the complete box - parse it
+      const box: MP4Box = {
+        type: boxType,
+        size: boxSize,
+        data: chunk.subarray(offset + 8, offset + boxSize),
+        offset: offset,
+      };
+      boxes.push(box);
+
+      // Move to next box
+      offset += boxSize;
+
+      // Safety check: invalid box size
+      if (boxSize < 8) {
+        break;
+      }
+    }
+
+    // If we have complete boxes, send them to the callback
+    if (boxes.length > 0) {
+      this.options.onData(chunk.subarray(0, offset), {
+        isComplete: true,
+        boxes,
+      });
+    }
   }
 
   /**
