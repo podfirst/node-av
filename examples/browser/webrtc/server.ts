@@ -1,6 +1,6 @@
 import { WebSocket, WebSocketServer } from 'ws';
 
-import { WebRTCSession } from '../../../src/index.js';
+import { WebRTCStream } from '../../../src/index.js';
 
 const port = 8081;
 
@@ -17,7 +17,7 @@ wss.on('listening', () => {
 wss.on('connection', async (ws: WebSocket) => {
   console.log('\n[WebSocket] Client connected, waiting for URL...');
 
-  let session: WebRTCSession | null = null;
+  let session: WebRTCStream | null = null;
 
   // Step 1: Wait for URL from client
   ws.on('message', async (data: Buffer) => {
@@ -38,17 +38,32 @@ wss.on('connection', async (ws: WebSocket) => {
         console.log('[WebSocket] Received SDP offer with URL from client:', message.url, message.value);
 
         // Create WebRTC session
-        session = await WebRTCSession.create(message.url, {
+        session = WebRTCStream.create(message.url, {
           mtu: 1200,
           hardware: 'auto',
+          onIceCandidate: (candidate) => {
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: 'webrtc/candidate', value: candidate }));
+            }
+          },
+          onClose(error) {
+            if (error) {
+              console.error('[WebRTC] Session closed with error:', error);
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'error', value: String(error) }));
+              }
+            } else {
+              console.log('[WebRTC] Session closed');
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'end' }));
+              }
+            }
+          },
         });
 
-        // Setup ICE candidate handler
-        session.onIceCandidate = (candidate) => {
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: 'webrtc/candidate', value: candidate }));
-          }
-        };
+        // Start streaming
+        console.log('[Server] Starting streaming...');
+        await session.start();
 
         console.log('[WebRTC] Session created with codecs:', session.getCodecs());
 
@@ -62,25 +77,6 @@ wss.on('connection', async (ws: WebSocket) => {
 
         // Start streaming
         console.log('[Server] Starting streaming...');
-
-        session
-          .start()
-          .then(() => {
-            console.log('[Server] Streaming complete');
-            if (ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify({ type: 'end' }));
-            }
-          })
-          .catch((error) => {
-            console.error('[Server] Streaming error:', error);
-            if (ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify({ type: 'error', value: String(error) }));
-            }
-          })
-          .finally(() => {
-            session?.dispose();
-            session = null;
-          });
       } else if (message.type === 'webrtc/candidate') {
         if (!session) {
           return;
@@ -96,15 +92,15 @@ wss.on('connection', async (ws: WebSocket) => {
     }
   });
 
-  ws.on('close', () => {
+  ws.on('close', async () => {
     console.log('[WebSocket] Client disconnected');
-    session?.dispose();
+    await session?.stop();
     session = null;
   });
 
-  ws.on('error', (error: Error) => {
+  ws.on('error', async (error: Error) => {
     console.error('[WebSocket] Error:', error);
-    session?.dispose();
+    await session?.stop();
     session = null;
   });
 });
