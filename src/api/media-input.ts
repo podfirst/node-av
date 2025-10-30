@@ -741,7 +741,6 @@ export class MediaInput implements AsyncDisposable, Disposable {
 
     // Create UDP socket for sending packets to FFmpeg
     const udpSocket = createSocket('udp4');
-    udpSocket.setSendBufferSize(1024 * 1024); // 1MB buffer
 
     try {
       // Open MediaInput with SDP format using custom I/O
@@ -867,7 +866,6 @@ export class MediaInput implements AsyncDisposable, Disposable {
 
     // Create UDP socket for sending packets to FFmpeg
     const udpSocket = createSocket('udp4');
-    udpSocket.setSendBufferSize(1024 * 1024); // 1MB buffer
 
     try {
       // Open MediaInput with SDP format using custom I/O
