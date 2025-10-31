@@ -947,22 +947,40 @@ export class FilterPreset {
   }
 
   /**
-   * Adds an aresample filter to change audio sample rate.
+   * Adds an aresample filter to change audio sample rate, format, and channel layout.
+   *
+   * Uses libswresample for high-quality audio resampling and format conversion.
+   * Can also perform timestamp compensation (stretch/squeeze/fill/trim).
    *
    * @param rate - Target sample rate in Hz
+   *
+   * @param format - Optional target sample format (e.g., 's16', 'flt', 'fltp')
+   *
+   * @param channelLayout - Optional target channel layout (e.g., 'mono', 'stereo')
    *
    * @returns This instance for chaining
    *
    * @example
    * ```typescript
-   * chain.aresample(44100)  // Convert to 44.1 kHz
-   * chain.aresample(48000)  // Convert to 48 kHz
+   * chain.aresample(44100)  // Convert to 44.1 kHz only
+   * chain.aresample(48000, 's16', 'stereo')  // Full conversion
    * ```
    *
    * @see {@link https://ffmpeg.org/ffmpeg-filters.html#aresample | FFmpeg aresample filter}
    */
-  aresample(rate: number): FilterPreset {
-    this.add(`aresample=${rate}`);
+  aresample(rate: number, format?: AVSampleFormat | string, channelLayout?: string): FilterPreset {
+    const params: string[] = [`${rate}`];
+
+    if (format !== undefined) {
+      const formatStr = typeof format === 'number' ? `${format}` : format;
+      params.push(`osf=${formatStr}`);
+    }
+
+    if (channelLayout !== undefined) {
+      params.push(`ochl=${channelLayout}`);
+    }
+
+    this.add(`aresample=${params.join(':')}`);
     return this;
   }
 
