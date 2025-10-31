@@ -1,17 +1,7 @@
 import { RtpPacket } from 'werift';
 
-import {
-  AV_CODEC_ID_AV1,
-  AV_CODEC_ID_H264,
-  AV_CODEC_ID_HEVC,
-  AV_CODEC_ID_OPUS,
-  AV_CODEC_ID_PCM_ALAW,
-  AV_CODEC_ID_PCM_MULAW,
-  AV_CODEC_ID_VP8,
-  AV_CODEC_ID_VP9,
-  AV_HWDEVICE_TYPE_NONE,
-} from '../constants/constants.js';
-import { FF_ENCODER_LIBOPUS, FF_ENCODER_LIBX264 } from '../constants/encoders.js';
+import { AV_HWDEVICE_TYPE_NONE } from '../constants/constants.js';
+import { FF_ENCODER_LIBOPUS, FF_ENCODER_LIBX264, FF_ENCODER_LIBX265, type FFAudioEncoder, type FFVideoEncoder } from '../constants/encoders.js';
 import { Codec } from '../lib/codec.js';
 import { Decoder } from './decoder.js';
 import { Encoder } from './encoder.js';
@@ -25,7 +15,7 @@ import { pipeline } from './pipeline.js';
 import type { AVCodecID, AVHWDeviceType, AVSampleFormat } from '../constants/constants.js';
 import type { FFHWDeviceType } from '../constants/hardware.js';
 import type { PipelineControl } from './pipeline.js';
-import type { MediaInputOptions } from './types.js';
+import type { EncoderOptions, MediaInputOptions } from './types.js';
 
 /**
  * Options for configuring RTP streaming.
@@ -56,19 +46,17 @@ export interface RTPStreamOptions {
 
   /**
    * Supported video codec IDs for transcoding decisions.
-   * If not provided or empty, defaults to: H.264, H.265, VP8, VP9, AV1.
-   *
-   * @default [AV_CODEC_ID_H264, AV_CODEC_ID_HEVC, AV_CODEC_ID_VP8, AV_CODEC_ID_VP9, AV_CODEC_ID_AV1]
+   * If not provided or empty, all video codecs are supported (passthrough only, no transcoding).
+   * If provided, only the specified codecs are supported and transcoding will be performed if needed.
    */
-  supportedVideoCodecs?: AVCodecID[];
+  supportedVideoCodecs?: (AVCodecID | FFVideoEncoder)[];
 
   /**
    * Supported audio codec IDs for transcoding decisions.
-   * If not provided or empty, defaults to: Opus, PCMA, PCMU.
-   *
-   * @default [AV_CODEC_ID_OPUS, AV_CODEC_ID_PCM_ALAW, AV_CODEC_ID_PCM_MULAW]
+   * If not provided or empty, all audio codecs are supported (passthrough only, no transcoding).
+   * If provided, only the specified codecs are supported and transcoding will be performed if needed.
    */
-  supportedAudioCodecs?: AVCodecID[];
+  supportedAudioCodecs?: (AVCodecID | FFAudioEncoder)[];
 
   /**
    * Hardware acceleration configuration.
@@ -92,6 +80,8 @@ export interface RTPStreamOptions {
     ssrc?: number;
     payloadType?: number;
     mtu?: number;
+    fps?: number;
+    encoderOptions?: EncoderOptions['options'];
   };
 
   /**
@@ -103,6 +93,7 @@ export interface RTPStreamOptions {
     mtu?: number;
     sampleRate?: number;
     channels?: number;
+    encoderOptions?: EncoderOptions['options'];
   };
 }
 
@@ -152,8 +143,8 @@ export class RTPStream {
   private audioFilter?: FilterAPI;
   private audioEncoder?: Encoder;
   private pipeline?: PipelineControl;
-  private supportedVideoCodecs: Set<AVCodecID>;
-  private supportedAudioCodecs: Set<AVCodecID>;
+  private supportedVideoCodecs: Set<AVCodecID | FFVideoEncoder>;
+  private supportedAudioCodecs: Set<AVCodecID | FFAudioEncoder>;
 
   /**
    * @param inputUrl - Media input URL
@@ -180,12 +171,12 @@ export class RTPStream {
       },
     };
 
-    // Default supported codecs
-    const defaultVideoCodecs = [AV_CODEC_ID_H264, AV_CODEC_ID_HEVC, AV_CODEC_ID_VP8, AV_CODEC_ID_VP9, AV_CODEC_ID_AV1];
-    const defaultAudioCodecs = [AV_CODEC_ID_OPUS, AV_CODEC_ID_PCM_ALAW, AV_CODEC_ID_PCM_MULAW];
+    options.supportedVideoCodecs = options.supportedVideoCodecs?.filter(Boolean);
+    options.supportedAudioCodecs = options.supportedAudioCodecs?.filter(Boolean);
 
-    this.supportedVideoCodecs = new Set(options.supportedVideoCodecs && options.supportedVideoCodecs.length > 0 ? options.supportedVideoCodecs : defaultVideoCodecs);
-    this.supportedAudioCodecs = new Set(options.supportedAudioCodecs && options.supportedAudioCodecs.length > 0 ? options.supportedAudioCodecs : defaultAudioCodecs);
+    // If no supported codecs specified, empty set means ALL codecs are supported (passthrough only)
+    this.supportedVideoCodecs = new Set(options.supportedVideoCodecs && options.supportedVideoCodecs.length > 0 ? options.supportedVideoCodecs : []);
+    this.supportedAudioCodecs = new Set(options.supportedAudioCodecs && options.supportedAudioCodecs.length > 0 ? options.supportedAudioCodecs : []);
 
     this.options = {
       onVideoPacket: options.onVideoPacket ?? (() => {}),
@@ -325,20 +316,33 @@ export class RTPStream {
         hardware: this.hardwareContext,
       });
 
-      // Get first supported codec (default to H.264 if none)
-      const targetCodecId = this.options.supportedVideoCodecs[0] ?? AV_CODEC_ID_H264;
+      // Get first supported codec
+      const targetCodecId = this.options.supportedVideoCodecs[0];
+      if (!targetCodecId) {
+        throw new Error('No supported video codec specified for transcoding');
+      }
 
-      // Try hardware encoder first, fallback to software
-      const encoderCodec = this.hardwareContext?.getEncoderCodec(targetCodecId) ?? Codec.findEncoder(targetCodecId);
+      let encoderCodec: Codec | null = null;
+      if (typeof targetCodecId === 'string') {
+        encoderCodec = Codec.findEncoderByName(targetCodecId);
+      } else {
+        encoderCodec = this.hardwareContext?.getEncoderCodec(targetCodecId) ?? Codec.findEncoder(targetCodecId);
+      }
+
       if (!encoderCodec) {
         throw new Error(`No encoder found for codec ID ${targetCodecId}`);
       }
 
-      const encoderOptions: Record<string, string> = {};
-      if (encoderCodec.name === FF_ENCODER_LIBX264) {
+      let encoderOptions: EncoderOptions['options'] = {};
+      if (encoderCodec.name === FF_ENCODER_LIBX264 || encoderCodec.name === FF_ENCODER_LIBX265) {
         encoderOptions.preset = 'ultrafast';
         encoderOptions.tune = 'zerolatency';
       }
+
+      encoderOptions = {
+        ...encoderOptions,
+        ...this.options.video.encoderOptions,
+      };
 
       this.videoEncoder = await Encoder.create(encoderCodec, {
         timeBase: videoStream.timeBase,
@@ -354,7 +358,7 @@ export class RTPStream {
     let audioSequenceNumber = Math.floor(Math.random() * 0xffff);
 
     // Calculate video timestamp increment
-    let fps = videoStream.avgFrameRate.num / videoStream.avgFrameRate.den;
+    let fps = this.options.video.fps ?? videoStream.avgFrameRate.num / videoStream.avgFrameRate.den;
     if (!isFinite(fps) || fps <= 0 || isNaN(fps)) {
       fps = 20; // Default to 20 FPS if invalid
     }
@@ -410,42 +414,54 @@ export class RTPStream {
         exitOnError: false,
       });
 
-      // Get first supported audio codec (default to Opus if none)
-      const targetCodecId = this.options.supportedAudioCodecs[0] ?? AV_CODEC_ID_OPUS;
-      const encoderCodec = Codec.findEncoder(targetCodecId);
+      // Get first supported audio codec
+      const targetCodecId = this.options.supportedAudioCodecs[0];
+      if (!targetCodecId) {
+        throw new Error('No supported audio codec specified for transcoding');
+      }
+
+      let encoderCodec: Codec | null = null;
+      if (typeof targetCodecId === 'string') {
+        encoderCodec = Codec.findEncoderByName(targetCodecId);
+      } else {
+        encoderCodec = Codec.findEncoder(targetCodecId);
+      }
+
       if (!encoderCodec) {
         throw new Error(`No encoder found for codec ID ${targetCodecId}`);
       }
 
       // Determine target audio parameters from options
-      const desiredSampleRate = this.options.audio?.sampleRate ?? 48000;
-      const desiredChannels = this.options.audio?.channels ?? 2;
+      const desiredSampleFormat = audioStream.codecpar.format as AVSampleFormat;
+      const desiredSampleRate = this.options.audio?.sampleRate ?? (audioStream.codecpar.sampleRate > 0 ? audioStream.codecpar.sampleRate : 48000);
+      const desiredChannels = this.options.audio?.channels ?? (audioStream.codecpar.channels > 0 ? audioStream.codecpar.channels : 2);
 
       // Select best supported parameters from codec
-      const targetSampleFormat = this.selectSampleFormat(encoderCodec);
-      if (!targetSampleFormat) {
-        throw new Error(`No supported sample format found for codec ${encoderCodec.name}`);
-      }
-
+      const targetSampleFormat = this.selectSampleFormat(encoderCodec, desiredSampleFormat);
       const targetSampleRate = this.selectSampleRate(encoderCodec, desiredSampleRate);
       const channelLayoutStr = this.selectChannelLayout(encoderCodec, desiredChannels);
 
-      // Create filter without asetnsamples - encoder will handle frame size internally
+      // Create audio filter for resampling
       const filterChain = FilterPreset.chain().aformat(targetSampleFormat, targetSampleRate, channelLayoutStr).build();
 
       this.audioFilter = FilterAPI.create(filterChain, {
         timeBase: audioStream.timeBase,
       });
 
-      const encoderOptions: Record<string, string | number> = {};
+      let encoderOptions: EncoderOptions['options'] = {};
       if (encoderCodec.name === FF_ENCODER_LIBOPUS) {
         encoderOptions.application = 'lowdelay';
         encoderOptions.frame_duration = 20;
       }
 
+      encoderOptions = {
+        ...encoderOptions,
+        ...this.options.audio.encoderOptions,
+      };
+
       this.audioEncoder = await Encoder.create(encoderCodec, {
         timeBase: { num: 1, den: targetSampleRate },
-        options: encoderOptions,
+        options: this.options.audio.encoderOptions,
       });
     }
 
@@ -603,7 +619,28 @@ export class RTPStream {
    * @internal
    */
   private isAudioCodecSupported(codecId: AVCodecID): boolean {
-    return this.supportedAudioCodecs.has(codecId);
+    // Empty set means all codecs are supported (passthrough only)
+    if (this.supportedAudioCodecs.size === 0) {
+      return true;
+    }
+
+    const isSupported = this.supportedAudioCodecs.has(codecId);
+
+    if (!isSupported) {
+      try {
+        const ffEncoderCodecs = Array.from(this.supportedAudioCodecs).filter((c) => typeof c === 'string');
+        for (const encoderName of ffEncoderCodecs) {
+          const encoderCodec = Codec.findEncoderByName(encoderName);
+          if (encoderCodec?.id === codecId) {
+            return true;
+          }
+        }
+      } catch {
+        // Ignore errors
+      }
+    }
+
+    return isSupported;
   }
 
   /**
@@ -616,7 +653,28 @@ export class RTPStream {
    * @internal
    */
   private isVideoCodecSupported(codecId: AVCodecID): boolean {
-    return this.supportedVideoCodecs.has(codecId);
+    // Empty set means all codecs are supported (passthrough only)
+    if (this.supportedVideoCodecs.size === 0) {
+      return true;
+    }
+
+    const isSupported = this.supportedVideoCodecs.has(codecId);
+
+    if (!isSupported) {
+      try {
+        const ffEncoderCodecs = Array.from(this.supportedVideoCodecs).filter((c) => typeof c === 'string');
+        for (const encoderName of ffEncoderCodecs) {
+          const encoderCodec = Codec.findEncoderByName(encoderName);
+          if (encoderCodec?.id === codecId) {
+            return true;
+          }
+        }
+      } catch {
+        // Ignore errors
+      }
+    }
+
+    return isSupported;
   }
 
   /**
@@ -627,15 +685,22 @@ export class RTPStream {
    *
    * @param codec - Audio encoder codec
    *
+   * @param desiredFormat - Desired sample format
+   *
    * @returns First supported sample format or null
    *
    * @internal
    */
-  private selectSampleFormat(codec: Codec): AVSampleFormat | null {
+  private selectSampleFormat(codec: Codec, desiredFormat: AVSampleFormat): AVSampleFormat {
     const supportedFormats = codec.sampleFormats;
     if (!supportedFormats || supportedFormats.length === 0) {
-      return null;
+      return desiredFormat; // should normally not happen
     }
+
+    if (supportedFormats.includes(desiredFormat)) {
+      return desiredFormat;
+    }
+
     return supportedFormats[0];
   }
 
@@ -656,7 +721,7 @@ export class RTPStream {
   private selectSampleRate(codec: Codec, desiredRate: number): number {
     const supportedRates = codec.supportedSamplerates;
     if (!supportedRates || supportedRates.length === 0) {
-      return desiredRate;
+      return desiredRate; // should normally not happen
     }
 
     let bestSampleRate = supportedRates[0];
@@ -684,7 +749,7 @@ export class RTPStream {
   private selectChannelLayout(codec: Codec, desiredChannels: number): string {
     const supportedLayouts = codec.channelLayouts;
     if (!supportedLayouts || supportedLayouts.length === 0) {
-      return desiredChannels === 1 ? 'mono' : 'stereo';
+      return desiredChannels === 1 ? 'mono' : 'stereo'; // should normally not happen
     }
 
     // Try to find exact match
