@@ -190,11 +190,16 @@ export class RTPStream {
         ssrc: options.video?.ssrc,
         payloadType: options.video?.payloadType,
         mtu: options.video?.mtu ?? 1200,
+        fps: options.video?.fps ?? 20,
+        encoderOptions: options.video?.encoderOptions ?? {},
       },
       audio: {
         ssrc: options.audio?.ssrc,
         payloadType: options.audio?.payloadType,
         mtu: options.audio?.mtu ?? 1200,
+        sampleRate: options.audio?.sampleRate,
+        channels: options.audio?.channels,
+        encoderOptions: options.audio?.encoderOptions,
       },
     };
   }
@@ -466,7 +471,7 @@ export class RTPStream {
 
       this.audioEncoder = await Encoder.create(encoderCodec, {
         timeBase: { num: 1, den: targetSampleRate },
-        options: this.options.audio.encoderOptions,
+        options: encoderOptions,
       });
     }
 
