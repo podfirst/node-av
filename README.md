@@ -164,20 +164,20 @@ const outputIndex = output.addStream(encoder);
 
 // Process packets
 for await (using packet of input.packets(videoStream.index)) {
-  const frames = await decoder.decode(packet);
-  for (using frame of frames) {
-    const packets = await encoder.encode(frame);
-    for (using packet of packets) {
-      await output.writePacket(packet, outputIndex);
+  using frame = await decoder.decode(packet);
+  if (frame) {
+    using encoded = await encoder.encode(frame);
+    if (encoded) {
+      await output.writePacket(encoded, outputIndex);
     }
   }
 }
 
 // Flush decoder
 for await (using frame of decoder.flushFrames()) {
-  const packets = await encoder.encode(frame);
-  for (using packet of packets) {
-    await output.writePacket(packet, outputIndex);
+  using encoded = await encoder.encode(frame);
+  if (encoded) {
+    await output.writePacket(encoded, outputIndex);
   }
 }
 
