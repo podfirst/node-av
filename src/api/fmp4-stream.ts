@@ -469,7 +469,7 @@ export class FMP4Stream {
         exitOnError: false,
       });
 
-      const targetSampleRate = 48000;
+      const targetSampleRate = 44100;
       const filterChain = FilterPreset.chain().aformat(AV_SAMPLE_FMT_FLTP, targetSampleRate, 'stereo').asetnsamples(1024).build();
 
       this.audioFilter = FilterAPI.create(filterChain, {
