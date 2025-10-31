@@ -10,7 +10,6 @@ import {
   AV_CODEC_ID_VP8,
   AV_CODEC_ID_VP9,
   AV_HWDEVICE_TYPE_NONE,
-  AV_SAMPLE_FMT_S16,
 } from '../constants/constants.js';
 import { FF_ENCODER_LIBOPUS, FF_ENCODER_LIBX264 } from '../constants/encoders.js';
 import { Codec } from '../lib/codec.js';
@@ -23,7 +22,7 @@ import { MediaInput } from './media-input.js';
 import { MediaOutput } from './media-output.js';
 import { pipeline } from './pipeline.js';
 
-import type { AVCodecID, AVHWDeviceType } from '../constants/constants.js';
+import type { AVCodecID, AVHWDeviceType, AVSampleFormat } from '../constants/constants.js';
 import type { FFHWDeviceType } from '../constants/hardware.js';
 import type { PipelineControl } from './pipeline.js';
 import type { MediaInputOptions } from './types.js';
@@ -56,24 +55,20 @@ export interface RTPStreamOptions {
   onClose?: (error?: Error) => void;
 
   /**
-   * Maximum transmission unit (MTU) size in bytes.
-   * RTP packets will be fragmented to fit within this size.
+   * Supported video codec IDs for transcoding decisions.
+   * If not provided or empty, defaults to: H.264, H.265, VP8, VP9, AV1.
    *
-   * @default 1200
+   * @default [AV_CODEC_ID_H264, AV_CODEC_ID_HEVC, AV_CODEC_ID_VP8, AV_CODEC_ID_VP9, AV_CODEC_ID_AV1]
    */
-  mtu?: number;
+  supportedVideoCodecs?: AVCodecID[];
 
-  /** Video SSRC (synchronization source identifier) */
-  videoSSRC?: number;
-
-  /** Audio SSRC (synchronization source identifier) */
-  audioSSRC?: number;
-
-  /** Video payload type */
-  videoPayloadType?: number;
-
-  /** Audio payload type */
-  audioPayloadType?: number;
+  /**
+   * Supported audio codec IDs for transcoding decisions.
+   * If not provided or empty, defaults to: Opus, PCMA, PCMU.
+   *
+   * @default [AV_CODEC_ID_OPUS, AV_CODEC_ID_PCM_ALAW, AV_CODEC_ID_PCM_MULAW]
+   */
+  supportedAudioCodecs?: AVCodecID[];
 
   /**
    * Hardware acceleration configuration.
@@ -91,20 +86,24 @@ export interface RTPStreamOptions {
   inputOptions?: MediaInputOptions;
 
   /**
-   * Supported video codec IDs for transcoding decisions.
-   * If not provided or empty, defaults to: H.264, H.265, VP8, VP9, AV1.
-   *
-   * @default [AV_CODEC_ID_H264, AV_CODEC_ID_HEVC, AV_CODEC_ID_VP8, AV_CODEC_ID_VP9, AV_CODEC_ID_AV1]
+   * Video stream configuration.
    */
-  supportedVideoCodecs?: AVCodecID[];
+  video?: {
+    ssrc?: number;
+    payloadType?: number;
+    mtu?: number;
+  };
 
   /**
-   * Supported audio codec IDs for transcoding decisions.
-   * If not provided or empty, defaults to: Opus, PCMA, PCMU.
-   *
-   * @default [AV_CODEC_ID_OPUS, AV_CODEC_ID_PCM_ALAW, AV_CODEC_ID_PCM_MULAW]
+   * Audio stream configuration.
    */
-  supportedAudioCodecs?: AVCodecID[];
+  audio?: {
+    ssrc?: number;
+    payloadType?: number;
+    mtu?: number;
+    sampleRate?: number;
+    channels?: number;
+  };
 }
 
 /**
@@ -140,7 +139,7 @@ export interface RTPStreamOptions {
  * @see {@link HardwareContext} For GPU acceleration
  */
 export class RTPStream {
-  private options: Omit<Required<RTPStreamOptions>, 'videoSSRC' | 'audioSSRC' | 'videoPayloadType' | 'audioPayloadType'>;
+  private options: Required<RTPStreamOptions>;
   private inputUrl: string;
   private inputOptions: MediaInputOptions;
   private input?: MediaInput;
@@ -155,11 +154,6 @@ export class RTPStream {
   private pipeline?: PipelineControl;
   private supportedVideoCodecs: Set<AVCodecID>;
   private supportedAudioCodecs: Set<AVCodecID>;
-
-  public readonly videoSSRC?: number;
-  public readonly audioSSRC?: number;
-  public readonly videoPayloadType?: number;
-  public readonly audioPayloadType?: number;
 
   /**
    * @param inputUrl - Media input URL
@@ -197,17 +191,21 @@ export class RTPStream {
       onVideoPacket: options.onVideoPacket ?? (() => {}),
       onAudioPacket: options.onAudioPacket ?? (() => {}),
       onClose: options.onClose ?? (() => {}),
-      mtu: options.mtu ?? 1200,
-      hardware: options.hardware ?? { deviceType: AV_HWDEVICE_TYPE_NONE },
-      inputOptions: options.inputOptions!,
       supportedVideoCodecs: Array.from(this.supportedVideoCodecs),
       supportedAudioCodecs: Array.from(this.supportedAudioCodecs),
+      hardware: options.hardware ?? { deviceType: AV_HWDEVICE_TYPE_NONE },
+      inputOptions: options.inputOptions!,
+      video: {
+        ssrc: options.video?.ssrc,
+        payloadType: options.video?.payloadType,
+        mtu: options.video?.mtu ?? 1200,
+      },
+      audio: {
+        ssrc: options.audio?.ssrc,
+        payloadType: options.audio?.payloadType,
+        mtu: options.audio?.mtu ?? 1200,
+      },
     };
-
-    this.videoSSRC = options.videoSSRC;
-    this.audioSSRC = options.audioSSRC;
-    this.videoPayloadType = options.videoPayloadType;
-    this.audioPayloadType = options.audioPayloadType;
   }
 
   /**
@@ -370,13 +368,13 @@ export class RTPStream {
           const rtpPacket = RtpPacket.deSerialize(buffer);
 
           // Set SSRC (synchronization source identifier)
-          if (this.videoSSRC !== undefined) {
-            rtpPacket.header.ssrc = this.videoSSRC;
+          if (this.options.video.ssrc !== undefined) {
+            rtpPacket.header.ssrc = this.options.video.ssrc;
           }
 
           // Set payload type
-          if (this.videoPayloadType !== undefined) {
-            rtpPacket.header.payloadType = this.videoPayloadType;
+          if (this.options.video.payloadType !== undefined) {
+            rtpPacket.header.payloadType = this.options.video.payloadType;
           }
 
           // Fix sequence number - ensure continuous sequence
@@ -399,9 +397,9 @@ export class RTPStream {
       },
       {
         format: 'rtp',
-        bufferSize: this.options.mtu,
+        bufferSize: this.options.video.mtu,
         options: {
-          pkt_size: this.options.mtu,
+          pkt_size: this.options.video.mtu,
         },
       },
     );
@@ -419,8 +417,21 @@ export class RTPStream {
         throw new Error(`No encoder found for codec ID ${targetCodecId}`);
       }
 
-      const targetSampleRate = 48000;
-      const filterChain = FilterPreset.chain().aformat(AV_SAMPLE_FMT_S16, targetSampleRate, 'stereo').asetnsamples(960).build();
+      // Determine target audio parameters from options
+      const desiredSampleRate = this.options.audio?.sampleRate ?? 48000;
+      const desiredChannels = this.options.audio?.channels ?? 2;
+
+      // Select best supported parameters from codec
+      const targetSampleFormat = this.selectSampleFormat(encoderCodec);
+      if (!targetSampleFormat) {
+        throw new Error(`No supported sample format found for codec ${encoderCodec.name}`);
+      }
+
+      const targetSampleRate = this.selectSampleRate(encoderCodec, desiredSampleRate);
+      const channelLayoutStr = this.selectChannelLayout(encoderCodec, desiredChannels);
+
+      // Create filter without asetnsamples - encoder will handle frame size internally
+      const filterChain = FilterPreset.chain().aformat(targetSampleFormat, targetSampleRate, channelLayoutStr).build();
 
       this.audioFilter = FilterAPI.create(filterChain, {
         timeBase: audioStream.timeBase,
@@ -446,13 +457,13 @@ export class RTPStream {
             const rtpPacket = RtpPacket.deSerialize(buffer);
 
             // Set SSRC (synchronization source identifier)
-            if (this.audioSSRC !== undefined) {
-              rtpPacket.header.ssrc = this.audioSSRC;
+            if (this.options.audio.ssrc !== undefined) {
+              rtpPacket.header.ssrc = this.options.audio.ssrc;
             }
 
             // Set payload type
-            if (this.audioPayloadType !== undefined) {
-              rtpPacket.header.payloadType = this.audioPayloadType;
+            if (this.options.audio.payloadType !== undefined) {
+              rtpPacket.header.payloadType = this.options.audio.payloadType;
             }
 
             // Fix sequence number - ensure continuous sequence
@@ -465,9 +476,9 @@ export class RTPStream {
         },
         {
           format: 'rtp',
-          bufferSize: this.options.mtu,
+          bufferSize: this.options.audio.mtu,
           options: {
-            pkt_size: this.options.mtu,
+            pkt_size: this.options.audio.mtu,
           },
         },
       );
@@ -606,5 +617,91 @@ export class RTPStream {
    */
   private isVideoCodecSupported(codecId: AVCodecID): boolean {
     return this.supportedVideoCodecs.has(codecId);
+  }
+
+  /**
+   * Select the best supported sample format from codec.
+   *
+   * Returns the first supported format, or null if none available.
+   * This follows FFmpeg's approach of using the first supported format.
+   *
+   * @param codec - Audio encoder codec
+   *
+   * @returns First supported sample format or null
+   *
+   * @internal
+   */
+  private selectSampleFormat(codec: Codec): AVSampleFormat | null {
+    const supportedFormats = codec.sampleFormats;
+    if (!supportedFormats || supportedFormats.length === 0) {
+      return null;
+    }
+    return supportedFormats[0];
+  }
+
+  /**
+   * Select the best supported sample rate from codec.
+   *
+   * Returns the closest supported rate to the desired rate.
+   * If no rates are specified by the codec, returns the desired rate.
+   *
+   * @param codec - Audio encoder codec
+   *
+   * @param desiredRate - Desired sample rate
+   *
+   * @returns Best matching sample rate
+   *
+   * @internal
+   */
+  private selectSampleRate(codec: Codec, desiredRate: number): number {
+    const supportedRates = codec.supportedSamplerates;
+    if (!supportedRates || supportedRates.length === 0) {
+      return desiredRate;
+    }
+
+    let bestSampleRate = supportedRates[0];
+    for (const rate of supportedRates) {
+      if (Math.abs(desiredRate - rate) < Math.abs(desiredRate - bestSampleRate)) {
+        bestSampleRate = rate;
+      }
+    }
+    return bestSampleRate;
+  }
+
+  /**
+   * Select the best supported channel layout from codec.
+   *
+   * Returns a layout matching the desired channel count, or the first supported layout.
+   *
+   * @param codec - Audio encoder codec
+   *
+   * @param desiredChannels - Desired number of channels
+   *
+   * @returns Best matching channel layout string
+   *
+   * @internal
+   */
+  private selectChannelLayout(codec: Codec, desiredChannels: number): string {
+    const supportedLayouts = codec.channelLayouts;
+    if (!supportedLayouts || supportedLayouts.length === 0) {
+      return desiredChannels === 1 ? 'mono' : 'stereo';
+    }
+
+    // Try to find exact match
+    for (const layout of supportedLayouts) {
+      if (layout.nbChannels === desiredChannels) {
+        // Use standard names for common layouts
+        if (desiredChannels === 1) return 'mono';
+        if (desiredChannels === 2) return 'stereo';
+        // For other channel counts, use the mask
+        return layout.mask.toString();
+      }
+    }
+
+    // No exact match, return first supported
+    const firstLayout = supportedLayouts[0];
+    if (firstLayout.nbChannels === 1) return 'mono';
+    if (firstLayout.nbChannels === 2) return 'stereo';
+    return firstLayout.mask.toString();
   }
 }
