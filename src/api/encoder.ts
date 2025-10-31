@@ -862,10 +862,49 @@ export class Encoder implements Disposable {
   async *packets(frames: AsyncIterable<Frame>): AsyncGenerator<Packet> {
     // Process frames
     for await (const frame of frames) {
+      if (this.isClosed) {
+        break;
+      }
+
+      // Open encoder if not already done
+      if (!this.initialized) {
+        if (!frame) {
+          break;
+        }
+
+        await this.initialize(frame);
+      }
+
       try {
-        const packets = await this.encodeAll(frame);
-        for (const packet of packets) {
-          yield packet;
+        // If audio encoder with fixed frame size, use AudioFrameBuffer
+        if (this.audioFrameBuffer && frame) {
+          // Push frame into buffer
+          await this.audioFrameBuffer.push(frame);
+
+          // Pull and encode all available fixed-size frames
+          let bufferedFrame;
+          while ((bufferedFrame = await this.audioFrameBuffer.pull()) !== null) {
+            // Send buffered frame to encoder
+            const sendRet = await this.codecContext.sendFrame(bufferedFrame);
+            if (sendRet < 0 && sendRet !== AVERROR_EOF && sendRet !== AVERROR_EAGAIN) {
+              FFmpegError.throwIfError(sendRet, 'Failed to send frame');
+            }
+
+            // Receive packets
+            let packet;
+            while ((packet = await this.receive()) !== null) {
+              yield packet;
+            }
+
+            // Free buffered frame
+            bufferedFrame.free();
+          }
+        } else if (frame) {
+          // Process frames
+          const packet = await this.encode(frame);
+          if (packet) {
+            yield packet;
+          }
         }
       } finally {
         // Free the input frame after encoding
@@ -932,10 +971,49 @@ export class Encoder implements Disposable {
   *packetsSync(frames: Iterable<Frame>): Generator<Packet> {
     // Process frames
     for (const frame of frames) {
+      if (this.isClosed) {
+        break;
+      }
+
+      // Open encoder if not already done
+      if (!this.initialized) {
+        if (!frame) {
+          break;
+        }
+
+        this.initializeSync(frame);
+      }
+
       try {
-        const packets = this.encodeAllSync(frame);
-        for (const packet of packets) {
-          yield packet;
+        // If audio encoder with fixed frame size, use AudioFrameBuffer
+        if (this.audioFrameBuffer && frame) {
+          // Push frame into buffer
+          this.audioFrameBuffer.pushSync(frame);
+
+          // Pull and encode all available fixed-size frames
+          let bufferedFrame;
+          while ((bufferedFrame = this.audioFrameBuffer.pullSync()) !== null) {
+            // Send buffered frame to encoder
+            const sendRet = this.codecContext.sendFrameSync(bufferedFrame);
+            if (sendRet < 0 && sendRet !== AVERROR_EOF && sendRet !== AVERROR_EAGAIN) {
+              FFmpegError.throwIfError(sendRet, 'Failed to send frame');
+            }
+
+            // Receive packets
+            let packet;
+            while ((packet = this.receiveSync()) !== null) {
+              yield packet;
+            }
+
+            // Free buffered frame
+            bufferedFrame.free();
+          }
+        } else if (frame) {
+          // Process frames
+          const packet = this.encodeSync(frame);
+          if (packet) {
+            yield packet;
+          }
         }
       } finally {
         // Free the input frame after encoding
