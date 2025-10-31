@@ -24,8 +24,8 @@ import type { FilterOptions } from './types.js';
  * });
  *
  * // Process frame - first frame configures filter graph
- * const output = await filter.process(inputFrame);
- * if (output) {
+ * const frames = await filter.process(inputFrame);
+ * for (const output of frames) {
  *   console.log(`Filtered frame: ${output.width}x${output.height}`);
  *   output.free();
  * }
@@ -133,7 +133,7 @@ export class FilterAPI implements Disposable {
    * @example
    * ```typescript
    * if (filter.isFilterOpen) {
-   *   const output = await filter.process(frame);
+   *   const frames = await filter.process(frame);
    * }
    * ```
    */
@@ -168,7 +168,7 @@ export class FilterAPI implements Disposable {
    * @example
    * ```typescript
    * if (filter.isReady()) {
-   *   const output = await filter.process(frame);
+   *   const frames = await filter.process(frame);
    * }
    * ```
    */
@@ -199,17 +199,17 @@ export class FilterAPI implements Disposable {
   /**
    * Process a frame through the filter.
    *
-   * Applies filter operations to input frame.
+   * Applies filter operations to input frame and receives all available output frames.
+   * Returns array of frames - may be empty if filter needs more input.
    * On first frame, automatically builds filter graph with frame properties.
-   * May buffer frames internally before producing output.
+   * One input frame can produce zero, one, or multiple output frames depending on filter.
    * Hardware frames context is automatically detected from frame.
-   * Returns null if filter is closed and frame is null.
    *
    * Direct mapping to av_buffersrc_add_frame() and av_buffersink_get_frame().
    *
    * @param frame - Input frame to process (or null to flush)
    *
-   * @returns Filtered frame or null if buffered
+   * @returns Array of filtered frames (empty if buffered or filter closed)
    *
    * @throws {Error} If filter could not be initialized
    *
@@ -217,8 +217,8 @@ export class FilterAPI implements Disposable {
    *
    * @example
    * ```typescript
-   * const output = await filter.process(inputFrame);
-   * if (output) {
+   * const frames = await filter.process(inputFrame);
+   * for (const output of frames) {
    *   console.log(`Got filtered frame: pts=${output.pts}`);
    *   output.free();
    * }
@@ -226,34 +226,32 @@ export class FilterAPI implements Disposable {
    *
    * @example
    * ```typescript
-   * // Process frame - may buffer internally
-   * const output = await filter.process(frame);
-   * if (output) {
-   *   // Got output immediately
+   * // Process frame - may return multiple frames (e.g. fps filter)
+   * const frames = await filter.process(frame);
+   * for (const output of frames) {
    *   yield output;
    * }
-   * // For buffered frames, use the frames() async generator
    * ```
    *
    * @see {@link frames} For processing frame streams
    * @see {@link flush} For end-of-stream handling
    */
-  async process(frame: Frame | null): Promise<Frame | null> {
+  async process(frame: Frame | null): Promise<Frame[]> {
     if (this.isClosed) {
-      return null;
+      return [];
     }
 
     // Open filter if not already done
     if (!this.initialized) {
       if (!frame) {
-        return null;
+        return [];
       }
 
       await this.initialize(frame);
     }
 
     if (!this.initialized) {
-      return null;
+      return [];
     }
 
     if (!this.buffersrcCtx || !this.buffersinkCtx) {
@@ -264,40 +262,45 @@ export class FilterAPI implements Disposable {
     const addRet = await this.buffersrcCtx.buffersrcAddFrame(frame);
     FFmpegError.throwIfError(addRet, 'Failed to add frame to filter');
 
-    // Try to get filtered frame
-    const outputFrame = new Frame();
-    outputFrame.alloc();
+    // Receive all available frames
+    const frames: Frame[] = [];
+    while (true) {
+      const outputFrame = new Frame();
+      outputFrame.alloc();
 
-    const getRet = await this.buffersinkCtx.buffersinkGetFrame(outputFrame);
+      const getRet = await this.buffersinkCtx.buffersinkGetFrame(outputFrame);
 
-    if (getRet >= 0) {
-      return outputFrame;
-    } else if (getRet === AVERROR_EAGAIN) {
-      // Need more input
-      outputFrame.free();
-      return null;
-    } else {
-      outputFrame.free();
-      FFmpegError.throwIfError(getRet, 'Failed to get frame from filter');
-      return null;
+      if (getRet >= 0) {
+        frames.push(outputFrame);
+      } else if (getRet === AVERROR_EAGAIN || getRet === AVERROR_EOF) {
+        // Need more input or EOF
+        outputFrame.free();
+        break;
+      } else {
+        outputFrame.free();
+        FFmpegError.throwIfError(getRet, 'Failed to get frame from filter');
+        break;
+      }
     }
+
+    return frames;
   }
 
   /**
    * Process a frame through the filter synchronously.
    * Synchronous version of process.
    *
-   * Applies filter operations to input frame.
+   * Applies filter operations to input frame and receives all available output frames.
+   * Returns array of frames - may be empty if filter needs more input.
    * On first frame, automatically builds filter graph with frame properties.
-   * May buffer frames internally before producing output.
+   * One input frame can produce zero, one, or multiple output frames depending on filter.
    * Hardware frames context is automatically detected from frame.
-   * Returns null if filter is closed and frame is null.
    *
    * Direct mapping to av_buffersrc_add_frame() and av_buffersink_get_frame().
    *
    * @param frame - Input frame to process (or null to flush)
    *
-   * @returns Filtered frame or null if buffered
+   * @returns Array of filtered frames (empty if buffered or filter closed)
    *
    * @throws {Error} If filter could not be initialized
    *
@@ -305,8 +308,8 @@ export class FilterAPI implements Disposable {
    *
    * @example
    * ```typescript
-   * const output = filter.processSync(inputFrame);
-   * if (output) {
+   * const outputs = filter.processSync(inputFrame);
+   * for (const output of outputs) {
    *   console.log(`Got filtered frame: pts=${output.pts}`);
    *   output.free();
    * }
@@ -314,26 +317,24 @@ export class FilterAPI implements Disposable {
    *
    * @example
    * ```typescript
-   * // Process frame - may buffer internally
-   * const output = filter.processSync(frame);
-   * if (output) {
-   *   // Got output immediately
+   * // Process frame - may return multiple frames (e.g. fps filter)
+   * const outputs = filter.processSync(frame);
+   * for (const output of outputs) {
    *   yield output;
    * }
-   * // For buffered frames, use the framesSync() generator
    * ```
    *
    * @see {@link process} For async version
    */
-  processSync(frame: Frame | null): Frame | null {
+  processSync(frame: Frame | null): Frame[] {
     if (this.isClosed) {
-      return null;
+      return [];
     }
 
     // Open filter if not already done
     if (!this.initialized) {
       if (!frame) {
-        return null;
+        return [];
       }
 
       this.initializeSync(frame);
@@ -347,23 +348,28 @@ export class FilterAPI implements Disposable {
     const addRet = this.buffersrcCtx.buffersrcAddFrameSync(frame);
     FFmpegError.throwIfError(addRet, 'Failed to add frame to filter');
 
-    // Try to get filtered frame
-    const outputFrame = new Frame();
-    outputFrame.alloc();
+    // Receive all available frames
+    const frames: Frame[] = [];
+    while (true) {
+      const outputFrame = new Frame();
+      outputFrame.alloc();
 
-    const getRet = this.buffersinkCtx.buffersinkGetFrameSync(outputFrame);
+      const getRet = this.buffersinkCtx.buffersinkGetFrameSync(outputFrame);
 
-    if (getRet >= 0) {
-      return outputFrame;
-    } else if (getRet === AVERROR_EAGAIN) {
-      // Need more input
-      outputFrame.free();
-      return null;
-    } else {
-      outputFrame.free();
-      FFmpegError.throwIfError(getRet, 'Failed to get frame from filter');
-      return null;
+      if (getRet >= 0) {
+        frames.push(outputFrame);
+      } else if (getRet === AVERROR_EAGAIN || getRet === AVERROR_EOF) {
+        // Need more input or EOF
+        outputFrame.free();
+        break;
+      } else {
+        outputFrame.free();
+        FFmpegError.throwIfError(getRet, 'Failed to get frame from filter');
+        break;
+      }
     }
+
+    return frames;
   }
 
   /**
@@ -395,10 +401,8 @@ export class FilterAPI implements Disposable {
     const outputFrames: Frame[] = [];
 
     for (const frame of frames) {
-      const output = await this.process(frame);
-      if (output) {
-        outputFrames.push(output);
-      }
+      const outputs = await this.process(frame);
+      outputFrames.push(...outputs);
 
       // Drain any additional frames
       while (!this.isClosed) {
@@ -441,10 +445,8 @@ export class FilterAPI implements Disposable {
     const outputFrames: Frame[] = [];
 
     for (const frame of frames) {
-      const output = this.processSync(frame);
-      if (output) {
-        outputFrames.push(output);
-      }
+      const outputs = this.processSync(frame);
+      outputFrames.push(...outputs);
 
       // Drain any additional frames
       while (!this.isClosed) {
@@ -504,8 +506,8 @@ export class FilterAPI implements Disposable {
     for await (const frame of frames) {
       try {
         // Process input frame
-        const output = await this.process(frame);
-        if (output) {
+        const outputs = await this.process(frame);
+        for (const output of outputs) {
           yield output;
         }
 
@@ -577,8 +579,8 @@ export class FilterAPI implements Disposable {
     for (const frame of frames) {
       try {
         // Process input frame
-        const output = this.processSync(frame);
-        if (output) {
+        const outputs = this.processSync(frame);
+        for (const output of outputs) {
           yield output;
         }
 
