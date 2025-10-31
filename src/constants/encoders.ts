@@ -16,7 +16,7 @@ export type FFAudioEncoder = FFEncoderCodec & { readonly __type: 'audio' };
 export type FFSubtitleEncoder = FFEncoderCodec & { readonly __type: 'subtitle' };
 
 // ============================================================================
-// VIDEO ENCODERS (134 software, 43 hardware)
+// VIDEO ENCODERS (134 software, 44 hardware)
 // ============================================================================
 
 // Software video encoders
@@ -204,6 +204,10 @@ export const FF_ENCODER_HEVC_V4L2M2M = 'hevc_v4l2m2m' as FFVideoEncoder;
 export const FF_ENCODER_MPEG4_V4L2M2M = 'mpeg4_v4l2m2m' as FFVideoEncoder;
 export const FF_ENCODER_VP8_V4L2M2M = 'vp8_v4l2m2m' as FFVideoEncoder;
 
+// Direct3D 12
+export const FF_ENCODER_H264_D3D12VA = 'h264_d3d12va' as FFVideoEncoder;
+export const FF_ENCODER_HEVC_D3D12VA = 'hevc_d3d12va' as FFVideoEncoder;
+
 // OpenMAX
 export const FF_ENCODER_H264_OMX = 'h264_omx' as FFVideoEncoder;
 export const FF_ENCODER_MPEG4_OMX = 'mpeg4_omx' as FFVideoEncoder;
@@ -218,9 +222,6 @@ export const FF_ENCODER_H264_VIDEOTOOLBOX = 'h264_videotoolbox' as FFVideoEncode
 export const FF_ENCODER_HEVC_VIDEOTOOLBOX = 'hevc_videotoolbox' as FFVideoEncoder;
 export const FF_ENCODER_MJPEG_VIDEOTOOLBOX = 'mjpeg_videotoolbox' as FFVideoEncoder;
 export const FF_ENCODER_PRORES_VIDEOTOOLBOX = 'prores_videotoolbox' as FFVideoEncoder;
-
-// Direct3D 12
-export const FF_ENCODER_HEVC_D3D12VA = 'hevc_d3d12va' as FFVideoEncoder;
 
 // ============================================================================
 // AUDIO ENCODERS (78 software, 8 hardware)
