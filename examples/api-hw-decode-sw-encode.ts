@@ -103,16 +103,16 @@ const startTime = Date.now();
 for await (using packet of input.packets()) {
   if (packet.streamIndex === videoStream.index) {
     // Hardware decode
-    const frames = await decoder.decode(packet);
-    for (using frame of frames) {
+    using frame = await decoder.decode(packet);
+    if (frame) {
       // Convert from hardware to CPU format
-      const cpuFrames = await filter.process(frame);
-      for (using cpuFrame of cpuFrames) {
+      using cpuFrame = await filter.process(frame);
+      if (cpuFrame) {
         frameCount++;
 
         // Software encode
-        const encodedPackets = await encoder.encode(cpuFrame);
-        for (using encodedPacket of encodedPackets) {
+        using encodedPacket = await encoder.encode(cpuFrame);
+        if (encodedPacket) {
           // Write to output
           await output.writePacket(encodedPacket, outputVideoStreamIndex);
         }
@@ -133,10 +133,10 @@ for await (using packet of input.packets()) {
 
 // Flush decoder
 for await (using flushFrame of decoder.flushFrames()) {
-  const cpuFrames = await filter.process(flushFrame);
-  for (using cpuFrame of cpuFrames) {
-    const encodedPackets = await encoder.encode(cpuFrame);
-    for (using encodedPacket of encodedPackets) {
+  using cpuFrame = await filter.process(flushFrame);
+  if (cpuFrame) {
+    using encodedPacket = await encoder.encode(cpuFrame);
+    if (encodedPacket) {
       await output.writePacket(encodedPacket, outputVideoStreamIndex);
     }
   }
@@ -144,8 +144,8 @@ for await (using flushFrame of decoder.flushFrames()) {
 
 // Flush filter
 for await (using cpuFrame of filter.flushFrames()) {
-  const encodedPackets = await encoder.encode(cpuFrame);
-  for (using encodedPacket of encodedPackets) {
+  using encodedPacket = await encoder.encode(cpuFrame);
+  if (encodedPacket) {
     await output.writePacket(encodedPacket, outputVideoStreamIndex);
   }
 }

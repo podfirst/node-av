@@ -70,27 +70,28 @@ if (audioStream) {
 
 // Process frames
 console.log('Processing frames...');
-let decoded = 0;
-let encoded = 0;
+let decodedFrames = 0;
+let encodedPackets = 0;
 let processedAudioPackets = 0;
 
 for await (using packet of input.packets()) {
   if (packet.streamIndex === videoStream.index) {
     // Decode packet to frame
-    const frames = await decoder.decode(packet);
-    for (using frame of frames) {
-      decoded++;
+    using frame = await decoder.decode(packet);
+    if (frame) {
+      decodedFrames++;
 
       // Re-encode frame
-      const encodedPackets = await encoder.encode(frame);
-      for (using encodedPacket of encodedPackets) {
+      using encodedPacket = await encoder.encode(frame);
+      if (encodedPacket) {
+        // Write packet to output
         await output.writePacket(encodedPacket, outputVideoStreamIndex);
-        encoded++;
+        encodedPackets++;
       }
 
       // Progress
-      if (decoded % 10 === 0) {
-        console.log(`Decoded: ${decoded} frames, Encoded: ${encoded} packets`);
+      if (decodedFrames % 10 === 0) {
+        console.log(`Decoded: ${decodedFrames} frames, Encoded: ${encodedPackets} packets`);
       }
     }
   } else if (audioStream && packet.streamIndex === audioStream.index) {
@@ -102,10 +103,10 @@ for await (using packet of input.packets()) {
 // Flush decoder
 console.log('Flushing decoder...');
 for await (using flushFrame of decoder.flushFrames()) {
-  const encodedPackets = await encoder.encode(flushFrame);
-  for (using encodedPacket of encodedPackets) {
+  using encodedPacket = await encoder.encode(flushFrame);
+  if (encodedPacket) {
     await output.writePacket(encodedPacket, outputVideoStreamIndex);
-    encoded++;
+    encodedPackets++;
   }
 }
 
@@ -113,11 +114,11 @@ for await (using flushFrame of decoder.flushFrames()) {
 console.log('Flushing encoder...');
 for await (using flushPacket of encoder.flushPackets()) {
   await output.writePacket(flushPacket, outputVideoStreamIndex);
-  encoded++;
+  encodedPackets++;
 }
 
 console.log('Done!');
-console.log(`Decoded ${decoded} frames`);
-console.log(`Encoded ${encoded} packets`);
+console.log(`Decoded ${decodedFrames} frames`);
+console.log(`Encoded ${encodedPackets} packets`);
 console.log(`Processed audio packets: ${processedAudioPackets}`);
 console.log(`Output: ${outputFile}`);

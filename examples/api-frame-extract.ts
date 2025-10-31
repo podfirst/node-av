@@ -65,23 +65,19 @@ async function extractFrameAsPNG(frameNumber: number) {
 
   let currentFrame = 0;
   for await (using packet of input.packets(videoStream.index)) {
-    const frames = await decoder.decode(packet);
-    for (using frame of frames) {
-      const filteredFrames = await filter.process(frame);
-      for (using filteredFrame of filteredFrames) {
+    using frame = await decoder.decode(packet);
+    if (frame) {
+      using filteredFrame = await filter.process(frame);
+      if (filteredFrame) {
         if (currentFrame === frameNumber) {
           console.log(`Frame ${frameNumber}: ${filteredFrame.width}x${filteredFrame.height}, PTS: ${filteredFrame.pts}`);
 
           // Encode frame as PNG
-          const pngPackets = await pngEncoder.encode(filteredFrame);
-          let packetNumber = 0;
-          for (using pngPacket of pngPackets) {
-            if (pngPacket?.data) {
-              const filename = `${outputDir}/frame_${frameNumber}_${packetNumber}.png`;
-              await writeFile(filename, pngPacket.data);
-              console.log(`Saved to ${filename}`);
-              packetNumber++;
-            }
+          using pngPacket = await pngEncoder.encode(filteredFrame);
+          if (pngPacket?.data) {
+            const filename = `${outputDir}/frame_${frameNumber}.png`;
+            await writeFile(filename, pngPacket.data);
+            console.log(`Saved to ${filename}`);
           }
 
           // Flush encoder for single frame
@@ -133,21 +129,17 @@ async function extractFramesAtInterval(intervalSeconds: number, count: number) {
   let extractedCount = 0;
 
   for await (using packet of input.packets(videoStream.index)) {
-    const frames = await decoder.decode(packet);
-    for (using frame of frames) {
+    using frame = await decoder.decode(packet);
+    if (frame) {
       if (currentFrame % frameInterval === 0 && extractedCount < count) {
         console.log(`Extracting frame ${currentFrame} (${(currentFrame / fps).toFixed(1)}s)`);
 
         // Encode frame as JPEG
-        const jpegPackets = await jpegEncoder.encode(frame);
-        let packetNumber = 0;
-        for (using jpegPacket of jpegPackets) {
-          if (jpegPacket?.data) {
-            const filename = `${outputDir}/thumb_${extractedCount}_${packetNumber}.jpg`;
-            await writeFile(filename, jpegPacket.data);
-            console.log(`Saved: ${filename}`);
-            packetNumber++;
-          }
+        using jpegPacket = await jpegEncoder.encode(frame);
+        if (jpegPacket?.data) {
+          const filename = `${outputDir}/thumb_${extractedCount}.jpg`;
+          await writeFile(filename, jpegPacket.data);
+          console.log(`Saved: ${filename}`);
         }
 
         extractedCount++;
@@ -181,8 +173,8 @@ async function analyzeFrames(count: number) {
   let analyzedFrames = 0;
 
   for await (using packet of input.packets(videoStream.index)) {
-    const frames = await decoder.decode(packet);
-    for (using frame of frames) {
+    using frame = await decoder.decode(packet);
+    if (frame) {
       // Analyze frame
       const frameType = frame.pictType === AV_PICTURE_TYPE_I ? 'I' : frame.pictType === AV_PICTURE_TYPE_P ? 'P' : frame.pictType === AV_PICTURE_TYPE_B ? 'B' : 'Other';
       frameTypes[frameType] = (frameTypes[frameType] || AV_PICTURE_TYPE_NONE) + 1;
@@ -251,12 +243,12 @@ async function generateGIF(startTime: number, duration: number) {
   const outputStreamIndex = output.addStream(encoder);
 
   for await (using packet of input.packets(videoStream.index)) {
-    const frames = await decoder.decode(packet);
-    for (using frame of frames) {
-      const filteredFrames = await filter.process(frame);
-      for (using filteredFrame of filteredFrames) {
-        const encodedPackets = await encoder.encode(filteredFrame);
-        for (using encodedPacket of encodedPackets) {
+    using frame = await decoder.decode(packet);
+    if (frame) {
+      using filteredFrame = await filter.process(frame);
+      if (filteredFrame) {
+        using encodedPacket = await encoder.encode(filteredFrame);
+        if (encodedPacket) {
           await output.writePacket(encodedPacket, outputStreamIndex);
         }
       }
