@@ -868,16 +868,12 @@ export class Encoder implements Disposable {
 
       // Open encoder if not already done
       if (!this.initialized) {
-        if (!frame) {
-          break;
-        }
-
         await this.initialize(frame);
       }
 
       try {
         // If audio encoder with fixed frame size, use AudioFrameBuffer
-        if (this.audioFrameBuffer && frame) {
+        if (this.audioFrameBuffer) {
           // Push frame into buffer
           await this.audioFrameBuffer.push(frame);
 
@@ -898,7 +894,7 @@ export class Encoder implements Disposable {
               yield packet;
             }
           }
-        } else if (frame) {
+        } else {
           // Process frames
           const packet = await this.encode(frame);
           if (packet) {
@@ -976,16 +972,12 @@ export class Encoder implements Disposable {
 
       // Open encoder if not already done
       if (!this.initialized) {
-        if (!frame) {
-          break;
-        }
-
         this.initializeSync(frame);
       }
 
       try {
         // If audio encoder with fixed frame size, use AudioFrameBuffer
-        if (this.audioFrameBuffer && frame) {
+        if (this.audioFrameBuffer) {
           // Push frame into buffer
           this.audioFrameBuffer.pushSync(frame);
 
@@ -1006,7 +998,7 @@ export class Encoder implements Disposable {
               yield packet;
             }
           }
-        } else if (frame) {
+        } else {
           // Process frames
           const packet = this.encodeSync(frame);
           if (packet) {
