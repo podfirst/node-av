@@ -421,6 +421,14 @@ Napi::Value FormatContext::GetRTSPStreamInfo(const Napi::CallbackInfo& info) {
           case AVMEDIA_TYPE_SUBTITLE:
             media_type_str = "subtitle";
             break;
+          case AVMEDIA_TYPE_ATTACHMENT:
+            media_type_str = "attachment";
+            break;
+          case AVMEDIA_TYPE_NB:
+          case AVMEDIA_TYPE_UNKNOWN:
+          default:
+            media_type_str = "unknown";
+            break;
         }
         streamInfo.Set("mediaType", Napi::String::New(env, media_type_str));
 
