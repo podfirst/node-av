@@ -882,8 +882,10 @@ export class Encoder implements Disposable {
           await this.audioFrameBuffer.push(frame);
 
           // Pull and encode all available fixed-size frames
-          let bufferedFrame;
-          while ((bufferedFrame = await this.audioFrameBuffer.pull()) !== null) {
+          let _bufferedFrame;
+          while ((_bufferedFrame = await this.audioFrameBuffer.pull()) !== null) {
+            using bufferedFrame = _bufferedFrame;
+
             // Send buffered frame to encoder
             const sendRet = await this.codecContext.sendFrame(bufferedFrame);
             if (sendRet < 0 && sendRet !== AVERROR_EOF && sendRet !== AVERROR_EAGAIN) {
@@ -895,9 +897,6 @@ export class Encoder implements Disposable {
             while ((packet = await this.receive()) !== null) {
               yield packet;
             }
-
-            // Free buffered frame
-            bufferedFrame.free();
           }
         } else if (frame) {
           // Process frames
@@ -991,8 +990,10 @@ export class Encoder implements Disposable {
           this.audioFrameBuffer.pushSync(frame);
 
           // Pull and encode all available fixed-size frames
-          let bufferedFrame;
-          while ((bufferedFrame = this.audioFrameBuffer.pullSync()) !== null) {
+          let _bufferedFrame;
+          while ((_bufferedFrame = this.audioFrameBuffer.pullSync()) !== null) {
+            using bufferedFrame = _bufferedFrame;
+
             // Send buffered frame to encoder
             const sendRet = this.codecContext.sendFrameSync(bufferedFrame);
             if (sendRet < 0 && sendRet !== AVERROR_EOF && sendRet !== AVERROR_EAGAIN) {
@@ -1004,9 +1005,6 @@ export class Encoder implements Disposable {
             while ((packet = this.receiveSync()) !== null) {
               yield packet;
             }
-
-            // Free buffered frame
-            bufferedFrame.free();
           }
         } else if (frame) {
           // Process frames
