@@ -211,9 +211,9 @@ describe('MediaOutput', () => {
       // Write first packet to trigger initialization
       for await (const packet of input.packets()) {
         if (packet.streamIndex === 0) {
-          const frame = (await decoder.decode(packet))[0];
+          const frame = await decoder.decode(packet);
           if (frame) {
-            const encoded = (await encoder.encode(frame))[0];
+            const encoded = await encoder.encode(frame);
             if (encoded) {
               await output.writePacket(encoded, streamIdx);
               // Now should be initialized
@@ -411,9 +411,9 @@ describe('MediaOutput', () => {
       // Get first packet and decode/encode to initialize encoder and write header
       for await (const packet of input.packets()) {
         if (packet.streamIndex === 0) {
-          const frame = (await decoder.decode(packet))[0];
+          const frame = await decoder.decode(packet);
           if (frame) {
-            const encoded = (await encoder.encode(frame))[0];
+            const encoded = await encoder.encode(frame);
             if (encoded) {
               await output.writePacket(encoded, streamIdx); // This triggers header write
               encoded.free();
@@ -520,9 +520,9 @@ describe('MediaOutput', () => {
       let processed = false;
       for await (const packet of input.packets()) {
         if (packet.streamIndex === 0 && !processed) {
-          const frame = (await decoder.decode(packet))[0];
+          const frame = await decoder.decode(packet);
           if (frame) {
-            const encoded = (await encoder.encode(frame))[0];
+            const encoded = await encoder.encode(frame);
             if (encoded) {
               // Header written automatically on first packet
               await output.writePacket(encoded, streamIdx);
@@ -573,9 +573,9 @@ describe('MediaOutput', () => {
       let packetCount = 0;
       for await (const packet of input.packets()) {
         if (packet.streamIndex === 0 && packetCount < 3) {
-          const frame = (await decoder.decode(packet))[0];
+          const frame = await decoder.decode(packet);
           if (frame) {
-            const encoded = (await encoder.encode(frame))[0];
+            const encoded = await encoder.encode(frame);
             if (encoded) {
               await output.writePacket(encoded, streamIdx);
               encoded.free();
@@ -620,9 +620,9 @@ describe('MediaOutput', () => {
       let packetCount = 0;
       for (const packet of input.packetsSync()) {
         if (packet.streamIndex === 0 && packetCount < 3) {
-          const frame = decoder.decodeSync(packet)[0];
+          const frame = decoder.decodeSync(packet);
           if (frame) {
-            const encoded = encoder.encodeSync(frame)[0];
+            const encoded = encoder.encodeSync(frame);
             if (encoded) {
               output.writePacketSync(encoded, streamIdx);
               encoded.free();
@@ -978,9 +978,9 @@ describe('MediaOutput', () => {
       let packetCount = 0;
       for await (const packet of input.packets()) {
         if (packet.streamIndex === 0 && packetCount < 10) {
-          const frame = (await decoder.decode(packet))[0];
+          const frame = await decoder.decode(packet);
           if (frame) {
-            const encoded = (await encoder.encode(frame))[0];
+            const encoded = await encoder.encode(frame);
             if (encoded) {
               await output.writePacket(encoded, streamIdx);
               encoded.free();

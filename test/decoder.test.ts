@@ -414,7 +414,7 @@ describe('Decoder', () => {
 
       for await (const packet of media.packets()) {
         if (packet.streamIndex === videoStream.index) {
-          const frame = (await decoder.decode(packet))[0];
+          const frame = await decoder.decode(packet);
           if (frame) {
             assert.ok(frame.width > 0);
             assert.ok(frame.height > 0);
@@ -447,7 +447,7 @@ describe('Decoder', () => {
 
       for (const packet of media.packetsSync()) {
         if (packet.streamIndex === videoStream.index) {
-          const frame = decoder.decodeSync(packet)[0];
+          const frame = decoder.decodeSync(packet);
           if (frame) {
             assert.ok(frame.width > 0);
             assert.ok(frame.height > 0);
@@ -481,7 +481,7 @@ describe('Decoder', () => {
 
       for await (const packet of media.packets()) {
         if (packet.streamIndex === videoStream.index) {
-          const frame = (await decoder.decode(packet))[0];
+          const frame = await decoder.decode(packet);
           if (frame) {
             assert.ok(frame.width > 0);
             assert.ok(frame.height > 0);
@@ -513,7 +513,7 @@ describe('Decoder', () => {
 
       for (const packet of media.packetsSync()) {
         if (packet.streamIndex === videoStream.index) {
-          const frame = decoder.decodeSync(packet)[0];
+          const frame = decoder.decodeSync(packet);
           if (frame) {
             assert.ok(frame.width > 0);
             assert.ok(frame.height > 0);
@@ -545,7 +545,7 @@ describe('Decoder', () => {
 
       for await (const packet of media.packets()) {
         if (packet.streamIndex === audioStream.index) {
-          const frame = (await decoder.decode(packet))[0];
+          const frame = await decoder.decode(packet);
           if (frame) {
             assert.ok(frame.nbSamples > 0);
             assert.ok(frame.sampleRate > 0);
@@ -577,7 +577,7 @@ describe('Decoder', () => {
 
       for (const packet of media.packetsSync()) {
         if (packet.streamIndex === audioStream.index) {
-          const frame = decoder.decodeSync(packet)[0];
+          const frame = decoder.decodeSync(packet);
           if (frame) {
             assert.ok(frame.nbSamples > 0);
             assert.ok(frame.sampleRate > 0);
@@ -606,7 +606,7 @@ describe('Decoder', () => {
       // Some packets might not immediately produce frames
       for await (const packet of media.packets()) {
         if (packet.streamIndex === videoStream.index) {
-          const frame = (await decoder.decode(packet))[0];
+          const frame = await decoder.decode(packet);
           // Frame can be null, that's okay
           if (frame) {
             frame.free();
@@ -629,7 +629,7 @@ describe('Decoder', () => {
       // Some packets might not immediately produce frames
       for (const packet of media.packetsSync()) {
         if (packet.streamIndex === videoStream.index) {
-          const frame = decoder.decodeSync(packet)[0];
+          const frame = decoder.decodeSync(packet);
           // Frame can be null, that's okay
           if (frame) {
             frame.free();
