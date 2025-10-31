@@ -186,7 +186,8 @@ export class WebRTCStream {
 
     // Create stream with WebRTC-specific codec support
     session.stream = RTPStream.create(inputUrl, {
-      mtu: options.mtu,
+      video: options.video,
+      audio: options.audio,
       hardware: options.hardware,
       inputOptions: options.inputOptions,
       supportedVideoCodecs: [AV_CODEC_ID_H264, AV_CODEC_ID_HEVC, AV_CODEC_ID_VP8, AV_CODEC_ID_VP9, AV_CODEC_ID_AV1],
