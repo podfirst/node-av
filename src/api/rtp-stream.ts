@@ -1,4 +1,4 @@
-import { RtpPacket } from 'werift';
+import { isRtcp, RtpPacket } from 'werift';
 
 import { AV_HWDEVICE_TYPE_NONE } from '../constants/constants.js';
 import { FF_ENCODER_LIBOPUS, FF_ENCODER_LIBX264, FF_ENCODER_LIBX265, type FFAudioEncoder, type FFVideoEncoder } from '../constants/encoders.js';
@@ -369,6 +369,11 @@ export class RTPStream {
     this.videoOutput = await MediaOutput.open(
       {
         write: (buffer: Buffer) => {
+          if (isRtcp(buffer)) {
+            // Ignore RTCP packets
+            return buffer.length;
+          }
+
           const rtpPacket = RtpPacket.deSerialize(buffer);
 
           // Set SSRC (synchronization source identifier)
@@ -470,6 +475,11 @@ export class RTPStream {
       this.audioOutput = await MediaOutput.open(
         {
           write: (buffer: Buffer) => {
+            if (isRtcp(buffer)) {
+              // Ignore RTCP packets
+              return buffer.length;
+            }
+
             const rtpPacket = RtpPacket.deSerialize(buffer);
 
             // Set SSRC (synchronization source identifier)
