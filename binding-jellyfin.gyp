@@ -109,6 +109,7 @@
                             "/opt/ffbuild/prefix/lib/libudfread.a",
                             "/opt/ffbuild/prefix/lib/libz.a",
                             "/opt/ffbuild/prefix/lib/liblzma.a",
+                            "/opt/ffbuild/prefix/lib/libfdk-aac.a",
                             "<!@(ls /opt/ffbuild/prefix/lib/libNE10.a 2>/dev/null || echo '')",
                             "<!@(ls /opt/ffbuild/prefix/lib/libwebpdemux.a 2>/dev/null || echo '')",
                             "<!@(ls /opt/ffbuild/prefix/lib/libchromaprint.a 2>/dev/null || echo '')",
