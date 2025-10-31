@@ -1,5 +1,6 @@
 import { AVERROR_EAGAIN, AVERROR_EOF, AVMEDIA_TYPE_AUDIO } from '../constants/constants.js';
 import { Codec, CodecContext, Dictionary, FFmpegError, Packet, Rational } from '../lib/index.js';
+import { AudioFrameBuffer } from './audio-frame-buffer.js';
 import { parseBitrate } from './utils.js';
 
 import type { AVCodecFlag, AVCodecID, AVPixelFormat, AVSampleFormat } from '../constants/constants.js';
@@ -73,6 +74,7 @@ export class Encoder implements Disposable {
   private isClosed = false;
   private opts?: Dictionary | null;
   private options: EncoderOptions;
+  private audioFrameBuffer?: AudioFrameBuffer;
 
   /**
    * @param codecContext - Configured codec context
@@ -628,7 +630,34 @@ export class Encoder implements Disposable {
       await this.initialize(frame);
     }
 
-    // Send frame to encoder
+    // If audio encoder with fixed frame size, use AudioFrameBuffer
+    if (this.audioFrameBuffer && frame) {
+      // Push frame into buffer
+      await this.audioFrameBuffer.push(frame);
+
+      // Pull and encode all available fixed-size frames
+      const packets: Packet[] = [];
+      let bufferedFrame;
+      while ((bufferedFrame = await this.audioFrameBuffer.pull()) !== null) {
+        // Send buffered frame to encoder
+        const sendRet = await this.codecContext.sendFrame(bufferedFrame);
+        if (sendRet < 0 && sendRet !== AVERROR_EOF && sendRet !== AVERROR_EAGAIN) {
+          FFmpegError.throwIfError(sendRet, 'Failed to send frame');
+        }
+
+        // Receive packets
+        let packet;
+        while ((packet = await this.receive()) !== null) {
+          packets.push(packet);
+        }
+
+        // Free buffered frame
+        bufferedFrame.free();
+      }
+      return packets;
+    }
+
+    // Standard encoding path (video or audio without fixed frame size)
     const sendRet = await this.codecContext.sendFrame(frame);
     if (sendRet < 0 && sendRet !== AVERROR_EOF) {
       // Encoder might be full, try to receive first
@@ -715,7 +744,34 @@ export class Encoder implements Disposable {
       this.initializeSync(frame);
     }
 
-    // Send frame to encoder
+    // If audio encoder with fixed frame size, use AudioFrameBuffer
+    if (this.audioFrameBuffer && frame) {
+      // Push frame into buffer
+      this.audioFrameBuffer.pushSync(frame);
+
+      // Pull and encode all available fixed-size frames
+      const packets: Packet[] = [];
+      let bufferedFrame;
+      while ((bufferedFrame = this.audioFrameBuffer.pullSync()) !== null) {
+        // Send buffered frame to encoder
+        const sendRet = this.codecContext.sendFrameSync(bufferedFrame);
+        if (sendRet < 0 && sendRet !== AVERROR_EOF && sendRet !== AVERROR_EAGAIN) {
+          FFmpegError.throwIfError(sendRet, 'Failed to send frame');
+        }
+
+        // Receive packets
+        let packet;
+        while ((packet = this.receiveSync()) !== null) {
+          packets.push(packet);
+        }
+
+        // Free buffered frame
+        bufferedFrame.free();
+      }
+      return packets;
+    }
+
+    // Standard encoding path (video or audio without fixed frame size)
     const sendRet = this.codecContext.sendFrameSync(frame);
     if (sendRet < 0 && sendRet !== AVERROR_EOF) {
       // Encoder might be full, try to receive first
@@ -807,8 +863,8 @@ export class Encoder implements Disposable {
     // Process frames
     for await (const frame of frames) {
       try {
-        const packet = await this.encode(frame);
-        if (packet) {
+        const packets = await this.encodeAll(frame);
+        for (const packet of packets) {
           yield packet;
         }
       } finally {
@@ -877,8 +933,8 @@ export class Encoder implements Disposable {
     // Process frames
     for (const frame of frames) {
       try {
-        const packet = this.encodeSync(frame);
-        if (packet) {
+        const packets = this.encodeAllSync(frame);
+        for (const packet of packets) {
           yield packet;
         }
       } finally {
@@ -928,6 +984,17 @@ export class Encoder implements Disposable {
       return;
     }
 
+    // If using AudioFrameBuffer, flush remaining buffered samples first
+    if (this.audioFrameBuffer && this.audioFrameBuffer.size > 0) {
+      // Pull any remaining partial frame (may be less than frameSize)
+      // For the final frame, we pad or truncate as needed
+      let bufferedFrame;
+      while ((bufferedFrame = await this.audioFrameBuffer.pull()) !== null) {
+        await this.codecContext.sendFrame(bufferedFrame);
+        bufferedFrame.free();
+      }
+    }
+
     // Send flush frame (null)
     const ret = await this.codecContext.sendFrame(null);
     if (ret < 0 && ret !== AVERROR_EOF) {
@@ -968,6 +1035,17 @@ export class Encoder implements Disposable {
   flushSync(): void {
     if (this.isClosed || !this.initialized) {
       return;
+    }
+
+    // If using AudioFrameBuffer, flush remaining buffered samples first
+    if (this.audioFrameBuffer && this.audioFrameBuffer.size > 0) {
+      // Pull any remaining partial frame (may be less than frameSize)
+      // For the final frame, we pad or truncate as needed
+      let bufferedFrame;
+      while ((bufferedFrame = this.audioFrameBuffer.pullSync()) !== null) {
+        this.codecContext.sendFrameSync(bufferedFrame);
+        bufferedFrame.free();
+      }
     }
 
     // Send flush frame (null)
@@ -1222,6 +1300,11 @@ export class Encoder implements Disposable {
       this.codecContext.height = frame.height;
       this.codecContext.pixelFormat = frame.format as AVPixelFormat;
       this.codecContext.sampleAspectRatio = frame.sampleAspectRatio;
+      this.codecContext.colorRange = frame.colorRange;
+      this.codecContext.colorPrimaries = frame.colorPrimaries;
+      this.codecContext.colorTrc = frame.colorTrc;
+      this.codecContext.colorSpace = frame.colorSpace;
+      this.codecContext.chromaLocation = frame.chromaLocation;
     } else {
       this.codecContext.sampleRate = frame.sampleRate;
       this.codecContext.sampleFormat = frame.format as AVSampleFormat;
@@ -1236,6 +1319,18 @@ export class Encoder implements Disposable {
     if (openRet < 0) {
       this.codecContext.freeContext();
       FFmpegError.throwIfError(openRet, 'Failed to open encoder');
+    }
+
+    // Check if encoder requires fixed frame size (e.g., Opus, AAC, MP3)
+    // If so, create AudioFrameBuffer to automatically chunk frames
+    if (frame.isAudio() && this.codecContext.frameSize > 0) {
+      this.audioFrameBuffer = AudioFrameBuffer.create(
+        this.codecContext.frameSize,
+        this.codecContext.sampleFormat,
+        this.codecContext.sampleRate,
+        this.codecContext.channelLayout,
+        this.codecContext.channels,
+      );
     }
 
     this.initialized = true;
@@ -1263,6 +1358,11 @@ export class Encoder implements Disposable {
       this.codecContext.height = frame.height;
       this.codecContext.pixelFormat = frame.format as AVPixelFormat;
       this.codecContext.sampleAspectRatio = frame.sampleAspectRatio;
+      this.codecContext.colorRange = frame.colorRange;
+      this.codecContext.colorPrimaries = frame.colorPrimaries;
+      this.codecContext.colorTrc = frame.colorTrc;
+      this.codecContext.colorSpace = frame.colorSpace;
+      this.codecContext.chromaLocation = frame.chromaLocation;
     } else {
       this.codecContext.sampleRate = frame.sampleRate;
       this.codecContext.sampleFormat = frame.format as AVSampleFormat;
@@ -1277,6 +1377,18 @@ export class Encoder implements Disposable {
     if (openRet < 0) {
       this.codecContext.freeContext();
       FFmpegError.throwIfError(openRet, 'Failed to open encoder');
+    }
+
+    // Check if encoder requires fixed frame size (e.g., Opus, AAC, MP3)
+    // If so, create AudioFrameBuffer to automatically chunk frames
+    if (frame.isAudio() && this.codecContext.frameSize > 0) {
+      this.audioFrameBuffer = AudioFrameBuffer.create(
+        this.codecContext.frameSize,
+        this.codecContext.sampleFormat,
+        this.codecContext.sampleRate,
+        this.codecContext.channelLayout,
+        this.codecContext.channels,
+      );
     }
 
     this.initialized = true;
