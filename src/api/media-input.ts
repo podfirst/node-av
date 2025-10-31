@@ -695,8 +695,11 @@ export class MediaInput implements AsyncDisposable, Disposable {
    * // Decode audio
    * const decoder = await Decoder.create(input.audio()!);
    * for await (const packet of input.packets()) {
-   *   const frame = await decoder.decode(packet);
-   *   // Process frame...
+   *   const frames = await decoder.decode(packet);
+   *   for (const frame of frames) {
+   *     // Process frame...
+   *     frame.free();
+   *   }
    * }
    *
    * // Cleanup
@@ -819,8 +822,11 @@ export class MediaInput implements AsyncDisposable, Disposable {
    * // Decode audio
    * const decoder = await Decoder.create(input.audio()!);
    * for await (const packet of input.packets()) {
-   *   const frame = await decoder.decode(packet);
-   *   // Process frame...
+   *   const frames = await decoder.decode(packet);
+   *   for (const frame of frames) {
+   *     // Process frame...
+   *     frame.free();
+   *   }
    * }
    *
    * // Cleanup synchronously

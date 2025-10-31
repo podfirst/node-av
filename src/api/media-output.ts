@@ -739,9 +739,9 @@ export class MediaOutput implements AsyncDisposable, Disposable {
    *
    * @example
    * ```typescript
-   * // Write encoded packet - header written automatically on first packet
-   * const packet = await encoder.encode(frame);
-   * if (packet) {
+   * // Write encoded packets - header written automatically on first packet
+   * const packets = await encoder.encode(frame);
+   * for (const packet of packets) {
    *   await output.writePacket(packet, videoIdx);
    *   packet.free();
    * }
