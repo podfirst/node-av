@@ -1,9 +1,3 @@
-/**
- * @module pipeline
- * High-level media processing pipeline for FFmpeg operations.
- * Provides a fluent API for building transcoding, filtering, and stream processing pipelines.
- */
-
 import type { Frame, Packet } from '../lib/index.js';
 import type { Stream } from '../lib/stream.js';
 import type { BitStreamFilterAPI } from './bitstream-filter.js';
@@ -36,6 +30,11 @@ interface StreamMetadata {
   streamIndex?: number;
   type?: 'video' | 'audio';
   mediaInput?: MediaInput; // Track source MediaInput for stream copy
+}
+
+// Create packet queues for each stream
+interface PacketWithStream extends Packet {
+  _streamName: string;
 }
 
 /**
@@ -869,20 +868,20 @@ async function* buildSimplePipeline(
 
   for (const stage of stages) {
     if (isDecoder(stage)) {
-      stream = decodeStream(stream as AsyncIterable<Packet>, stage);
+      stream = stage.frames(stream as AsyncIterable<Packet>);
     } else if (isEncoder(stage)) {
-      stream = encodeStream(stream as AsyncIterable<Frame>, stage);
+      stream = stage.packets(stream as AsyncIterable<Frame>);
     } else if (isFilterAPI(stage)) {
-      stream = filterStream(stream as AsyncIterable<Frame>, stage);
+      stream = stage.frames(stream as AsyncIterable<Frame>);
     } else if (isBitStreamFilterAPI(stage)) {
-      stream = bitStreamFilterStream(stream as AsyncIterable<Packet>, stage);
+      stream = stage.packets(stream as AsyncIterable<Packet>);
     } else if (Array.isArray(stage)) {
       // Chain multiple filters or BSFs
       for (const filter of stage) {
         if (isFilterAPI(filter)) {
-          stream = filterStream(stream as AsyncIterable<Frame>, filter);
+          stream = filter.frames(stream as AsyncIterable<Frame>);
         } else if (isBitStreamFilterAPI(filter)) {
-          stream = bitStreamFilterStream(stream as AsyncIterable<Packet>, filter);
+          stream = filter.packets(stream as AsyncIterable<Packet>);
         }
       }
     }
@@ -1409,22 +1408,22 @@ async function* buildFlexibleNamedStreamPipeline(
   for (const stage of stages) {
     if (isDecoder(stage)) {
       metadata.decoder = stage;
-      stream = decodeStream(stream as AsyncIterable<Packet>, stage);
+      stream = stage.frames(stream as AsyncIterable<Packet>);
     } else if (isEncoder(stage)) {
       metadata.encoder = stage;
-      stream = encodeStream(stream as AsyncIterable<Frame>, stage);
+      stream = stage.packets(stream as AsyncIterable<Frame>);
     } else if (isFilterAPI(stage)) {
-      stream = filterStream(stream as AsyncIterable<Frame>, stage);
+      stream = stage.frames(stream as AsyncIterable<Frame>);
     } else if (isBitStreamFilterAPI(stage)) {
       metadata.bitStreamFilter = stage;
-      stream = bitStreamFilterStream(stream as AsyncIterable<Packet>, stage);
+      stream = stage.packets(stream as AsyncIterable<Packet>);
     } else if (Array.isArray(stage)) {
       // Chain multiple filters or BSFs
       for (const filter of stage) {
         if (isFilterAPI(filter)) {
-          stream = filterStream(stream as AsyncIterable<Frame>, filter);
+          stream = filter.frames(stream as AsyncIterable<Frame>);
         } else if (isBitStreamFilterAPI(filter)) {
-          stream = bitStreamFilterStream(stream as AsyncIterable<Packet>, filter);
+          stream = filter.packets(stream as AsyncIterable<Packet>);
         }
       }
     }
@@ -1457,22 +1456,22 @@ async function* buildNamedStreamPipeline(
   for (const stage of stages) {
     if (isDecoder(stage)) {
       metadata.decoder = stage;
-      stream = decodeStream(stream as AsyncIterable<Packet>, stage);
+      stream = stage.frames(stream as AsyncIterable<Packet>);
     } else if (isEncoder(stage)) {
       metadata.encoder = stage;
-      stream = encodeStream(stream as AsyncIterable<Frame>, stage);
+      stream = stage.packets(stream as AsyncIterable<Frame>);
     } else if (isFilterAPI(stage)) {
-      stream = filterStream(stream as AsyncIterable<Frame>, stage);
+      stream = stage.frames(stream as AsyncIterable<Frame>);
     } else if (isBitStreamFilterAPI(stage)) {
       metadata.bitStreamFilter = stage;
-      stream = bitStreamFilterStream(stream as AsyncIterable<Packet>, stage);
+      stream = stage.packets(stream as AsyncIterable<Packet>);
     } else if (Array.isArray(stage)) {
       // Chain multiple filters or BSFs
       for (const filter of stage) {
         if (isFilterAPI(filter)) {
-          stream = filterStream(stream as AsyncIterable<Frame>, filter);
+          stream = filter.frames(stream as AsyncIterable<Frame>);
         } else if (isBitStreamFilterAPI(filter)) {
-          stream = bitStreamFilterStream(stream as AsyncIterable<Packet>, filter);
+          stream = filter.packets(stream as AsyncIterable<Packet>);
         }
       }
     }
@@ -1594,11 +1593,6 @@ async function interleaveToOutput(
     }
   }
 
-  // Create packet queues for each stream
-  interface PacketWithStream extends Packet {
-    _streamName: string;
-  }
-
   const queues = new Map<StreamName, PacketWithStream[]>();
   const iterators = new Map<StreamName, AsyncIterator<Packet>>();
   const done = new Set<StreamName>();
@@ -1698,170 +1692,6 @@ async function interleaveToOutput(
   }
 
   await output.close();
-}
-
-// ============================================================================
-// Stream Processing Functions
-// ============================================================================
-
-/**
- * Decode a stream of packets to frames.
- *
- * @param packets - Input packets
- *
- * @param decoder - Decoder instance
- *
- * @yields {Frame} Decoded frames
- *
- * @internal
- */
-async function* decodeStream(packets: AsyncIterable<Packet>, decoder: Decoder): AsyncGenerator<Frame> {
-  // Process all packets
-  for await (const packet of packets) {
-    try {
-      const frame = await decoder.decode(packet);
-      if (frame) {
-        yield frame;
-      }
-    } finally {
-      // Free packet after decoding
-      packet.free();
-    }
-  }
-
-  // Flush decoder
-  if ('flushFrames' in decoder && typeof decoder.flushFrames === 'function') {
-    // Use generator method if available
-    for await (const frame of decoder.flushFrames()) {
-      yield frame;
-    }
-  } else {
-    // Fallback to manual flush + receive
-    await decoder.flush();
-    let packet;
-    while ((packet = await decoder.receive()) !== null) {
-      yield packet;
-    }
-  }
-}
-
-/**
- * Encode a stream of frames to packets.
- *
- * @param frames - Input frames
- *
- * @param encoder - Encoder instance
- *
- * @yields {Packet} Encoded packets
- *
- * @internal
- */
-async function* encodeStream(frames: AsyncIterable<Frame>, encoder: Encoder): AsyncGenerator<Packet> {
-  // Process all frames
-  for await (const frame of frames) {
-    try {
-      const packet = await encoder.encode(frame);
-      if (packet) {
-        yield packet;
-      }
-    } finally {
-      // Free the input frame after encoding
-      frame.free();
-    }
-  }
-
-  // Flush encoder
-  if ('flushPackets' in encoder && typeof encoder.flushPackets === 'function') {
-    // Use generator method if available
-    for await (const packet of encoder.flushPackets()) {
-      yield packet;
-    }
-  } else {
-    // Fallback to manual flush + receive
-    await encoder.flush();
-    let packet;
-    while ((packet = await encoder.receive()) !== null) {
-      yield packet;
-    }
-  }
-}
-
-/**
- * Filter a stream of frames.
- *
- * @param frames - Input frames
- *
- * @param filter - Filter instance
- *
- * @yields {Frame} Filtered frames
- *
- * @internal
- */
-async function* filterStream(frames: AsyncIterable<Frame>, filter: FilterAPI): AsyncGenerator<Frame> {
-  // Process all frames
-  for await (const frame of frames) {
-    try {
-      const filtered = await filter.process(frame);
-      if (filtered) {
-        yield filtered;
-      }
-
-      // Check for buffered frames
-      let buffered;
-      while ((buffered = await filter.receive()) !== null) {
-        yield buffered;
-      }
-    } finally {
-      // Free the input frame after filtering
-      frame.free();
-    }
-  }
-
-  // Flush filter
-  if ('flushFrames' in filter && typeof filter.flushFrames === 'function') {
-    // Use generator method if available
-    for await (const frame of filter.flushFrames()) {
-      yield frame;
-    }
-  } else {
-    // Fallback to manual flush + receive
-    await filter.flush();
-    let frame;
-    while ((frame = await filter.receive()) !== null) {
-      yield frame;
-    }
-  }
-}
-
-/**
- * Process packets through a bitstream filter.
- *
- * @param packets - Input packets
- *
- * @param bsf - Bitstream filter instance
- *
- * @yields {Packet} Filtered packets
- *
- * @internal
- */
-async function* bitStreamFilterStream(packets: AsyncIterable<Packet>, bsf: BitStreamFilterAPI): AsyncGenerator<Packet> {
-  // Process all packets through bitstream filter
-  for await (const packet of packets) {
-    try {
-      const filtered = await bsf.process(packet);
-      for (const outPacket of filtered) {
-        yield outPacket;
-      }
-    } finally {
-      // Free the input packet after filtering
-      packet.free();
-    }
-  }
-
-  // Flush bitstream filter
-  for await (const packet of bsf.flushPackets()) {
-    yield packet;
-  }
 }
 
 // ============================================================================

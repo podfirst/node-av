@@ -691,7 +691,7 @@ export class FilterAPI implements Disposable {
    * @see {@link Decoder.frames} For frames source
    * @see {@link framesSync} For sync version
    */
-  async *frames(frames: AsyncGenerator<Frame>): AsyncGenerator<Frame> {
+  async *frames(frames: AsyncIterable<Frame>): AsyncGenerator<Frame> {
     for await (const frame of frames) {
       try {
         // Process input frame
