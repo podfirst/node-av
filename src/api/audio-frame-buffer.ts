@@ -45,6 +45,7 @@ export class AudioFrameBuffer implements Disposable {
   private frame: Frame;
   private frameSize: number;
   private nextPts = 0n;
+  private firstFramePts: bigint | null = null;
 
   /**
    * @param fifo - Underlying AudioFifo instance
@@ -153,6 +154,12 @@ export class AudioFrameBuffer implements Disposable {
       throw new Error('AudioFrameBuffer.push() requires an audio frame');
     }
 
+    // Capture PTS from first frame
+    if (this.firstFramePts === null && frame.pts !== undefined) {
+      this.firstFramePts = frame.pts;
+      this.nextPts = frame.pts;
+    }
+
     // Write frame data to FIFO
     await this.fifo.write(frame.data as Buffer | Buffer[], frame.nbSamples);
   }
@@ -176,6 +183,12 @@ export class AudioFrameBuffer implements Disposable {
   pushSync(frame: Frame): void {
     if (!frame.isAudio()) {
       throw new Error('AudioFrameBuffer.pushSync() requires an audio frame');
+    }
+
+    // Capture PTS from first frame
+    if (this.firstFramePts === null && frame.pts !== undefined) {
+      this.firstFramePts = frame.pts;
+      this.nextPts = frame.pts;
     }
 
     // Write frame data to FIFO
@@ -268,6 +281,7 @@ export class AudioFrameBuffer implements Disposable {
   reset(): void {
     this.fifo.reset();
     this.nextPts = 0n;
+    this.firstFramePts = null;
   }
 
   /**
