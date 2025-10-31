@@ -39,7 +39,12 @@ wss.on('connection', async (ws: WebSocket) => {
 
         // Create WebRTC session
         session = WebRTCStream.create(message.url, {
-          mtu: 1200,
+          video: {
+            mtu: 1200,
+          },
+          audio: {
+            mtu: 1200,
+          },
           hardware: 'auto',
           onIceCandidate: (candidate) => {
             if (ws.readyState === WebSocket.OPEN) {

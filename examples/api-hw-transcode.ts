@@ -86,8 +86,8 @@ const audioOutputIndex = output.addStream(audioStream);
 
 // Process frames
 console.log('Processing frames...');
-let decodedFrames = 0;
-let encodedPackets = 0;
+let decoded = 0;
+let encoded = 0;
 let hardwareFrames = 0;
 let audioFrames = 0;
 
@@ -96,9 +96,9 @@ const startTime = Date.now();
 for await (using packet of input.packets()) {
   if (packet.streamIndex === videoStream.index) {
     // Decode packet to frame
-    using frame = await decoder.decode(packet);
-    if (frame) {
-      decodedFrames++;
+    const frames = await decoder.decode(packet);
+    for (using frame of frames) {
+      decoded++;
 
       // Check if frame is on GPU (zero-copy path)
       if (frame.isHwFrame()) {
@@ -106,11 +106,11 @@ for await (using packet of input.packets()) {
       }
 
       // Re-encode frame (zero-copy if both on same GPU)
-      using encodedPacket = await encoder.encode(frame);
-      if (encodedPacket) {
+      const encodedPackets = await encoder.encode(frame);
+      for (using encodedPacket of encodedPackets) {
         // Write packet (MediaOutput handles timestamp rescaling)
         await output.writePacket(encodedPacket, videoOutputIndex);
-        encodedPackets++;
+        encoded++;
       }
     }
   } else if (packet.streamIndex === audioStream.index) {
@@ -122,10 +122,10 @@ for await (using packet of input.packets()) {
 // Flush decoder
 console.log('Flushing decoder...');
 for await (using flushFrame of decoder.flushFrames()) {
-  using encodedPacket = await encoder.encode(flushFrame);
-  if (encodedPacket) {
+  const encodedPackets = await encoder.encode(flushFrame);
+  for (using encodedPacket of encodedPackets) {
     await output.writePacket(encodedPacket, videoOutputIndex);
-    encodedPackets++;
+    encoded++;
   }
 }
 
@@ -133,17 +133,17 @@ for await (using flushFrame of decoder.flushFrames()) {
 console.log('Flushing encoder...');
 for await (using flushPacket of encoder.flushPackets()) {
   await output.writePacket(flushPacket, videoOutputIndex);
-  encodedPackets++;
+  encoded++;
 }
 
 const elapsed = (Date.now() - startTime) / 1000;
-const avgFps = (decodedFrames / elapsed).toFixed(1);
+const avgFps = (decoded / elapsed).toFixed(1);
 
 console.log('Done!');
 console.log(`Hardware: ${hw ? hw.deviceTypeName : 'none (software)'}`);
-console.log(`Decoded: ${decodedFrames} frames`);
-console.log(`Encoded: ${encodedPackets} packets`);
-console.log(`GPU frames: ${hardwareFrames} (${((hardwareFrames / decodedFrames) * 100).toFixed(1)}% zero-copy)`);
+console.log(`Decoded: ${decoded} frames`);
+console.log(`Encoded: ${encoded} packets`);
+console.log(`GPU frames: ${hardwareFrames} (${((hardwareFrames / decoded) * 100).toFixed(1)}% zero-copy)`);
 console.log(`Audio frames: ${audioFrames}`);
 console.log(`Time: ${elapsed.toFixed(2)}s`);
 console.log(`Average FPS: ${avgFps}`);

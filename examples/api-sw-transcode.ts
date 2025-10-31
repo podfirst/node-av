@@ -78,13 +78,13 @@ const startTime = Date.now();
 
 for await (using packet of input.packets(videoStream.index)) {
   // Software decode
-  using frame = await decoder.decode(packet);
-  if (frame) {
+  const frames = await decoder.decode(packet);
+  for (using frame of frames) {
     frameCount++;
 
     // Software encode (encoder handles PTS rescaling automatically)
-    using encodedPacket = await encoder.encode(frame);
-    if (encodedPacket) {
+    const encodedPackets = await encoder.encode(frame);
+    for (using encodedPacket of encodedPackets) {
       // Write to output (MediaOutput handles timestamp rescaling)
       await output.writePacket(encodedPacket, outputStreamIndex);
       packetCount++;
@@ -101,8 +101,8 @@ for await (using packet of input.packets(videoStream.index)) {
 
 // Flush decoder
 for await (using flushFrame of decoder.flushFrames()) {
-  using encodedPacket = await encoder.encode(flushFrame);
-  if (encodedPacket) {
+  const encodedPackets = await encoder.encode(flushFrame);
+  for (using encodedPacket of encodedPackets) {
     await output.writePacket(encodedPacket, outputStreamIndex);
     packetCount++;
   }

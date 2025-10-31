@@ -181,13 +181,13 @@ const processVideo = async () => {
     // Transcode without filter - direct decode->encode
     let frameCount = 0;
     for await (using packet of videoInput.packets(videoStream.index)) {
-      using frame = await videoDecoder!.decode(packet);
-      if (frame) {
+      const frames = await videoDecoder!.decode(packet);
+      for (using frame of frames) {
         // Fix timestamps - set PTS based on frame count
         frame.pts = BigInt(frameCount);
 
-        using encoded = await videoEncoder!.encode(frame);
-        if (encoded) {
+        const encodedPackets = await videoEncoder!.encode(frame);
+        for (using encoded of encodedPackets) {
           await output.writePacket(encoded, videoIdx);
           videoPackets++;
         }
@@ -198,8 +198,8 @@ const processVideo = async () => {
     // Flush decoder
     for await (using frame of videoDecoder!.flushFrames()) {
       frame.pts = BigInt(frameCount);
-      using encoded = await videoEncoder!.encode(frame);
-      if (encoded) {
+      const encodedPackets = await videoEncoder!.encode(frame);
+      for (using encoded of encodedPackets) {
         await output.writePacket(encoded, videoIdx);
         videoPackets++;
       }
@@ -224,12 +224,12 @@ const processAudio = async () => {
     }
   } else {
     for await (using packet of audioInput.packets(audioStream.index)) {
-      using frame = await audioDecoder!.decode(packet);
-      if (frame) {
-        using filteredFrame = await audioFilter!.process(frame);
-        if (filteredFrame) {
-          using encoded = await audioEncoder!.encode(filteredFrame);
-          if (encoded) {
+      const frames = await audioDecoder!.decode(packet);
+      for (using frame of frames) {
+        const filteredFrames = await audioFilter!.process(frame);
+        for (using filteredFrame of filteredFrames) {
+          const encodedPackets = await audioEncoder!.encode(filteredFrame);
+          for (using encoded of encodedPackets) {
             await output.writePacket(encoded, audioIdx);
             audioPackets++;
           }
@@ -239,10 +239,10 @@ const processAudio = async () => {
 
     // Flush decoder
     for await (using frame of audioDecoder!.flushFrames()) {
-      using filteredFrame = await audioFilter!.process(frame);
-      if (filteredFrame) {
-        using encoded = await audioEncoder!.encode(filteredFrame);
-        if (encoded) {
+      const filteredFrames = await audioFilter!.process(frame);
+      for (using filteredFrame of filteredFrames) {
+        const encodedPackets = await audioEncoder!.encode(filteredFrame);
+        for (using encoded of encodedPackets) {
           await output.writePacket(encoded, audioIdx);
           audioPackets++;
         }
@@ -251,8 +251,8 @@ const processAudio = async () => {
 
     // Flush filter
     for await (using filteredFrame of audioFilter!.flushFrames()) {
-      using encoded = await audioEncoder!.encode(filteredFrame);
-      if (encoded) {
+      const encodedPackets = await audioEncoder!.encode(filteredFrame);
+      for (using encoded of encodedPackets) {
         await output.writePacket(encoded, audioIdx);
         audioPackets++;
       }
