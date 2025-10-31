@@ -22,7 +22,7 @@ import { pipeline } from './pipeline.js';
 import type { AVCodecID, AVHWDeviceType } from '../constants/constants.js';
 import type { FFHWDeviceType } from '../constants/hardware.js';
 import type { PipelineControl } from './pipeline.js';
-import type { IOOutputCallbacks } from './types.js';
+import type { IOOutputCallbacks, MediaInputOptions } from './types.js';
 
 /**
  * MP4 box information.
@@ -104,11 +104,9 @@ export interface FMP4StreamOptions {
   hardware?: 'auto' | { deviceType: AVHWDeviceType | FFHWDeviceType; device?: string; options?: Record<string, string> };
 
   /**
-   * FFmpeg input options passed directly to the input.
-   *
-   * @default { flags: 'low_delay', fflags: 'nobuffer', analyzeduration: 0, probesize: 32, timeout: 5000000 }
+   * Input media options passed to MediaInput.
    */
-  inputOptions?: Record<string, string | number | boolean | null | undefined>;
+  inputOptions?: MediaInputOptions;
 
   /**
    * Buffer size for I/O operations in bytes.
@@ -183,9 +181,8 @@ export const FMP4_CODECS = {
  */
 export class FMP4Stream {
   private options: Required<FMP4StreamOptions>;
-
   private inputUrl: string;
-  private inputOptions: Record<string, string | number | boolean | null | undefined>;
+  private inputOptions: MediaInputOptions;
   private input?: MediaInput;
   private output?: MediaOutput;
   private hardwareContext?: HardwareContext | null;
@@ -211,13 +208,16 @@ export class FMP4Stream {
     this.inputUrl = inputUrl;
 
     this.inputOptions = {
-      flags: 'low_delay',
-      fflags: 'nobuffer',
-      analyzeduration: 0,
-      probesize: 32,
-      timeout: 5000000,
-      rtsp_transport: inputUrl.toLowerCase().startsWith('rtsp') ? 'tcp' : undefined,
       ...options.inputOptions,
+      options: {
+        flags: 'low_delay',
+        fflags: 'nobuffer',
+        analyzeduration: 0,
+        probesize: 32,
+        timeout: 5000000,
+        rtsp_transport: inputUrl.toLowerCase().startsWith('rtsp') ? 'tcp' : undefined,
+        ...options.inputOptions?.options,
+      },
     };
 
     this.options = {
@@ -423,9 +423,7 @@ export class FMP4Stream {
 
     // Open input if not already open
     if (!this.input) {
-      this.input = await MediaInput.open(this.inputUrl, {
-        options: this.inputOptions,
-      });
+      this.input = await MediaInput.open(this.inputUrl, this.inputOptions);
 
       const videoStream = this.input.video();
       if (!videoStream) {
@@ -438,17 +436,17 @@ export class FMP4Stream {
     const videoStream = this.input.video()!;
     const audioStream = this.input.audio();
 
-    // Check if we need hardware acceleration
-    if (this.options.hardware === 'auto') {
-      this.hardwareContext = HardwareContext.auto();
-    } else if (this.options.hardware.deviceType !== AV_HWDEVICE_TYPE_NONE) {
-      this.hardwareContext = HardwareContext.create(this.options.hardware.deviceType, this.options.hardware.device, this.options.hardware.options);
-    }
-
     // Check if video needs transcoding
     const needsVideoTranscode = !this.isVideoCodecSupported(videoStream.codecpar.codecId);
 
     if (needsVideoTranscode) {
+      // Check if we need hardware acceleration
+      if (this.options.hardware === 'auto') {
+        this.hardwareContext = HardwareContext.auto();
+      } else if (this.options.hardware.deviceType !== AV_HWDEVICE_TYPE_NONE) {
+        this.hardwareContext = HardwareContext.create(this.options.hardware.deviceType, this.options.hardware.device, this.options.hardware.options);
+      }
+
       // Transcode to H.264
       this.videoDecoder = await Decoder.create(videoStream, {
         hardware: this.hardwareContext,

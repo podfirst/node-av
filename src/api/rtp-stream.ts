@@ -13,6 +13,7 @@ import {
   AV_SAMPLE_FMT_S16,
 } from '../constants/constants.js';
 import { FF_ENCODER_LIBOPUS, FF_ENCODER_LIBX264 } from '../constants/encoders.js';
+import { Codec } from '../lib/codec.js';
 import { Decoder } from './decoder.js';
 import { Encoder } from './encoder.js';
 import { FilterPreset } from './filter-presets.js';
@@ -25,6 +26,7 @@ import { pipeline } from './pipeline.js';
 import type { AVCodecID, AVHWDeviceType } from '../constants/constants.js';
 import type { FFHWDeviceType } from '../constants/hardware.js';
 import type { PipelineControl } from './pipeline.js';
+import type { MediaInputOptions } from './types.js';
 
 /**
  * Options for configuring RTP streaming.
@@ -61,6 +63,18 @@ export interface RTPStreamOptions {
    */
   mtu?: number;
 
+  /** Video SSRC (synchronization source identifier) */
+  videoSSRC?: number;
+
+  /** Audio SSRC (synchronization source identifier) */
+  audioSSRC?: number;
+
+  /** Video payload type */
+  videoPayloadType?: number;
+
+  /** Audio payload type */
+  audioPayloadType?: number;
+
   /**
    * Hardware acceleration configuration.
    *
@@ -72,11 +86,9 @@ export interface RTPStreamOptions {
   hardware?: 'auto' | { deviceType: AVHWDeviceType | FFHWDeviceType; device?: string; options?: Record<string, string> };
 
   /**
-   * FFmpeg input options passed directly to the input.
-   *
-   * @default { flags: 'low_delay' }
+   * Input media options passed to MediaInput.
    */
-  inputOptions?: Record<string, string | number | boolean | null | undefined>;
+  inputOptions?: MediaInputOptions;
 
   /**
    * Supported video codec IDs for transcoding decisions.
@@ -128,9 +140,9 @@ export interface RTPStreamOptions {
  * @see {@link HardwareContext} For GPU acceleration
  */
 export class RTPStream {
-  private options: Required<RTPStreamOptions>;
+  private options: Omit<Required<RTPStreamOptions>, 'videoSSRC' | 'audioSSRC' | 'videoPayloadType' | 'audioPayloadType'>;
   private inputUrl: string;
-  private inputOptions: Record<string, string | number | boolean | null | undefined>;
+  private inputOptions: MediaInputOptions;
   private input?: MediaInput;
   private videoOutput?: MediaOutput;
   private audioOutput?: MediaOutput;
@@ -143,6 +155,11 @@ export class RTPStream {
   private pipeline?: PipelineControl;
   private supportedVideoCodecs: Set<AVCodecID>;
   private supportedAudioCodecs: Set<AVCodecID>;
+
+  public readonly videoSSRC?: number;
+  public readonly audioSSRC?: number;
+  public readonly videoPayloadType?: number;
+  public readonly audioPayloadType?: number;
 
   /**
    * @param inputUrl - Media input URL
@@ -157,13 +174,16 @@ export class RTPStream {
     this.inputUrl = inputUrl;
 
     this.inputOptions = {
-      flags: 'low_delay',
-      fflags: 'nobuffer',
-      analyzeduration: 0,
-      probesize: 32,
-      timeout: 5000000,
-      rtsp_transport: inputUrl.toLowerCase().startsWith('rtsp') ? 'tcp' : undefined,
       ...options.inputOptions,
+      options: {
+        flags: 'low_delay',
+        fflags: 'nobuffer',
+        analyzeduration: 0,
+        probesize: 32,
+        timeout: 5000000,
+        rtsp_transport: inputUrl.toLowerCase().startsWith('rtsp') ? 'tcp' : undefined,
+        ...options.inputOptions?.options,
+      },
     };
 
     // Default supported codecs
@@ -183,6 +203,11 @@ export class RTPStream {
       supportedVideoCodecs: Array.from(this.supportedVideoCodecs),
       supportedAudioCodecs: Array.from(this.supportedAudioCodecs),
     };
+
+    this.videoSSRC = options.videoSSRC;
+    this.audioSSRC = options.audioSSRC;
+    this.videoPayloadType = options.videoPayloadType;
+    this.audioPayloadType = options.audioPayloadType;
   }
 
   /**
@@ -243,37 +268,6 @@ export class RTPStream {
   }
 
   /**
-   * Ensure input is open without starting the pipeline.
-   *
-   * Opens the media input if not already open, allowing codec detection
-   * and stream inspection before starting the actual streaming pipeline.
-   *
-   * @returns Promise that resolves when input is open
-   *
-   * @throws {Error} If no video stream found in input
-   *
-   * @throws {FFmpegError} If input cannot be opened
-   *
-   * @internal
-   */
-  async ensureInputOpen(): Promise<void> {
-    if (this.input) {
-      return;
-    }
-
-    this.input = await MediaInput.open(this.inputUrl, {
-      options: this.inputOptions,
-    });
-
-    const videoStream = this.input.video();
-    if (!videoStream) {
-      await this.input.close();
-      this.input = undefined;
-      throw new Error('No video stream found in input');
-    }
-  }
-
-  /**
    * Start streaming media to RTP packets.
    *
    * Begins the media processing pipeline, reading packets from input,
@@ -305,30 +299,45 @@ export class RTPStream {
       return;
     }
 
-    // Open input if not already open
-    await this.ensureInputOpen();
+    if (!this.input) {
+      this.input = await MediaInput.open(this.inputUrl, this.inputOptions);
 
-    const videoStream = this.input!.video()!;
-    const audioStream = this.input!.audio();
-
-    // Check if we need hardware acceleration
-    if (this.options.hardware === 'auto') {
-      this.hardwareContext = HardwareContext.auto();
-    } else if (this.options.hardware.deviceType !== AV_HWDEVICE_TYPE_NONE) {
-      this.hardwareContext = HardwareContext.create(this.options.hardware.deviceType, this.options.hardware.device, this.options.hardware.options);
+      const videoStream = this.input.video();
+      if (!videoStream) {
+        await this.input.close();
+        this.input = undefined;
+        throw new Error('No video stream found in input');
+      }
     }
+
+    const videoStream = this.input.video()!;
+    const audioStream = this.input.audio();
 
     // Setup video transcoding if needed
     if (!this.isVideoCodecSupported(videoStream.codecpar.codecId)) {
+      // Check if we need hardware acceleration
+      if (this.options.hardware === 'auto') {
+        this.hardwareContext = HardwareContext.auto();
+      } else if (this.options.hardware.deviceType !== AV_HWDEVICE_TYPE_NONE) {
+        this.hardwareContext = HardwareContext.create(this.options.hardware.deviceType, this.options.hardware.device, this.options.hardware.options);
+      }
+
       this.videoDecoder = await Decoder.create(videoStream, {
         exitOnError: false,
         hardware: this.hardwareContext,
       });
 
-      const encoderCodec = this.hardwareContext?.getEncoderCodec('h264') ?? FF_ENCODER_LIBX264;
+      // Get first supported codec (default to H.264 if none)
+      const targetCodecId = this.options.supportedVideoCodecs[0] ?? AV_CODEC_ID_H264;
+
+      // Try hardware encoder first, fallback to software
+      const encoderCodec = this.hardwareContext?.getEncoderCodec(targetCodecId) ?? Codec.findEncoder(targetCodecId);
+      if (!encoderCodec) {
+        throw new Error(`No encoder found for codec ID ${targetCodecId}`);
+      }
 
       const encoderOptions: Record<string, string> = {};
-      if (encoderCodec === FF_ENCODER_LIBX264) {
+      if (encoderCodec.name === FF_ENCODER_LIBX264) {
         encoderOptions.preset = 'ultrafast';
         encoderOptions.tune = 'zerolatency';
       }
@@ -341,11 +350,50 @@ export class RTPStream {
       });
     }
 
+    // Initialize RTP sequence numbers and timestamps
+    let videoSequenceNumber = Math.floor(Math.random() * 0xffff);
+    let videoTimestamp = Math.floor(Math.random() * 0xffffffff) >>> 0; // unsigned 32-bit
+    let audioSequenceNumber = Math.floor(Math.random() * 0xffff);
+
+    // Calculate video timestamp increment
+    let fps = videoStream.avgFrameRate.num / videoStream.avgFrameRate.den;
+    if (!isFinite(fps) || fps <= 0 || isNaN(fps)) {
+      fps = 20; // Default to 20 FPS if invalid
+    }
+
+    const videoTimestampIncrement = 90000 / fps;
+
     // Setup video output
     this.videoOutput = await MediaOutput.open(
       {
         write: (buffer: Buffer) => {
-          this.options.onVideoPacket(RtpPacket.deSerialize(buffer));
+          const rtpPacket = RtpPacket.deSerialize(buffer);
+
+          // Set SSRC (synchronization source identifier)
+          if (this.videoSSRC !== undefined) {
+            rtpPacket.header.ssrc = this.videoSSRC;
+          }
+
+          // Set payload type
+          if (this.videoPayloadType !== undefined) {
+            rtpPacket.header.payloadType = this.videoPayloadType;
+          }
+
+          // Fix sequence number - ensure continuous sequence
+          rtpPacket.header.sequenceNumber = videoSequenceNumber;
+          videoSequenceNumber = (videoSequenceNumber + 1) & 0xffff; // Wrap at 16-bit
+
+          // Fix timestamp - calculate based on FPS
+          // All packets in same frame have same timestamp (marker=false)
+          // Only increment timestamp when frame ends (marker=true)
+          rtpPacket.header.timestamp = videoTimestamp;
+
+          // Increment timestamp for next frame when current frame ends
+          if (rtpPacket.header.marker) {
+            videoTimestamp = (videoTimestamp + videoTimestampIncrement) >>> 0; // Unsigned 32-bit wrap
+          }
+
+          this.options.onVideoPacket(rtpPacket);
           return buffer.length;
         },
       },
@@ -364,6 +412,13 @@ export class RTPStream {
         exitOnError: false,
       });
 
+      // Get first supported audio codec (default to Opus if none)
+      const targetCodecId = this.options.supportedAudioCodecs[0] ?? AV_CODEC_ID_OPUS;
+      const encoderCodec = Codec.findEncoder(targetCodecId);
+      if (!encoderCodec) {
+        throw new Error(`No encoder found for codec ID ${targetCodecId}`);
+      }
+
       const targetSampleRate = 48000;
       const filterChain = FilterPreset.chain().aformat(AV_SAMPLE_FMT_S16, targetSampleRate, 'stereo').asetnsamples(960).build();
 
@@ -371,12 +426,15 @@ export class RTPStream {
         timeBase: audioStream.timeBase,
       });
 
-      this.audioEncoder = await Encoder.create(FF_ENCODER_LIBOPUS, {
+      const encoderOptions: Record<string, string | number> = {};
+      if (encoderCodec.name === FF_ENCODER_LIBOPUS) {
+        encoderOptions.application = 'lowdelay';
+        encoderOptions.frame_duration = 20;
+      }
+
+      this.audioEncoder = await Encoder.create(encoderCodec, {
         timeBase: { num: 1, den: targetSampleRate },
-        options: {
-          application: 'lowdelay',
-          frame_duration: 20,
-        },
+        options: encoderOptions,
       });
     }
 
@@ -385,7 +443,23 @@ export class RTPStream {
       this.audioOutput = await MediaOutput.open(
         {
           write: (buffer: Buffer) => {
-            this.options.onAudioPacket(RtpPacket.deSerialize(buffer));
+            const rtpPacket = RtpPacket.deSerialize(buffer);
+
+            // Set SSRC (synchronization source identifier)
+            if (this.audioSSRC !== undefined) {
+              rtpPacket.header.ssrc = this.audioSSRC;
+            }
+
+            // Set payload type
+            if (this.audioPayloadType !== undefined) {
+              rtpPacket.header.payloadType = this.audioPayloadType;
+            }
+
+            // Fix sequence number - ensure continuous sequence
+            rtpPacket.header.sequenceNumber = audioSequenceNumber;
+            audioSequenceNumber = (audioSequenceNumber + 1) & 0xffff; // Wrap at 16-bit
+
+            this.options.onAudioPacket(rtpPacket);
             return buffer.length;
           },
         },
