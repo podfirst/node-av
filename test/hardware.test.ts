@@ -463,7 +463,7 @@ describe('HardwareContext', () => {
         let frameCount = 0;
         for await (const packet of media.packets()) {
           if (packet.streamIndex === videoStream.index) {
-            const frame = await decoder.decode(packet);
+            const frame = (await decoder.decode(packet))[0];
             if (frame) {
               frameCount++;
               frame.free();
@@ -507,7 +507,7 @@ describe('HardwareContext', () => {
         let frameCount = 0;
         for await (const packet of media.packets()) {
           if (packet.streamIndex === videoStream.index) {
-            const frame = decoder.decodeSync(packet);
+            const frame = decoder.decodeSync(packet)[0];
             if (frame) {
               frameCount++;
               frame.free();
@@ -540,7 +540,7 @@ describe('HardwareContext', () => {
       let frameCount = 0;
       for await (const packet of media.packets()) {
         if (packet.streamIndex === videoStream.index) {
-          const frame = await decoder.decode(packet);
+          const frame = (await decoder.decode(packet))[0];
           if (frame) {
             frameCount++;
             frame.free();
@@ -569,7 +569,7 @@ describe('HardwareContext', () => {
       let frameCount = 0;
       for await (const packet of media.packets()) {
         if (packet.streamIndex === videoStream.index) {
-          const frame = decoder.decodeSync(packet);
+          const frame = decoder.decodeSync(packet)[0];
           if (frame) {
             frameCount++;
             frame.free();
@@ -691,7 +691,7 @@ describe('HardwareContext', () => {
         // Process frames
         for await (const packet of media.packets()) {
           if (packet.streamIndex === videoStream.index) {
-            const frame = await decoder.decode(packet);
+            const frame = (await decoder.decode(packet))[0];
             if (frame) {
               decodedFrames++;
 
@@ -703,7 +703,7 @@ describe('HardwareContext', () => {
               }
 
               // Encode the frame directly (zero-copy if both on same GPU)
-              const encodedPacket = await encoder.encode(frame);
+              const encodedPacket = (await encoder.encode(frame))[0];
               if (encodedPacket) {
                 encodedPackets++;
                 encodedPacket.free();
@@ -784,7 +784,7 @@ describe('HardwareContext', () => {
         // Process frames using sync methods
         for await (const packet of media.packets()) {
           if (packet.streamIndex === videoStream.index) {
-            const frame = decoder.decodeSync(packet);
+            const frame = decoder.decodeSync(packet)[0];
             if (frame) {
               decodedFrames++;
 
@@ -796,7 +796,7 @@ describe('HardwareContext', () => {
               }
 
               // Encode the frame directly (zero-copy if both on same GPU)
-              const encodedPacket = encoder.encodeSync(frame);
+              const encodedPacket = encoder.encodeSync(frame)[0];
               if (encodedPacket) {
                 encodedPackets++;
                 encodedPacket.free();
@@ -862,14 +862,14 @@ describe('HardwareContext', () => {
 
         for await (const packet of media1.packets()) {
           if (packet.streamIndex === videoStream1.index) {
-            frame1 = await decoder1.decode(packet);
+            frame1 = (await decoder1.decode(packet))[0];
             if (frame1) break;
           }
         }
 
         for await (const packet of media2.packets()) {
           if (packet.streamIndex === videoStream2.index) {
-            frame2 = await decoder2.decode(packet);
+            frame2 = (await decoder2.decode(packet))[0];
             if (frame2) break;
           }
         }

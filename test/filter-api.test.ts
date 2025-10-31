@@ -142,7 +142,7 @@ describe('High-Level Filter API', () => {
       const ret = frame.getBuffer();
       assert.ok(ret >= 0);
 
-      const output = await filter.process(frame);
+      const output = (await filter.process(frame))[0];
       assert.ok(output);
       assert.equal(output.width, 1280);
       assert.equal(output.height, 720);
@@ -167,7 +167,7 @@ describe('High-Level Filter API', () => {
       const ret = frame.getBuffer();
       assert.ok(ret >= 0);
 
-      const output = filter.processSync(frame);
+      const output = filter.processSync(frame)[0];
       assert.ok(output);
       assert.equal(output.width, 1280);
       assert.equal(output.height, 720);
@@ -250,7 +250,7 @@ describe('High-Level Filter API', () => {
         const ret = frame.getBuffer();
         assert.ok(ret >= 0);
 
-        const output = await filter.process(frame);
+        const output = (await filter.process(frame))[0];
         if (output) {
           output.free();
         }
@@ -290,7 +290,7 @@ describe('High-Level Filter API', () => {
         const ret = frame.getBuffer();
         assert.ok(ret >= 0);
 
-        const output = filter.processSync(frame);
+        const output = filter.processSync(frame)[0];
         if (output) {
           output.free();
         }
@@ -333,11 +333,13 @@ describe('High-Level Filter API', () => {
         let count = 0;
         for await (const packet of media.packets()) {
           if (packet.streamIndex === videoStream!.index) {
-            const frame = await decoder.decode(packet);
-            if (frame) {
-              yield frame;
-              count++;
-              if (count >= maxFrames) break;
+            const frames = await decoder.decode(packet);
+            for (const frame of frames) {
+              if (frame) {
+                yield frame;
+                count++;
+                if (count >= maxFrames) break;
+              }
             }
           }
         }
@@ -376,8 +378,8 @@ describe('High-Level Filter API', () => {
         let count = 0;
         for (const packet of media.packetsSync()) {
           if (packet.streamIndex === videoStream!.index) {
-            const frame = decoder.decodeSync(packet);
-            if (frame) {
+            const frames = decoder.decodeSync(packet);
+            for (const frame of frames) {
               yield frame;
               count++;
               if (count >= maxFrames) break;
@@ -672,7 +674,7 @@ describe('High-Level Filter API', () => {
       const ret = frame.getBuffer();
       assert.ok(ret >= 0);
 
-      const output = await filter.process(frame);
+      const output = (await filter.process(frame))[0];
       if (output) {
         assert.equal(output.width, 1280);
         assert.equal(output.height, 720);
@@ -712,9 +714,9 @@ describe('High-Level Filter API', () => {
 
       for await (const packet of media.packets()) {
         if (packet.streamIndex === videoStream.index) {
-          const frame = await decoder.decode(packet);
+          const frame = (await decoder.decode(packet))[0];
           if (frame) {
-            const filtered = await filter.process(frame);
+            const filtered = (await filter.process(frame))[0];
             if (filtered) {
               assert.equal(filtered.width, 640);
               assert.equal(filtered.height, 480);
@@ -769,9 +771,9 @@ describe('High-Level Filter API', () => {
 
       for await (const packet of media.packets()) {
         if (packet.streamIndex === audioStream.index) {
-          const frame = await decoder.decode(packet);
+          const frame = (await decoder.decode(packet))[0];
           if (frame) {
-            const filtered = await filter.process(frame);
+            const filtered = (await filter.process(frame))[0];
             if (filtered) {
               // Check that the filter applied the correct format
               assert.equal(filtered.sampleRate, 44100);

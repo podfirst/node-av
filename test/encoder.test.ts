@@ -233,7 +233,7 @@ describe('Encoder', () => {
       }
 
       // Encode frame
-      const packet = await encoder.encode(frame);
+      const packet = (await encoder.encode(frame))[0];
       packet?.free();
 
       frame.free();
@@ -276,7 +276,7 @@ describe('Encoder', () => {
       }
 
       // Encode frame
-      const packet = encoder.encodeSync(frame);
+      const packet = encoder.encodeSync(frame)[0];
       packet?.free();
 
       frame.free();
@@ -302,7 +302,7 @@ describe('Encoder', () => {
       assert.equal(ret, 0, 'Should allocate frame buffer');
 
       // Encode frame
-      const packet = await encoder.encode(frame);
+      const packet = (await encoder.encode(frame))[0];
       packet?.free();
 
       frame.free();
@@ -328,7 +328,7 @@ describe('Encoder', () => {
       assert.equal(ret, 0, 'Should allocate frame buffer');
 
       // Encode frame
-      const packet = encoder.encodeSync(frame);
+      const packet = encoder.encodeSync(frame)[0];
       packet?.free();
 
       frame.free();
@@ -349,7 +349,7 @@ describe('Encoder', () => {
       frame.format = AV_PIX_FMT_YUV420P;
       frame.getBuffer();
 
-      const packet = await encoder.encode(frame);
+      const packet = (await encoder.encode(frame))[0];
       // Packet can be null, that's okay
       if (packet) {
         packet.free();
@@ -373,7 +373,7 @@ describe('Encoder', () => {
       frame.format = AV_PIX_FMT_YUV420P;
       frame.getBuffer();
 
-      const packet = encoder.encodeSync(frame);
+      const packet = encoder.encodeSync(frame)[0];
       // Packet can be null, that's okay
       if (packet) {
         packet.free();
@@ -460,7 +460,7 @@ describe('Encoder', () => {
         frame.pts = BigInt(i);
         frame.getBuffer();
 
-        const packet = await encoder.encode(frame);
+        const packet = (await encoder.encode(frame))[0];
         if (packet) {
           packet.free();
         }
@@ -495,7 +495,7 @@ describe('Encoder', () => {
         frame.pts = BigInt(i);
         frame.getBuffer();
 
-        const packet = encoder.encodeSync(frame);
+        const packet = encoder.encodeSync(frame)[0];
         if (packet) {
           packet.free();
         }

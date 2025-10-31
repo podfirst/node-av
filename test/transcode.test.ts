@@ -14,19 +14,19 @@ async function processFrames(input: MediaInput, decoder: Decoder, filter: Filter
 
   for await (const packet of input.packets()) {
     if (packet.streamIndex === videoStreamIndex) {
-      using decodedFrame = await decoder.decode(packet);
+      using decodedFrame = (await decoder.decode(packet))[0];
       if (decodedFrame) {
         if (filter) {
-          using filteredFrame = await filter.process(decodedFrame);
+          using filteredFrame = (await filter.process(decodedFrame))[0];
           if (filteredFrame) {
-            using encodedPacket = await encoder.encode(filteredFrame);
+            using encodedPacket = (await encoder.encode(filteredFrame))[0];
             if (encodedPacket) {
               frameCount++;
               if (frameCount >= maxFrames) break;
             }
           }
         } else {
-          using encodedPacket = await encoder.encode(decodedFrame);
+          using encodedPacket = (await encoder.encode(decodedFrame))[0];
           if (encodedPacket) {
             frameCount++;
             if (frameCount >= maxFrames) break;
@@ -40,15 +40,15 @@ async function processFrames(input: MediaInput, decoder: Decoder, filter: Filter
 
   for await (const decodedFrame of decoder.flushFrames()) {
     if (filter) {
-      using filteredFrame = await filter.process(decodedFrame);
+      using filteredFrame = (await filter.process(decodedFrame))[0];
       if (filteredFrame) {
-        using encodedPacket = await encoder.encode(filteredFrame);
+        using encodedPacket = (await encoder.encode(filteredFrame))[0];
         if (encodedPacket) {
           frameCount++;
         }
       }
     } else {
-      using encodedPacket = await encoder.encode(decodedFrame);
+      using encodedPacket = (await encoder.encode(decodedFrame))[0];
       if (encodedPacket) {
         frameCount++;
       }
@@ -57,7 +57,7 @@ async function processFrames(input: MediaInput, decoder: Decoder, filter: Filter
 
   if (filter) {
     for await (const filteredFrame of filter.flushFrames()) {
-      using encodedPacket = await encoder.encode(filteredFrame);
+      using encodedPacket = (await encoder.encode(filteredFrame))[0];
       if (encodedPacket) {
         frameCount++;
       }
@@ -352,7 +352,7 @@ describe('Transcode Scenarios', () => {
           // Try to process a software frame with hardware filter
           for await (const packet of input.packets()) {
             if (packet.streamIndex === videoStream.index) {
-              using decodedFrame = await decoder.decode(packet);
+              using decodedFrame = (await decoder.decode(packet))[0];
               if (decodedFrame) {
                 await filter.process(decodedFrame);
                 break;
@@ -387,11 +387,11 @@ describe('Transcode Scenarios', () => {
       // Should still work, encoder will handle the mismatch
       for await (const packet of input.packets()) {
         if (packet.streamIndex === videoStream.index) {
-          using decodedFrame = await decoder.decode(packet);
+          using decodedFrame = (await decoder.decode(packet))[0];
           if (decodedFrame) {
             // This might fail or succeed depending on encoder implementation
             try {
-              using encodedPacket = await encoder.encode(decodedFrame);
+              using encodedPacket = (await encoder.encode(decodedFrame))[0];
               if (encodedPacket) {
                 // Successfully encoded despite mismatch
                 break;
