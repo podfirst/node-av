@@ -134,6 +134,7 @@ export class Decoder implements Disposable {
    *
    * @see {@link HardwareContext} For GPU acceleration setup
    * @see {@link DecoderOptions} For configuration options
+   * @see {@link createSync} For synchronous version
    */
   static async create(stream: Stream, options?: DecoderOptions): Promise<Decoder>;
   static async create(stream: Stream, decoderCodec?: FFDecoderCodec | AVCodecID | Codec, options?: DecoderOptions): Promise<Decoder>;
@@ -299,6 +300,8 @@ export class Decoder implements Disposable {
    * });
    * ```
    *
+   * @see {@link HardwareContext} For GPU acceleration setup
+   * @see {@link DecoderOptions} For configuration options
    * @see {@link create} For async version
    */
   static createSync(stream: Stream, options?: DecoderOptions): Decoder;
@@ -420,7 +423,7 @@ export class Decoder implements Disposable {
    * @example
    * ```typescript
    * if (decoder.isDecoderOpen) {
-   *   const frames = await decoder.decode(packet);
+   *   const frame = await decoder.decode(packet);
    * }
    * ```
    */
@@ -473,12 +476,132 @@ export class Decoder implements Disposable {
    * @example
    * ```typescript
    * if (decoder.isReady()) {
-   *   const frames = await decoder.decode(packet);
+   *   const frame = await decoder.decode(packet);
    * }
    * ```
    */
   isReady(): boolean {
     return this.initialized && !this.isClosed;
+  }
+
+  /**
+   * Decode a packet to a frame.
+   *
+   * Sends a packet to the decoder and attempts to receive a decoded frame.
+   * Handles internal buffering - may return null if more packets needed.
+   * Automatically manages decoder state and error recovery.
+   *
+   * Direct mapping to avcodec_send_packet() and avcodec_receive_frame().
+   *
+   * @param packet - Compressed packet to decode
+   *
+   * @returns Decoded frame or null if more data needed or decoder is closed
+   *
+   * @throws {FFmpegError} If decoding fails
+   *
+   * @example
+   * ```typescript
+   * const frame = await decoder.decode(packet);
+   * if (frame) {
+   *   console.log(`Decoded frame with PTS: ${frame.pts}`);
+   *   frame.free();
+   * }
+   * ```
+   *
+   * @example
+   * ```typescript
+   * for await (const packet of input.packets()) {
+   *   if (packet.streamIndex === decoder.getStream().index) {
+   *     const frame = await decoder.decode(packet);
+   *     if (frame) {
+   *       await processFrame(frame);
+   *       frame.free();
+   *     }
+   *   }
+   *   packet.free();
+   * }
+   * ```
+   *
+   * @see {@link decodeAll} For multiple frame decoding
+   * @see {@link frames} For automatic packet iteration
+   * @see {@link flush} For end-of-stream handling
+   * @see {@link decodeSync} For synchronous version
+   */
+  async decode(packet: Packet): Promise<Frame | null> {
+    if (this.isClosed) {
+      return null;
+    }
+
+    // Send packet to decoder
+    const sendRet = await this.codecContext.sendPacket(packet);
+    if (sendRet < 0 && sendRet !== AVERROR_EOF) {
+      // Decoder might be full, try to receive first
+      const frame = await this.receive();
+      if (frame) {
+        return frame;
+      }
+
+      // If still failing, it's an error
+      if (sendRet !== AVERROR_EAGAIN && this.options.exitOnError) {
+        FFmpegError.throwIfError(sendRet, 'Failed to send packet');
+      }
+    }
+
+    // Try to receive frame
+    const frame = await this.receive();
+    return frame;
+  }
+
+  /**
+   * Decode a packet to frame synchronously.
+   * Synchronous version of decode.
+   *
+   * Send packet to decoder and attempt to receive frame.
+   * Handles decoder buffering and error conditions.
+   * May return null if decoder needs more data.
+   *
+   * @param packet - Compressed packet to decode
+   *
+   * @returns Decoded frame or null if more data needed or decoder is closed
+   *
+   * @throws {FFmpegError} If decoding fails
+   *
+   * @example
+   * ```typescript
+   * const frame = decoder.decodeSync(packet);
+   * if (frame) {
+   *   console.log(`Decoded: ${frame.width}x${frame.height}`);
+   * }
+   * ```
+   *
+   * @see {@link decodeAllSync} For multiple frame decoding
+   * @see {@link framesSync} For automatic packet iteration
+   * @see {@link flushSync} For end-of-stream handling
+   * @see {@link decode} For async version
+   */
+  decodeSync(packet: Packet): Frame | null {
+    if (this.isClosed) {
+      return null;
+    }
+
+    // Send packet to decoder
+    const sendRet = this.codecContext.sendPacketSync(packet);
+    if (sendRet < 0 && sendRet !== AVERROR_EOF) {
+      // Decoder might be full, try to receive first
+      const frame = this.receiveSync();
+      if (frame) {
+        return frame;
+      }
+
+      // If still failing, it's an error
+      if (sendRet !== AVERROR_EAGAIN && this.options.exitOnError) {
+        FFmpegError.throwIfError(sendRet, 'Failed to send packet');
+      }
+    }
+
+    // Try to receive frame
+    const frame = this.receiveSync();
+    return frame;
   }
 
   /**
@@ -499,7 +622,7 @@ export class Decoder implements Disposable {
    *
    * @example
    * ```typescript
-   * const frames = await decoder.decode(packet);
+   * const frames = await decoder.decodeAll(packet);
    * for (const frame of frames) {
    *   console.log(`Decoded frame with PTS: ${frame.pts}`);
    *   frame.free();
@@ -510,7 +633,7 @@ export class Decoder implements Disposable {
    * ```typescript
    * for await (const packet of input.packets()) {
    *   if (packet.streamIndex === decoder.getStream().index) {
-   *     const frames = await decoder.decode(packet);
+   *     const frames = await decoder.decodeAll(packet);
    *     for (const frame of frames) {
    *       await processFrame(frame);
    *       frame.free();
@@ -520,10 +643,12 @@ export class Decoder implements Disposable {
    * }
    * ```
    *
+   * @see {@link decode} For single packet decoding
    * @see {@link frames} For automatic packet iteration
    * @see {@link flush} For end-of-stream handling
+   * @see {@link decodeAllSync} For synchronous version
    */
-  async decode(packet: Packet): Promise<Frame[]> {
+  async decodeAll(packet: Packet): Promise<Frame[]> {
     if (this.isClosed) {
       return [];
     }
@@ -558,7 +683,7 @@ export class Decoder implements Disposable {
 
   /**
    * Decode a packet to frames synchronously.
-   * Synchronous version of decode.
+   * Synchronous version of decodeAll.
    *
    * Sends packet to decoder and receives all available decoded frames.
    * Returns array of frames - may be empty if decoder needs more data.
@@ -572,16 +697,19 @@ export class Decoder implements Disposable {
    *
    * @example
    * ```typescript
-   * const frames = decoder.decodeSync(packet);
+   * const frames = decoder.decodeAllSync(packet);
    * for (const frame of frames) {
    *   console.log(`Decoded: ${frame.width}x${frame.height}`);
    *   frame.free();
    * }
    * ```
    *
-   * @see {@link decode} For async version
+   * @see {@link decodeSync} For single packet decoding
+   * @see {@link framesSync} For automatic packet iteration
+   * @see {@link flushSync} For end-of-stream handling
+   * @see {@link decodeAll} For async version
    */
-  decodeSync(packet: Packet): Frame[] {
+  decodeAllSync(packet: Packet): Frame[] {
     if (this.isClosed) {
       return [];
     }
@@ -667,6 +795,7 @@ export class Decoder implements Disposable {
    *
    * @see {@link decode} For single packet decoding
    * @see {@link MediaInput.packets} For packet source
+   * @see {@link framesSync} For sync version
    */
   async *frames(packets: AsyncIterable<Packet>): AsyncGenerator<Frame> {
     // Process packets
@@ -674,8 +803,8 @@ export class Decoder implements Disposable {
       try {
         // Only process packets for our stream
         if (packet.streamIndex === this.stream.index) {
-          const frames = await this.decode(packet);
-          for (const frame of frames) {
+          const frame = await this.decode(packet);
+          if (frame) {
             yield frame;
           }
         }
@@ -718,6 +847,8 @@ export class Decoder implements Disposable {
    * }
    * ```
    *
+   * @see {@link decodeSync} For single packet decoding
+   * @see {@link MediaInput.packetsSync} For packet source
    * @see {@link frames} For async version
    */
   *framesSync(packets: Iterable<Packet>): Generator<Frame> {
@@ -726,8 +857,8 @@ export class Decoder implements Disposable {
       try {
         // Only process packets for our stream
         if (packet.streamIndex === this.stream.index) {
-          const frames = this.decodeSync(packet);
-          for (const frame of frames) {
+          const frame = this.decodeSync(packet);
+          if (frame) {
             yield frame;
           }
         }
@@ -772,6 +903,7 @@ export class Decoder implements Disposable {
    *
    * @see {@link flushFrames} For convenient async iteration
    * @see {@link receive} For getting buffered frames
+   * @see {@link flushSync} For synchronous version
    */
   async flush(): Promise<void> {
     if (this.isClosed) {
@@ -807,6 +939,8 @@ export class Decoder implements Disposable {
    * }
    * ```
    *
+   * @see {@link flushFramesSync} For convenient sync iteration
+   * @see {@link receiveSync} For getting buffered frames
    * @see {@link flush} For async version
    */
   flushSync(): void {
@@ -842,8 +976,9 @@ export class Decoder implements Disposable {
    * }
    * ```
    *
+   * @see {@link decode} For sending packets and receiving frames
    * @see {@link flush} For signaling end-of-stream
-   * @see {@link frames} For complete pipeline
+   * @see {@link flushFramesSync} For synchronous version
    */
   async *flushFrames(): AsyncGenerator<Frame> {
     // Send flush signal
@@ -875,6 +1010,8 @@ export class Decoder implements Disposable {
    * }
    * ```
    *
+   * @see {@link decodeSync} For sending packets and receiving frames
+   * @see {@link flushSync} For signaling end-of-stream
    * @see {@link flushFrames} For async version
    */
   *flushFramesSync(): Generator<Frame> {
@@ -922,6 +1059,7 @@ export class Decoder implements Disposable {
    *
    * @see {@link decode} For sending packets and receiving frames
    * @see {@link flush} For signaling end-of-stream
+   * @see {@link receiveSync} For synchronous version
    */
   async receive(): Promise<Frame | null> {
     // Clear previous frame data
@@ -983,6 +1121,8 @@ export class Decoder implements Disposable {
    * }
    * ```
    *
+   * @see {@link decodeSync} For sending packets and receiving frames
+   * @see {@link flushSync} For signaling end-of-stream
    * @see {@link receive} For async version
    */
   receiveSync(): Frame | null {

@@ -34,8 +34,8 @@ import type { EncoderOptions } from './types.js';
  * });
  *
  * // Encode frames
- * const packets = await encoder.encode(frame);
- * for (const packet of packets) {
+ * const packet = await encoder.encode(frame);
+ * if (packet) {
  *   await output.writePacket(packet);
  *   packet.free();
  * }
@@ -147,6 +147,7 @@ export class Encoder implements Disposable {
    * ```
    *
    * @see {@link EncoderOptions} For configuration options
+   * @see {@link createSync} For synchronous version
    */
   static async create(encoderCodec: FFEncoderCodec | AVCodecID | Codec, options: EncoderOptions): Promise<Encoder> {
     let codec: Codec | null = null;
@@ -275,6 +276,7 @@ export class Encoder implements Disposable {
    * });
    * ```
    *
+   * @see {@link EncoderOptions} For configuration options
    * @see {@link create} For async version
    */
   static createSync(encoderCodec: FFEncoderCodec | AVCodecID | Codec, options: EncoderOptions): Encoder {
@@ -356,7 +358,7 @@ export class Encoder implements Disposable {
    * @example
    * ```typescript
    * if (encoder.isEncoderOpen) {
-   *   const packets = await encoder.encode(frame);
+   *   const packet = await encoder.encode(frame);
    * }
    * ```
    */
@@ -409,12 +411,163 @@ export class Encoder implements Disposable {
    * @example
    * ```typescript
    * if (encoder.isReady()) {
-   *   const packets = await encoder.encode(frame);
+   *   const packet = await encoder.encode(frame);
    * }
    * ```
    */
   isReady(): boolean {
     return this.initialized && !this.isClosed;
+  }
+
+  /**
+   * Encode a frame to a packet.
+   *
+   * Sends a frame to the encoder and attempts to receive an encoded packet.
+   * On first frame, automatically initializes encoder with frame properties.
+   * Handles internal buffering - may return null if more frames needed.
+   *
+   * Direct mapping to avcodec_send_frame() and avcodec_receive_packet().
+   *
+   * @param frame - Raw frame to encode (or null to flush)
+   *
+   * @returns Encoded packet, null if more data needed, or null if encoder is closed
+   *
+   * @throws {FFmpegError} If encoding fails
+   *
+   * @example
+   * ```typescript
+   * const packet = await encoder.encode(frame);
+   * if (packet) {
+   *   console.log(`Encoded packet with PTS: ${packet.pts}`);
+   *   await output.writePacket(packet);
+   *   packet.free();
+   * }
+   * ```
+   *
+   * @example
+   * ```typescript
+   * // Encode loop
+   * for await (const frame of decoder.frames(input.packets())) {
+   *   const packet = await encoder.encode(frame);
+   *   if (packet) {
+   *     await output.writePacket(packet);
+   *     packet.free();
+   *   }
+   *   frame.free();
+   * }
+   * ```
+   *
+   * @see {@link encodeAll} For multiple packet encoding
+   * @see {@link packets} For automatic frame iteration
+   * @see {@link flush} For end-of-stream handling
+   * @see {@link encodeSync} For synchronous version
+   */
+  async encode(frame: Frame | null): Promise<Packet | null> {
+    if (this.isClosed) {
+      return null;
+    }
+
+    // Open encoder if not already done
+    if (!this.initialized) {
+      if (!frame) {
+        return null;
+      }
+
+      await this.initialize(frame);
+    }
+
+    // Send frame to encoder
+    const sendRet = await this.codecContext.sendFrame(frame);
+    if (sendRet < 0 && sendRet !== AVERROR_EOF) {
+      // Encoder might be full, try to receive first
+      const packet = await this.receive();
+      if (packet) {
+        return packet;
+      }
+
+      // If still failing, it's an error
+      if (sendRet !== AVERROR_EAGAIN) {
+        FFmpegError.throwIfError(sendRet, 'Failed to send frame');
+      }
+    }
+
+    // Try to receive packet
+    return await this.receive();
+  }
+
+  /**
+   * Encode a frame to a packet synchronously.
+   * Synchronous version of encode.
+   *
+   * Sends a frame to the encoder and attempts to receive an encoded packet.
+   * On first frame, automatically initializes encoder with frame properties.
+   * Handles internal buffering - may return null if more frames needed.
+   *
+   * Direct mapping to avcodec_send_frame() and avcodec_receive_packet().
+   *
+   * @param frame - Raw frame to encode (or null to flush)
+   *
+   * @returns Encoded packet, null if more data needed, or null if encoder is closed
+   *
+   * @throws {FFmpegError} If encoding fails
+   *
+   * @example
+   * ```typescript
+   * const packet = encoder.encodeSync(frame);
+   * if (packet) {
+   *   console.log(`Encoded packet with PTS: ${packet.pts}`);
+   *   output.writePacketSync(packet);
+   *   packet.free();
+   * }
+   * ```
+   *
+   * @example
+   * ```typescript
+   * // Encode loop
+   * for (const frame of decoder.framesSync(packets)) {
+   *   const packet = encoder.encodeSync(frame);
+   *   if (packet) {
+   *     output.writePacketSync(packet);
+   *     packet.free();
+   *   }
+   *   frame.free();
+   * }
+   * ```
+   *
+   * @see {@link encodeAllSync} For multiple packet encoding
+   * @see {@link packetsSync} For automatic frame iteration
+   * @see {@link flushSync} For end-of-stream handling
+   * @see {@link encode} For async version
+   */
+  encodeSync(frame: Frame | null): Packet | null {
+    if (this.isClosed) {
+      return null;
+    }
+
+    // Open encoder if not already done
+    if (!this.initialized) {
+      if (!frame) {
+        return null;
+      }
+
+      this.initializeSync(frame);
+    }
+
+    // Send frame to encoder
+    const sendRet = this.codecContext.sendFrameSync(frame);
+    if (sendRet < 0 && sendRet !== AVERROR_EOF) {
+      // Encoder might be full, try to receive first
+      const packet = this.receiveSync();
+      if (packet) return packet;
+
+      // If still failing, it's an error
+      if (sendRet !== AVERROR_EAGAIN) {
+        FFmpegError.throwIfError(sendRet, 'Failed to send frame');
+      }
+    }
+
+    // Try to receive packet
+    return this.receiveSync();
   }
 
   /**
@@ -435,7 +588,7 @@ export class Encoder implements Disposable {
    *
    * @example
    * ```typescript
-   * const packets = await encoder.encode(frame);
+   * const packets = await encoder.encodeAll(frame);
    * for (const packet of packets) {
    *   console.log(`Encoded packet with PTS: ${packet.pts}`);
    *   await output.writePacket(packet);
@@ -447,7 +600,7 @@ export class Encoder implements Disposable {
    * ```typescript
    * // Encode loop
    * for await (const frame of decoder.frames(input.packets())) {
-   *   const packets = await encoder.encode(frame);
+   *   const packets = await encoder.encodeAll(frame);
    *   for (const packet of packets) {
    *     await output.writePacket(packet);
    *     packet.free();
@@ -456,10 +609,12 @@ export class Encoder implements Disposable {
    * }
    * ```
    *
+   * @see {@link encode} For single packet encoding
    * @see {@link packets} For automatic frame iteration
    * @see {@link flush} For end-of-stream handling
+   * @see {@link encodeAllSync} For synchronous version
    */
-  async encode(frame: Frame | null): Promise<Packet[]> {
+  async encodeAll(frame: Frame | null): Promise<Packet[]> {
     if (this.isClosed) {
       return [];
     }
@@ -503,7 +658,7 @@ export class Encoder implements Disposable {
 
   /**
    * Encode a frame to packets synchronously.
-   * Synchronous version of encode.
+   * Synchronous version of encodeAll.
    *
    * Sends a frame to the encoder and receives all available encoded packets.
    * Returns array of packets - may be empty if encoder needs more data.
@@ -520,7 +675,7 @@ export class Encoder implements Disposable {
    *
    * @example
    * ```typescript
-   * const packets = encoder.encodeSync(frame);
+   * const packets = encoder.encodeAllSync(frame);
    * for (const packet of packets) {
    *   console.log(`Encoded packet with PTS: ${packet.pts}`);
    *   output.writePacketSync(packet);
@@ -532,7 +687,7 @@ export class Encoder implements Disposable {
    * ```typescript
    * // Encode loop
    * for (const frame of decoder.framesSync(packets)) {
-   *   const packets = encoder.encodeSync(frame);
+   *   const packets = encoder.encodeAllSync(frame);
    *   for (const packet of packets) {
    *     output.writePacketSync(packet);
    *     packet.free();
@@ -541,9 +696,12 @@ export class Encoder implements Disposable {
    * }
    * ```
    *
-   * @see {@link encode} For async version
+   * @see {@link encodeSync} For single packet encoding
+   * @see {@link packetsSync} For automatic frame iteration
+   * @see {@link flushSync} For end-of-stream handling
+   * @see {@link encodeAll} For async version
    */
-  encodeSync(frame: Frame | null): Packet[] {
+  encodeAllSync(frame: Frame | null): Packet[] {
     if (this.isClosed) {
       return [];
     }
@@ -643,13 +801,14 @@ export class Encoder implements Disposable {
    *
    * @see {@link encode} For single frame encoding
    * @see {@link Decoder.frames} For frame source
+   * @see {@link packetsSync} For sync version
    */
   async *packets(frames: AsyncIterable<Frame>): AsyncGenerator<Packet> {
     // Process frames
     for await (const frame of frames) {
       try {
-        const packets = await this.encode(frame);
-        for (const packet of packets) {
+        const packet = await this.encode(frame);
+        if (packet) {
           yield packet;
         }
       } finally {
@@ -710,14 +869,16 @@ export class Encoder implements Disposable {
    * }
    * ```
    *
+   * @see {@link encodeSync} For single frame encoding
+   * @see {@link Decoder.framesSync} For frame source
    * @see {@link packets} For async version
    */
   *packetsSync(frames: Iterable<Frame>): Generator<Packet> {
     // Process frames
     for (const frame of frames) {
       try {
-        const packets = this.encodeSync(frame);
-        for (const packet of packets) {
+        const packet = this.encodeSync(frame);
+        if (packet) {
           yield packet;
         }
       } finally {
@@ -760,6 +921,7 @@ export class Encoder implements Disposable {
    *
    * @see {@link flushPackets} For async iteration
    * @see {@link receive} For getting buffered packets
+   * @see {@link flushSync} For synchronous version
    */
   async flush(): Promise<void> {
     if (this.isClosed || !this.initialized) {
@@ -799,6 +961,8 @@ export class Encoder implements Disposable {
    * }
    * ```
    *
+   * @see {@link flushPacketsSync} For sync iteration
+   * @see {@link receiveSync} For getting buffered packets
    * @see {@link flush} For async version
    */
   flushSync(): void {
@@ -834,8 +998,9 @@ export class Encoder implements Disposable {
    * }
    * ```
    *
+   * @see {@link encode} For sending frames and receiving packets
    * @see {@link flush} For signaling end-of-stream
-   * @see {@link packets} For complete pipeline
+   * @see {@link flushPacketsSync} For synchronous version
    */
   async *flushPackets(): AsyncGenerator<Packet> {
     // Send flush signal
@@ -867,6 +1032,8 @@ export class Encoder implements Disposable {
    * }
    * ```
    *
+   * @see {@link encodeSync} For sending frames and receiving packets
+   * @see {@link flushSync} For signaling end-of-stream
    * @see {@link flushPackets} For async version
    */
   *flushPacketsSync(): Generator<Packet> {
@@ -916,6 +1083,7 @@ export class Encoder implements Disposable {
    *
    * @see {@link encode} For sending frames and receiving packets
    * @see {@link flush} For signaling end-of-stream
+   * @see {@link receiveSync} For synchronous version
    */
   async receive(): Promise<Packet | null> {
     if (this.isClosed || !this.initialized) {
@@ -976,6 +1144,8 @@ export class Encoder implements Disposable {
    * }
    * ```
    *
+   * @see {@link encodeSync} For sending frames and receiving packets
+   * @see {@link flushSync} For signaling end-of-stream
    * @see {@link receive} For async version
    */
   receiveSync(): Packet | null {
