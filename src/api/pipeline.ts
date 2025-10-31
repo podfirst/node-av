@@ -1719,8 +1719,8 @@ async function* decodeStream(packets: AsyncIterable<Packet>, decoder: Decoder): 
   // Process all packets
   for await (const packet of packets) {
     try {
-      const frame = await decoder.decode(packet);
-      if (frame) {
+      const frames = await decoder.decode(packet);
+      for (const frame of frames) {
         yield frame;
       }
     } finally {
@@ -1760,8 +1760,8 @@ async function* encodeStream(frames: AsyncIterable<Frame>, encoder: Encoder): As
   // Process all frames
   for await (const frame of frames) {
     try {
-      const packet = await encoder.encode(frame);
-      if (packet) {
+      const packets = await encoder.encode(frame);
+      for (const packet of packets) {
         yield packet;
       }
     } finally {
@@ -1801,9 +1801,9 @@ async function* filterStream(frames: AsyncIterable<Frame>, filter: FilterAPI): A
   // Process all frames
   for await (const frame of frames) {
     try {
-      const filtered = await filter.process(frame);
-      if (filtered) {
-        yield filtered;
+      const filteredFrames = await filter.process(frame);
+      for (const filteredFrame of filteredFrames) {
+        yield filteredFrame;
       }
 
       // Check for buffered frames
@@ -1848,9 +1848,9 @@ async function* bitStreamFilterStream(packets: AsyncIterable<Packet>, bsf: BitSt
   // Process all packets through bitstream filter
   for await (const packet of packets) {
     try {
-      const filtered = await bsf.process(packet);
-      for (const outPacket of filtered) {
-        yield outPacket;
+      const filteredPackets = await bsf.process(packet);
+      for (const filteredPacket of filteredPackets) {
+        yield filteredPacket;
       }
     } finally {
       // Free the input packet after filtering
