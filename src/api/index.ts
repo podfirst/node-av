@@ -1,13 +1,20 @@
 // IOStream
 export { IOStream } from './io-stream.js';
 
-// MediaInput/MediaOutput
+// MediaInput
 export { MediaInput } from './media-input.js';
+
+// MediaOutput
 export { MediaOutput, type StreamDescription } from './media-output.js';
 
-// Decoder/Encoder
+// Decoder
 export { Decoder } from './decoder.js';
+
+// Encoder
 export { Encoder } from './encoder.js';
+
+// AudioFrameBuffer
+export { AudioFrameBuffer } from './audio-frame-buffer.js';
 
 // Hardware
 export { HardwareContext } from './hardware.js';
