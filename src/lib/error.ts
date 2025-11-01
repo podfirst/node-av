@@ -276,7 +276,7 @@ export class FFmpegError extends Error implements NativeWrapper<NativeFFmpegErro
     if (FFmpegError.isFFmpegError(code)) {
       const error = new FFmpegError(code);
       if (operation) {
-        (error as any).message = `${operation} failed: ${error.message}`;
+        (error as any).message = `${operation}: ${error.message}`;
       }
       throw error;
     }
