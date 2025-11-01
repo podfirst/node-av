@@ -78,6 +78,7 @@ export interface StreamDescription {
  */
 export class MediaOutput implements AsyncDisposable, Disposable {
   private formatContext: FormatContext;
+  private options: MediaOutputOptions;
   private _streams = new Map<number, StreamDescription>();
   private ioContext?: IOContext;
   private headerWritten = false;
@@ -86,9 +87,15 @@ export class MediaOutput implements AsyncDisposable, Disposable {
   private headerWritePromise?: Promise<void>;
 
   /**
+   * @param options - Media output options
+   *
    * @internal
    */
-  private constructor() {
+  private constructor(options?: MediaOutputOptions) {
+    this.options = options ?? {
+      exitOnError: true,
+    };
+
     this.formatContext = new FormatContext();
   }
 
@@ -151,7 +158,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
   static async open(target: string, options?: MediaOutputOptions): Promise<MediaOutput>;
   static async open(target: IOOutputCallbacks, options: MediaOutputOptions & { format: string }): Promise<MediaOutput>;
   static async open(target: string | IOOutputCallbacks, options?: MediaOutputOptions): Promise<MediaOutput> {
-    const output = new MediaOutput();
+    const output = new MediaOutput(options);
 
     try {
       if (typeof target === 'string') {
@@ -279,7 +286,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
   static openSync(target: string, options?: MediaOutputOptions): MediaOutput;
   static openSync(target: IOOutputCallbacks, options: MediaOutputOptions & { format: string }): MediaOutput;
   static openSync(target: string | IOOutputCallbacks, options?: MediaOutputOptions): MediaOutput {
-    const output = new MediaOutput();
+    const output = new MediaOutput(options);
 
     try {
       if (typeof target === 'string') {
@@ -855,7 +862,10 @@ export class MediaOutput implements AsyncDisposable, Disposable {
 
       // Write the packet
       const ret = await this.formatContext.interleavedWriteFrame(pkt);
-      FFmpegError.throwIfError(ret, 'Failed to write packet');
+
+      if (this.options.exitOnError) {
+        FFmpegError.throwIfError(ret, 'Failed to write packet');
+      }
     };
 
     // Write any buffered packets first
