@@ -154,10 +154,9 @@ export class AudioFrameBuffer implements Disposable {
       throw new Error('AudioFrameBuffer.push() requires an audio frame');
     }
 
-    // Capture PTS from first frame
-    if (this.firstFramePts === null && frame.pts !== undefined) {
-      this.firstFramePts = frame.pts;
-      this.nextPts = frame.pts;
+    if (this.firstFramePts === null) {
+      this.firstFramePts = frame.pts ?? 0n;
+      this.nextPts = this.firstFramePts;
     }
 
     // Write frame data to FIFO
@@ -185,10 +184,9 @@ export class AudioFrameBuffer implements Disposable {
       throw new Error('AudioFrameBuffer.pushSync() requires an audio frame');
     }
 
-    // Capture PTS from first frame
-    if (this.firstFramePts === null && frame.pts !== undefined) {
-      this.firstFramePts = frame.pts;
-      this.nextPts = frame.pts;
+    if (this.firstFramePts === null) {
+      this.firstFramePts = frame.pts ?? 0n;
+      this.nextPts = this.firstFramePts;
     }
 
     // Write frame data to FIFO
