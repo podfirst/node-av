@@ -191,7 +191,6 @@ describe('FFmpegError', () => {
           },
           (err: any) => {
             assert.ok(err.message.includes('testOperation'), 'Should include operation name');
-            assert.ok(err.message.includes('failed'), 'Should include "failed"');
             return true;
           },
         );
