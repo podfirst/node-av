@@ -75,3 +75,4 @@ ffmpeg_examples
 /crash-dumps
 /examples/tests
 /*.pdf
+/test_internal
