@@ -6,9 +6,9 @@ import {
   AV_CODEC_ID_HEVC,
   AV_CODEC_ID_OPUS,
   AV_HWDEVICE_TYPE_NONE,
-  AV_SAMPLE_FMT_S16,
+  AV_SAMPLE_FMT_FLTP,
 } from '../constants/constants.js';
-import { FF_ENCODER_LIBFDK_AAC, FF_ENCODER_LIBX264 } from '../constants/encoders.js';
+import { FF_ENCODER_AAC, FF_ENCODER_LIBX264 } from '../constants/encoders.js';
 import { avGetCodecStringHls } from '../lib/utilities.js';
 import { Decoder } from './decoder.js';
 import { Encoder } from './encoder.js';
@@ -212,6 +212,8 @@ export class FMP4Stream {
       options: {
         flags: 'low_delay',
         fflags: 'nobuffer',
+        analyzeduration: 0,
+        probesize: 32,
         timeout: 5000000,
         rtsp_transport: inputUrl.toLowerCase().startsWith('rtsp') ? 'tcp' : undefined,
         ...options.inputOptions?.options,
@@ -468,13 +470,13 @@ export class FMP4Stream {
       });
 
       const targetSampleRate = 44100;
-      const filterChain = FilterPreset.chain().aformat(AV_SAMPLE_FMT_S16, targetSampleRate, 'stereo').asetnsamples(1024).build();
+      const filterChain = FilterPreset.chain().aformat(AV_SAMPLE_FMT_FLTP, targetSampleRate, 'stereo').build();
 
       this.audioFilter = FilterAPI.create(filterChain, {
         timeBase: audioStream.timeBase,
       });
 
-      this.audioEncoder = await Encoder.create(FF_ENCODER_LIBFDK_AAC, {
+      this.audioEncoder = await Encoder.create(FF_ENCODER_AAC, {
         timeBase: { num: 1, den: targetSampleRate },
       });
     }
@@ -499,6 +501,7 @@ export class FMP4Stream {
     this.output = await MediaOutput.open(cb, {
       format: 'mp4',
       bufferSize: this.options.bufferSize,
+      exitOnError: false,
       options: {
         movflags: '+frag_keyframe+separate_moof+default_base_moof+empty_moov',
         frag_duration: this.options.fragDuration,
