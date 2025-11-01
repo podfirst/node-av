@@ -1201,16 +1201,17 @@ async function runNamedPipelineAsync<K extends StreamName>(
       let streamIndex: number | undefined;
       if (normalizedStages !== 'passthrough') {
         const stages = normalizedStages;
-        // Find decoder/BSF to get stream index
+        // Set stream type
+        metadata.type = streamName;
+
+        // Populate metadata by walking through ALL stages
         for (const stage of stages) {
           if (isDecoder(stage)) {
             metadata.decoder = stage;
-            streamIndex = stage.getStream().index;
-            break;
+            streamIndex ??= stage.getStream().index;
           } else if (isBitStreamFilterAPI(stage)) {
             metadata.bitStreamFilter = stage;
-            streamIndex = stage.getStream().index;
-            break;
+            streamIndex ??= stage.getStream().index;
           } else if (isEncoder(stage)) {
             metadata.encoder = stage;
           }
