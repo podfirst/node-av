@@ -1,6 +1,6 @@
 import { WebSocket, WebSocketServer } from 'ws';
 
-import { FMP4Stream } from '../../../src/index.js';
+import { FMP4Stream, type FMP4Data } from '../../../src/index.js';
 
 const port = 8080;
 
@@ -44,7 +44,7 @@ wss.on('connection', async (ws: WebSocket) => {
           supportedCodecs: message.supportedCodecs,
           fragDuration: 1,
           hardware: 'auto',
-          onData: (chunk: Buffer) => {
+          onData: (chunk: Buffer, _info: FMP4Data) => {
             if (ws.readyState === WebSocket.OPEN) {
               ws.send(chunk);
             }
