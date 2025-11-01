@@ -110,6 +110,9 @@ private:
   
   Napi::Value GetSampleRate(const Napi::CallbackInfo& info);
   void SetSampleRate(const Napi::CallbackInfo& info, const Napi::Value& value);
+
+  Napi::Value GetInitialPadding(const Napi::CallbackInfo& info);
+  void SetInitialPadding(const Napi::CallbackInfo& info, const Napi::Value& value);
 };
 
 } // namespace ffmpeg

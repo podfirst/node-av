@@ -41,6 +41,7 @@ Napi::Object CodecParameters::Init(Napi::Env env, Napi::Object exports) {
     InstanceAccessor<&CodecParameters::GetChannelLayout, &CodecParameters::SetChannelLayout>("channelLayout"),
     InstanceAccessor<&CodecParameters::GetChannels, &CodecParameters::SetChannels>("channels"),
     InstanceAccessor<&CodecParameters::GetSampleRate, &CodecParameters::SetSampleRate>("sampleRate"),
+    InstanceAccessor<&CodecParameters::GetInitialPadding, &CodecParameters::SetInitialPadding>("initialPadding"),
   });
   
   constructor = Napi::Persistent(func);
@@ -606,6 +607,20 @@ Napi::Value CodecParameters::GetSampleRate(const Napi::CallbackInfo& info) {
 void CodecParameters::SetSampleRate(const Napi::CallbackInfo& info, const Napi::Value& value) {
   if (params_) {
     params_->sample_rate = value.As<Napi::Number>().Int32Value();
+  }
+}
+
+Napi::Value CodecParameters::GetInitialPadding(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (!params_) {
+    return Napi::Number::New(env, 0);
+  }
+  return Napi::Number::New(env, params_->initial_padding);
+}
+
+void CodecParameters::SetInitialPadding(const Napi::CallbackInfo& info, const Napi::Value& value) {
+  if (params_) {
+    params_->initial_padding = value.As<Napi::Number>().Int32Value();
   }
 }
 

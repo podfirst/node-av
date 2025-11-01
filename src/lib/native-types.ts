@@ -305,6 +305,7 @@ export interface NativeCodecParameters extends Disposable {
   channelLayout: ChannelLayout;
   channels: number;
   sampleRate: number;
+  initialPadding: number;
 
   alloc(): void;
   free(): void;

@@ -394,6 +394,23 @@ export class CodecParameters implements NativeWrapper<NativeCodecParameters> {
   }
 
   /**
+   * Initial audio padding.
+   *
+   * Amount of padding (priming) samples at the beginning of the audio stream.
+   * For AAC encoding, this is typically 1024 samples.
+   * The muxer uses this value to correctly calculate packet timestamps.
+   *
+   * Direct mapping to AVCodecParameters->initial_padding.
+   */
+  get initialPadding(): number {
+    return this.native.initialPadding;
+  }
+
+  set initialPadding(value: number) {
+    this.native.initialPadding = value;
+  }
+
+  /**
    * Allocate codec parameters.
    *
    * Allocates memory for the parameters structure.
