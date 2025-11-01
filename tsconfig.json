@@ -26,6 +26,7 @@
   "include": [
     "src",
     "test",
+    "test_internal",
     "examples/*.ts",
     "examples/**/**/*.ts",
     "scripts",
