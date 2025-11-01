@@ -132,6 +132,9 @@ export interface MediaOutputOptions {
    */
   bufferSize?: number;
 
+  /** Exit immediately on first write error (default: true) */
+  exitOnError?: boolean;
+
   /**
    * FFmpeg format options passed directly to the output.
    */
