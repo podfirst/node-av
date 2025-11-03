@@ -312,6 +312,35 @@ export class Codec implements NativeWrapper<NativeCodec> {
   }
 
   /**
+   * Check if codec has specific capabilities.
+   *
+   * Tests whether all specified capabilities are present using bitwise AND.
+   *
+   * @param caps - One or more capability values to check
+   *
+   * @returns true if all specified capabilities are present, false otherwise
+   *
+   * @example
+   * ```typescript
+   * import { AV_CODEC_CAP_HARDWARE } from 'node-av/constants';
+   *
+   * if (codec.hasCapabilities(AV_CODEC_CAP_HARDWARE)) {
+   *   console.log('This codec supports hardware acceleration');
+   * }
+   * ```
+   *
+   * @see {@link capabilities} For direct capabilities access
+   */
+  hasCapabilities(...caps: AVCodecCap[]): boolean {
+    for (const cap of caps) {
+      if ((this.native.capabilities & cap) !== cap) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
    * Maximum lowres value.
    *
    * Maximum value for lowres decoding (0 = no lowres support).
