@@ -402,6 +402,8 @@ export class FilterContext extends OptionMember<NativeFilterContext> implements 
    *
    * @param params.colorSpace - Color space for video
    *
+   * @param params.alphaMode - Alpha channel mode
+   *
    * @returns 0 on success, negative AVERROR on error:
    *   - AVERROR_EINVAL: Invalid parameters
    *   - AVERROR_ENOMEM: Memory allocation failure
@@ -447,6 +449,7 @@ export class FilterContext extends OptionMember<NativeFilterContext> implements 
     channelLayout?: bigint;
     colorRange?: AVColorRange;
     colorSpace?: AVColorSpace;
+    alphaMode?: number;
   }): number {
     const nativeParams: any = { ...params };
     if (params.hwFramesCtx) {
@@ -704,6 +707,46 @@ export class FilterContext extends OptionMember<NativeFilterContext> implements 
    */
   buffersinkGetChannelLayout(): ChannelLayout {
     return this.native.buffersinkGetChannelLayout();
+  }
+
+  /**
+   * Get color space from buffer sink.
+   *
+   * Returns the color space of video from a buffer sink filter.
+   * Only valid for video buffer sink filters.
+   *
+   * Direct mapping to av_buffersink_get_colorspace().
+   *
+   * @returns Color space
+   *
+   * @example
+   * ```typescript
+   * const colorSpace = bufferSink.buffersinkGetColorspace();
+   * console.log(`Color space: ${colorSpace}`);
+   * ```
+   */
+  buffersinkGetColorspace(): AVColorSpace {
+    return this.native.buffersinkGetColorspace();
+  }
+
+  /**
+   * Get color range from buffer sink.
+   *
+   * Returns the color range of video from a buffer sink filter.
+   * Only valid for video buffer sink filters.
+   *
+   * Direct mapping to av_buffersink_get_color_range().
+   *
+   * @returns Color range
+   *
+   * @example
+   * ```typescript
+   * const colorRange = bufferSink.buffersinkGetColorRange();
+   * console.log(`Color range: ${colorRange}`);
+   * ```
+   */
+  buffersinkGetColorRange(): AVColorRange {
+    return this.native.buffersinkGetColorRange();
   }
 
   /**
