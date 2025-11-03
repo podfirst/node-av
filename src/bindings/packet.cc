@@ -18,14 +18,13 @@ Napi::Object Packet::Init(Napi::Env env, Napi::Object exports) {
     InstanceMethod<&Packet::AddSideData>("addSideData"),
     InstanceMethod<&Packet::NewSideData>("newSideData"),
     InstanceMethod<&Packet::FreeSideData>("freeSideData"),
-    InstanceMethod<&Packet::SetFlagsMethod>("setFlags"),
-    InstanceMethod<&Packet::ClearFlagsMethod>("clearFlags"),
     InstanceMethod<&Packet::Dispose>(Napi::Symbol::WellKnown(env, "dispose")),
 
     InstanceAccessor<&Packet::GetStreamIndex, &Packet::SetStreamIndex>("streamIndex"),
     InstanceAccessor<&Packet::GetPts, &Packet::SetPts>("pts"),
     InstanceAccessor<&Packet::GetDts, &Packet::SetDts>("dts"),
     InstanceAccessor<&Packet::GetDuration, &Packet::SetDuration>("duration"),
+    InstanceAccessor<&Packet::GetTimeBase, &Packet::SetTimeBase>("timeBase"),
     InstanceAccessor<&Packet::GetPos, &Packet::SetPos>("pos"),
     InstanceAccessor<&Packet::GetSize>("size"),
     InstanceAccessor<&Packet::GetFlags, &Packet::SetFlagsAccessor>("flags"),
@@ -273,55 +272,13 @@ Napi::Value Packet::NewSideData(const Napi::CallbackInfo& info) {
 
 Napi::Value Packet::FreeSideData(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
+
   if (!packet_) {
     Napi::TypeError::New(env, "Invalid packet").ThrowAsJavaScriptException();
     return env.Undefined();
   }
-  
+
   av_packet_free_side_data(packet_);
-  return env.Undefined();
-}
-
-Napi::Value Packet::SetFlagsMethod(const Napi::CallbackInfo& info) {
-  Napi::Env env = info.Env();
-
-  if (!packet_) {
-    Napi::Error::New(env, "Packet not allocated").ThrowAsJavaScriptException();
-    return env.Undefined();
-  }
-
-  // Iterate through all arguments and OR them together
-  for (size_t i = 0; i < info.Length(); i++) {
-    if (!info[i].IsNumber()) {
-      Napi::TypeError::New(env, "All arguments must be numbers (flags)").ThrowAsJavaScriptException();
-      return env.Undefined();
-    }
-    int flag = info[i].As<Napi::Number>().Int32Value();
-    packet_->flags |= flag;
-  }
-
-  return env.Undefined();
-}
-
-Napi::Value Packet::ClearFlagsMethod(const Napi::CallbackInfo& info) {
-  Napi::Env env = info.Env();
-
-  if (!packet_) {
-    Napi::Error::New(env, "Packet not allocated").ThrowAsJavaScriptException();
-    return env.Undefined();
-  }
-
-  // Iterate through all arguments and clear them with AND NOT
-  for (size_t i = 0; i < info.Length(); i++) {
-    if (!info[i].IsNumber()) {
-      Napi::TypeError::New(env, "All arguments must be numbers (flags)").ThrowAsJavaScriptException();
-      return env.Undefined();
-    }
-    int flag = info[i].As<Napi::Number>().Int32Value();
-    packet_->flags &= ~flag;
-  }
-
   return env.Undefined();
 }
 
@@ -381,6 +338,30 @@ void Packet::SetDuration(const Napi::CallbackInfo& info, const Napi::Value& valu
   if (packet_) {
     bool lossless;
     packet_->duration = value.As<Napi::BigInt>().Int64Value(&lossless);
+  }
+}
+
+Napi::Value Packet::GetTimeBase(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (!packet_) {
+    Napi::Object obj = Napi::Object::New(env);
+    obj.Set("num", 0);
+    obj.Set("den", 1);
+    return obj;
+  }
+  Napi::Object obj = Napi::Object::New(env);
+  obj.Set("num", packet_->time_base.num);
+  obj.Set("den", packet_->time_base.den);
+  return obj;
+}
+
+void Packet::SetTimeBase(const Napi::CallbackInfo& info, const Napi::Value& value) {
+  if (packet_ && value.IsObject()) {
+    Napi::Object obj = value.As<Napi::Object>();
+    if (obj.Has("num") && obj.Has("den")) {
+      packet_->time_base.num = obj.Get("num").As<Napi::Number>().Int32Value();
+      packet_->time_base.den = obj.Get("den").As<Napi::Number>().Int32Value();
+    }
   }
 }
 

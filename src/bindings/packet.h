@@ -20,6 +20,7 @@ public:
 
 private:
   friend class Stream;
+  friend class SyncQueue;
 
   static Napi::FunctionReference constructor;
 
@@ -38,8 +39,6 @@ private:
   Napi::Value AddSideData(const Napi::CallbackInfo& info);
   Napi::Value NewSideData(const Napi::CallbackInfo& info);
   Napi::Value FreeSideData(const Napi::CallbackInfo& info);
-  Napi::Value SetFlagsMethod(const Napi::CallbackInfo& info);
-  Napi::Value ClearFlagsMethod(const Napi::CallbackInfo& info);
   Napi::Value Dispose(const Napi::CallbackInfo& info);
 
   Napi::Value GetStreamIndex(const Napi::CallbackInfo& info);
@@ -53,6 +52,9 @@ private:
 
   Napi::Value GetDuration(const Napi::CallbackInfo& info);
   void SetDuration(const Napi::CallbackInfo& info, const Napi::Value& value);
+
+  Napi::Value GetTimeBase(const Napi::CallbackInfo& info);
+  void SetTimeBase(const Napi::CallbackInfo& info, const Napi::Value& value);
 
   Napi::Value GetPos(const Napi::CallbackInfo& info);
   void SetPos(const Napi::CallbackInfo& info, const Napi::Value& value);
