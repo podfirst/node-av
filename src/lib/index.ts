@@ -53,6 +53,9 @@ export { Dictionary } from './dictionary.js';
 // Option
 export { Option, OptionInfo, type OptionMember } from './option.js';
 
+// Sync Queue
+export { SyncQueue, SyncQueueType } from './sync-queue.js';
+
 // Filter related classes
 export { FilterContext } from './filter-context.js';
 export { FilterGraph } from './filter-graph.js';

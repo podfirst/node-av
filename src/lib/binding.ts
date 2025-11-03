@@ -43,6 +43,7 @@ import type {
   NativeSoftwareResampleContext,
   NativeSoftwareScaleContext,
   NativeStream,
+  NativeSyncQueue,
 } from './native-types.js';
 import type { ChannelLayout, IRational } from './types.js';
 
@@ -184,6 +185,11 @@ interface NativeOptionStatic {
   show(obj: OptionCapableObject, reqFlags?: number, rejFlags?: number): number;
 }
 
+// Sync Queue - FFmpeg's native sync_queue from fftools
+interface NativeSyncQueueConstructor {
+  create(type: number, bufferSizeUs: number): NativeSyncQueue;
+}
+
 /**
  * The complete native binding interface
  */
@@ -234,6 +240,9 @@ export interface NativeBinding {
 
   // Option system
   Option: NativeOptionStatic;
+
+  // Sync Queue
+  SyncQueue: NativeSyncQueueConstructor;
 
   // Functions
   getFFmpegInfo: () => {
@@ -296,6 +305,12 @@ export interface NativeBinding {
   avCompareTs: (tsA: bigint | number | null, tbA: IRational, tsB: bigint | number | null, tbB: IRational) => number;
   avRescaleQ: (a: bigint | number | null, bq: IRational, cq: IRational) => bigint;
   avRescaleRnd: (a: bigint | number, b: bigint | number, c: bigint | number, rnd: number) => bigint;
+  avRescaleDelta: (inTb: IRational, inTs: bigint | number, fsTb: IRational, duration: number, lastRef: { value: bigint }, outTb: IRational) => bigint;
+  avMulQ: (a: IRational, b: IRational) => IRational;
+  avInvQ: (q: IRational) => IRational;
+  avGcd: (a: bigint | number, b: bigint | number) => bigint;
+  avRescaleQRnd: (a: bigint | number | null, bq: IRational, cq: IRational, rnd: number) => bigint;
+  avGetAudioFrameDuration2: (codecpar: NativeCodecParameters, frameBytes: number) => number;
   avUsleep: (usec: number) => void;
   avSamplesAlloc: (nbChannels: number, nbSamples: number, sampleFmt: AVSampleFormat, align: number) => { data: Buffer[]; linesize: number; size: number } | number;
   avSamplesGetBufferSize: (nbChannels: number, nbSamples: number, sampleFmt: AVSampleFormat, align: number) => { size: number; linesize: number } | number;

@@ -63,6 +63,7 @@ export interface NativePacket extends Disposable {
   pts: bigint;
   dts: bigint;
   duration: bigint;
+  timeBase: IRational;
   pos: bigint;
   flags: AVPacketFlag;
   data: Buffer | null;
@@ -80,8 +81,6 @@ export interface NativePacket extends Disposable {
   addSideData(type: AVPacketSideDataType, data: Buffer): number;
   newSideData(type: AVPacketSideDataType, size: number): Buffer;
   freeSideData(): void;
-  setFlags(...flags: AVPacketFlag[]): void;
-  clearFlags(...flags: AVPacketFlag[]): void;
 
   [Symbol.dispose](): void;
 }
@@ -121,6 +120,10 @@ export interface NativeFrame extends Disposable {
   colorSpace: AVColorSpace;
   chromaLocation: AVChromaLocation;
   hwFramesCtx: NativeHardwareFramesContext | null;
+  flags: number;
+  decodeErrorFlags: number;
+  duration: bigint;
+  repeatPict: number;
 
   alloc(): void;
   free(): void;
@@ -141,6 +144,7 @@ export interface NativeFrame extends Disposable {
   getSideData(type: AVFrameSideDataType): Buffer | null;
   newSideData(type: AVFrameSideDataType, size: number): Buffer;
   removeSideData(type: AVFrameSideDataType): void;
+  applyCropping(flags?: number): number;
 
   [Symbol.dispose](): void;
 }
@@ -221,6 +225,8 @@ export interface NativeCodecContext extends Disposable {
   channels: number;
   sampleFormat: AVSampleFormat;
   frameSize: number;
+  bitsPerCodedSample: number;
+  bitsPerRawSample: number;
   channelLayout: ChannelLayout;
   qMin: number;
   qMax: number;
@@ -248,10 +254,6 @@ export interface NativeCodecContext extends Disposable {
   receivePacket(packet: NativePacket): Promise<number>;
   receivePacketSync(packet: NativePacket): number;
   setHardwarePixelFormat(hwFormat: AVPixelFormat, swFormat?: AVPixelFormat): void;
-  setFlags(...flags: AVCodecFlag[]): void;
-  clearFlags(...flags: AVCodecFlag[]): void;
-  setFlags2(...flags: AVCodecFlag2[]): void;
-  clearFlags2(...flags: AVCodecFlag2[]): void;
 
   [Symbol.dispose](): void;
 }
@@ -291,6 +293,8 @@ export interface NativeCodecParameters extends Disposable {
   extradata: Buffer | null;
   format: AVPixelFormat | AVSampleFormat;
   bitRate: bigint;
+  bitsPerCodedSample: number;
+  bitsPerRawSample: number;
   profile: AVProfile;
   level: number;
   width: number;
@@ -305,7 +309,9 @@ export interface NativeCodecParameters extends Disposable {
   channelLayout: ChannelLayout;
   channels: number;
   sampleRate: number;
+  frameSize: number;
   initialPadding: number;
+  videoDelay: number;
 
   alloc(): void;
   free(): void;
@@ -458,10 +464,9 @@ export interface NativeStream {
   sampleAspectRatio: IRational;
   avgFrameRate: IRational;
   rFrameRate: IRational;
+  ptsWrapBits: number;
   metadata: NativeDictionary | null;
   eventFlags: AVStreamEventFlag;
-  setEventFlags(...flags: AVStreamEventFlag[]): void;
-  clearEventFlags(...flags: AVStreamEventFlag[]): void;
 }
 
 /**
@@ -488,6 +493,7 @@ export interface NativeFormatContext extends AsyncDisposable {
   flags: AVFormatFlag;
   probesize: bigint;
   maxAnalyzeDuration: bigint;
+  maxInterleaveDelta: bigint;
   metadata: NativeDictionary | null;
   oformat: NativeOutputFormat | null;
   pb: NativeIOContext | null; // setter only
@@ -531,8 +537,6 @@ export interface NativeFormatContext extends AsyncDisposable {
     wantDecoder: boolean,
     flags: number,
   ): number | { streamIndex: number; decoder: NativeCodec | null };
-  setFlags(...flags: AVFormatFlag[]): void;
-  clearFlags(...flags: AVFormatFlag[]): void;
   getRTSPStreamInfo(): RTSPStreamInfo[] | null;
   sendRTSPPacket(streamIndex: number, rtpData: Buffer): Promise<number>;
   sendRTSPPacketSync(streamIndex: number, rtpData: Buffer): number;
@@ -724,6 +728,8 @@ export interface NativeFilterContext extends Disposable {
   buffersinkGetSampleRate(): number;
   buffersinkGetChannelLayout(): ChannelLayout;
   buffersinkGetSampleAspectRatio(): IRational;
+  buffersinkGetColorspace(): AVColorSpace;
+  buffersinkGetColorRange(): AVColorRange;
   free(): void;
 
   [Symbol.dispose](): void;
@@ -745,6 +751,7 @@ export interface NativeFilterGraph extends Disposable {
   threadType: AVFilterConstants;
   nbThreads: number;
   scaleSwsOpts: string | null;
+  aresampleSwrOpts: string | null;
 
   alloc(): void;
   free(): void;
@@ -950,6 +957,20 @@ export interface NativeOption {
   readonly max: number;
   readonly flags: AVOptionFlag;
   readonly unit: string | null;
+}
+
+/**
+ * Native sync queue interface
+ *
+ * FFmpeg's native sync_queue from fftools for packet synchronization.
+ *
+ * @internal
+ */
+export interface NativeSyncQueue extends Disposable {
+  addStream(limiting: number): number;
+  send(streamIdx: number, packet: NativePacket): number;
+  receive(streamIdx: number, packet: NativePacket): number;
+  free(): void;
 }
 
 /**
