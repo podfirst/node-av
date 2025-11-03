@@ -885,6 +885,200 @@ export function avRescaleRnd(a: bigint | number, b: bigint | number, c: bigint |
 }
 
 /**
+ * Rescale a timestamp while preserving accuracy with coarse input timebases.
+ *
+ * Used for audio streamcopy to maintain accuracy when input timebase is coarse.
+ * Direct mapping to av_rescale_delta().
+ *
+ * @param inTb - Input timebase
+ *
+ * @param inTs - Input timestamp
+ *
+ * @param fsTb - Duration timebase (e.g., {1, sampleRate})
+ *
+ * @param duration - Duration in fsTb units
+ *
+ * @param lastRef - Reference object with `value` property (modified by function)
+ *
+ * @param lastRef.value - Last output timestamp (bigint)
+ *
+ * @param outTb - Output timebase
+ *
+ * @returns Rescaled timestamp
+ *
+ * @example
+ * ```typescript
+ * const inTb = { num: 1, den: 48000 };
+ * const inTs = 1000000n;
+ * const fsTb = { num: 1, den: 44100 };
+ * const duration = 1024;
+ * const lastRef = { value: 0n };
+ * const outTb = { num: 1, den: 96000 };
+ *
+ * const rescaled = avRescaleDelta(inTb, inTs, fsTb, duration, lastRef, outTb);
+ * ```
+ *
+ * @see [av_rescale_delta](https://ffmpeg.org/doxygen/7.1/group__lavu__math.html) - FFmpeg Doxygen
+ */
+export function avRescaleDelta(inTb: IRational, inTs: bigint | number, fsTb: IRational, duration: number, lastRef: { value: bigint }, outTb: IRational): bigint {
+  return bindings.avRescaleDelta(inTb, inTs, fsTb, duration, lastRef, outTb);
+}
+
+/**
+ * Multiply two rational numbers.
+ *
+ * Multiplies two rational numbers using FFmpeg's av_mul_q() which normalizes the result.
+ * This is more accurate than manual multiplication as it reduces the fraction.
+ *
+ * Direct mapping to av_mul_q().
+ *
+ * @param a - First rational number
+ *
+ * @param b - Second rational number
+ *
+ * @returns Product of a and b as a normalized rational
+ *
+ * @example
+ * ```typescript
+ * // Multiply framerate by 2
+ * const framerate = { num: 25, den: 1 };
+ * const doubled = avMulQ(framerate, { num: 2, den: 1 });
+ * // Returns { num: 50, den: 1 }
+ *
+ * // Calculate field rate for interlaced video
+ * const fieldRate = avMulQ(framerate, { num: 2, den: 1 });
+ * ```
+ *
+ * @see [av_mul_q](https://ffmpeg.org/doxygen/trunk/group__lavu__math__rational.html#ga89c0e84e30e2f90196e11fc254e4fc3f) - FFmpeg Doxygen
+ */
+export function avMulQ(a: IRational, b: IRational): IRational {
+  return bindings.avMulQ(a, b);
+}
+
+/**
+ * Invert a rational number.
+ *
+ * Returns the reciprocal of a rational number using FFmpeg's av_inv_q().
+ * Swaps numerator and denominator: (a/b) becomes (b/a).
+ *
+ * Direct mapping to av_inv_q().
+ *
+ * @param q - Rational number to invert
+ *
+ * @returns Inverted rational (reciprocal)
+ *
+ * @example
+ * ```typescript
+ * // Convert framerate to frame duration
+ * const framerate = { num: 25, den: 1 };  // 25 fps
+ * const frameDuration = avInvQ(framerate); // 1/25 seconds
+ * // Returns { num: 1, den: 25 }
+ *
+ * // Get timebase from framerate
+ * const timebase = avInvQ({ num: 30000, den: 1001 }); // NTSC
+ * // Returns { num: 1001, den: 30000 }
+ * ```
+ *
+ * @see [av_inv_q](https://ffmpeg.org/doxygen/trunk/group__lavu__math__rational.html#ga587a784cb48299feea51d7dbbc6cc38c) - FFmpeg Doxygen
+ */
+export function avInvQ(q: IRational): IRational {
+  return bindings.avInvQ(q);
+}
+
+/**
+ * Calculate greatest common divisor.
+ *
+ * Computes the GCD of two integers using FFmpeg's av_gcd().
+ * Uses the Euclidean algorithm for efficient computation.
+ *
+ * Direct mapping to av_gcd().
+ *
+ * @param a - First integer
+ *
+ * @param b - Second integer
+ *
+ * @returns Greatest common divisor of a and b
+ *
+ * @example
+ * ```typescript
+ * const gcd = avGcd(48000, 44100);
+ * console.log(gcd); // 300
+ *
+ * // Used for calculating LCM
+ * const lcm = (a * b) / avGcd(a, b);
+ * ```
+ *
+ * @see [av_gcd](https://ffmpeg.org/doxygen/trunk/group__lavu__math.html#ga0e8419780352de538c1c15098cb1a587) - FFmpeg Doxygen
+ */
+export function avGcd(a: bigint | number, b: bigint | number): bigint {
+  return bindings.avGcd(a, b);
+}
+
+/**
+ * Rescale timestamp with specified rounding mode.
+ *
+ * Rescales a timestamp from one time base to another with specific rounding behavior.
+ * More control than avRescaleQ() which uses default rounding.
+ *
+ * Direct mapping to av_rescale_q_rnd().
+ *
+ * @param a - Timestamp to rescale
+ *
+ * @param bq - Source time base
+ *
+ * @param cq - Destination time base
+ *
+ * @param rnd - Rounding mode (AV_ROUND_ZERO, AV_ROUND_INF, AV_ROUND_DOWN, AV_ROUND_UP, AV_ROUND_NEAR_INF)
+ *
+ * @returns Rescaled timestamp
+ *
+ * @example
+ * ```typescript
+ * import { AV_ROUND_UP, AV_ROUND_DOWN } from 'node-av/constants';
+ *
+ * const pts = 1000n;
+ * const srcTb = { num: 1, den: 48000 };
+ * const dstTb = { num: 1, den: 90000 };
+ *
+ * // Round up for safer comparisons
+ * const ptsUp = avRescaleQRnd(pts, srcTb, dstTb, AV_ROUND_UP);
+ *
+ * // Round down for conservative timestamps
+ * const ptsDown = avRescaleQRnd(pts, srcTb, dstTb, AV_ROUND_DOWN);
+ * ```
+ *
+ * @see [av_rescale_q_rnd](https://ffmpeg.org/doxygen/trunk/group__lavu__math.html#ga60044a302e86b5c2d8b19a81c8179f30) - FFmpeg Doxygen
+ */
+export function avRescaleQRnd(a: bigint | number | null, bq: IRational, cq: IRational, rnd: number): bigint {
+  return bindings.avRescaleQRnd(a, bq, cq, rnd);
+}
+
+/**
+ * Get the duration of a single audio frame in samples.
+ *
+ * Returns the number of samples per audio frame for codecs with constant frame size,
+ * or calculates it based on frame bytes for variable frame size codecs.
+ *
+ * Direct mapping to av_get_audio_frame_duration2().
+ *
+ * @param codecpar - Codec parameters
+ *
+ * @param frameBytes - Size of the frame in bytes
+ *
+ * @returns Number of samples in the frame, or 0 if unknown
+ *
+ * @example
+ * ```typescript
+ * const frameDuration = avGetAudioFrameDuration2(codecpar, frameBytes);
+ * ```
+ *
+ * @see [av_get_audio_frame_duration2](https://ffmpeg.org/doxygen/7.1/group__lavc__misc.html) - FFmpeg Doxygen
+ */
+export function avGetAudioFrameDuration2(codecpar: NativeWrapper<NativeCodecParameters>, frameBytes: number): number {
+  return bindings.avGetAudioFrameDuration2(codecpar.getNative(), frameBytes);
+}
+
+/**
  * Allocate audio samples buffer.
  *
  * Allocates buffers for audio samples with the specified format.
