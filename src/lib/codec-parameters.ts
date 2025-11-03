@@ -182,6 +182,38 @@ export class CodecParameters implements NativeWrapper<NativeCodecParameters> {
   }
 
   /**
+   * Number of bits per coded sample.
+   *
+   * Bits per sample/pixel from the demuxer (needed by some codecs).
+   * For uncompressed formats, this is the bits per sample.
+   *
+   * Direct mapping to AVCodecParameters->bits_per_coded_sample.
+   */
+  get bitsPerCodedSample(): number {
+    return this.native.bitsPerCodedSample;
+  }
+
+  set bitsPerCodedSample(value: number) {
+    this.native.bitsPerCodedSample = value;
+  }
+
+  /**
+   * Number of bits per raw sample.
+   *
+   * Bits per sample before compression/encoding.
+   * Only set when different from bitsPerCodedSample.
+   *
+   * Direct mapping to AVCodecParameters->bits_per_raw_sample.
+   */
+  get bitsPerRawSample(): number {
+    return this.native.bitsPerRawSample;
+  }
+
+  set bitsPerRawSample(value: number) {
+    this.native.bitsPerRawSample = value;
+  }
+
+  /**
    * Codec profile.
    *
    * Profile level (e.g., baseline, main, high for H.264).
@@ -394,6 +426,23 @@ export class CodecParameters implements NativeWrapper<NativeCodecParameters> {
   }
 
   /**
+   * Audio frame size in samples.
+   *
+   * Number of samples per audio frame for codecs with constant frame size.
+   * For AAC this is typically 1024, for MP3 it's 1152.
+   * For codecs with variable frame size, this may be 0.
+   *
+   * Direct mapping to AVCodecParameters->frame_size.
+   */
+  get frameSize(): number {
+    return this.native.frameSize;
+  }
+
+  set frameSize(value: number) {
+    this.native.frameSize = value;
+  }
+
+  /**
    * Initial audio padding.
    *
    * Amount of padding (priming) samples at the beginning of the audio stream.
@@ -408,6 +457,22 @@ export class CodecParameters implements NativeWrapper<NativeCodecParameters> {
 
   set initialPadding(value: number) {
     this.native.initialPadding = value;
+  }
+
+  /**
+   * Video delay in frames.
+   *
+   * Number of frames the decoded output will be delayed relative to the encoded input.
+   * Used for timestamp correction in video streams.
+   *
+   * Direct mapping to AVCodecParameters->video_delay.
+   */
+  get videoDelay(): number {
+    return this.native.videoDelay;
+  }
+
+  set videoDelay(value: number) {
+    this.native.videoDelay = value;
   }
 
   /**
