@@ -102,8 +102,7 @@ export class FilterPreset {
       return false;
     }
 
-    // Check if filter has hardware device flag
-    return (filter.flags & AVFILTER_FLAG_HWDEVICE) !== 0;
+    return filter.hasFlags(AVFILTER_FLAG_HWDEVICE);
   }
 
   /**

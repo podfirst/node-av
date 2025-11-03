@@ -5,7 +5,7 @@ export { IOStream } from './io-stream.js';
 export { MediaInput } from './media-input.js';
 
 // MediaOutput
-export { MediaOutput, type StreamDescription } from './media-output.js';
+export { MediaOutput } from './media-output.js';
 
 // Decoder
 export { Decoder } from './decoder.js';
