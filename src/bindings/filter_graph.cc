@@ -40,6 +40,7 @@ Napi::Object FilterGraph::Init(Napi::Env env, Napi::Object exports) {
     InstanceAccessor<&FilterGraph::GetThreadType, &FilterGraph::SetThreadType>("threadType"),
     InstanceAccessor<&FilterGraph::GetNbThreads, &FilterGraph::SetNbThreads>("nbThreads"),
     InstanceAccessor<&FilterGraph::GetScaleSwsOpts, &FilterGraph::SetScaleSwsOpts>("scaleSwsOpts"),
+    InstanceAccessor<&FilterGraph::GetAresampleSwrOpts, &FilterGraph::SetAresampleSwrOpts>("aresampleSwrOpts"),
   });
   
   constructor = Napi::Persistent(func);
@@ -521,6 +522,31 @@ void FilterGraph::SetScaleSwsOpts(const Napi::CallbackInfo& info, const Napi::Va
   } else if (value.IsNull()) {
     av_freep(&graph->scale_sws_opts);
     graph->scale_sws_opts = nullptr;
+  }
+}
+
+Napi::Value FilterGraph::GetAresampleSwrOpts(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  AVFilterGraph* graph = Get();
+  if (!graph || !graph->aresample_swr_opts) {
+    return env.Null();
+  }
+  return Napi::String::New(env, graph->aresample_swr_opts);
+}
+
+void FilterGraph::SetAresampleSwrOpts(const Napi::CallbackInfo& info, const Napi::Value& value) {
+  AVFilterGraph* graph = Get();
+  if (!graph) {
+    return;
+  }
+
+  if (value.IsString()) {
+    std::string opts = value.As<Napi::String>().Utf8Value();
+    av_freep(&graph->aresample_swr_opts);
+    graph->aresample_swr_opts = av_strdup(opts.c_str());
+  } else if (value.IsNull()) {
+    av_freep(&graph->aresample_swr_opts);
+    graph->aresample_swr_opts = nullptr;
   }
 }
 

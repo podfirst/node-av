@@ -86,6 +86,9 @@ private:
 
   Napi::Value GetScaleSwsOpts(const Napi::CallbackInfo& info);
   void SetScaleSwsOpts(const Napi::CallbackInfo& info, const Napi::Value& value);
+
+  Napi::Value GetAresampleSwrOpts(const Napi::CallbackInfo& info);
+  void SetAresampleSwrOpts(const Napi::CallbackInfo& info, const Napi::Value& value);
 };
 
 } // namespace ffmpeg
