@@ -168,6 +168,35 @@ export class Filter implements NativeWrapper<NativeFilter> {
   }
 
   /**
+   * Check if filter has specific flags.
+   *
+   * Tests whether all specified flags are set using bitwise AND.
+   *
+   * @param flags - One or more flag values to check
+   *
+   * @returns true if all specified flags are set, false otherwise
+   *
+   * @example
+   * ```typescript
+   * import { AVFILTER_FLAG_DYNAMIC_INPUTS } from 'node-av/constants';
+   *
+   * if (filter.hasFlags(AVFILTER_FLAG_DYNAMIC_INPUTS)) {
+   *   console.log('This filter supports dynamic inputs');
+   * }
+   * ```
+   *
+   * @see {@link flags} For direct flags access
+   */
+  hasFlags(...flags: number[]): boolean {
+    for (const flag of flags) {
+      if ((this.native.flags & flag) !== flag) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
    * Check if filter is a source.
    *
    * Source filters generate frames without input
