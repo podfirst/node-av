@@ -32,9 +32,6 @@ private:
 
   AVStream* stream_ = nullptr;
 
-  Napi::Value SetEventFlagsMethod(const Napi::CallbackInfo& info);
-  Napi::Value ClearEventFlagsMethod(const Napi::CallbackInfo& info);
-
   Napi::Value GetIndex(const Napi::CallbackInfo& info);
 
   Napi::Value GetId(const Napi::CallbackInfo& info);
@@ -74,6 +71,9 @@ private:
   void SetMetadata(const Napi::CallbackInfo& info, const Napi::Value& value);
 
   Napi::Value GetAttachedPic(const Napi::CallbackInfo& info);
+
+  Napi::Value GetPtsWrapBits(const Napi::CallbackInfo& info);
+  void SetPtsWrapBits(const Napi::CallbackInfo& info, const Napi::Value& value);
 
   Napi::Value GetEventFlags(const Napi::CallbackInfo& info);
   void SetEventFlagsAccessor(const Napi::CallbackInfo& info, const Napi::Value& value);

@@ -10,9 +10,6 @@ Napi::FunctionReference Stream::constructor;
 
 Napi::Object Stream::Init(Napi::Env env, Napi::Object exports) {
   Napi::Function func = DefineClass(env, "Stream", {
-    InstanceMethod<&Stream::SetEventFlagsMethod>("setEventFlags"),
-    InstanceMethod<&Stream::ClearEventFlagsMethod>("clearEventFlags"),
-
     InstanceAccessor<&Stream::GetIndex>("index"),
     InstanceAccessor<&Stream::GetId, &Stream::SetId>("id"),
     InstanceAccessor<&Stream::GetCodecpar, &Stream::SetCodecpar>("codecpar"),
@@ -27,6 +24,7 @@ Napi::Object Stream::Init(Napi::Env env, Napi::Object exports) {
     InstanceAccessor<&Stream::GetRFrameRate, &Stream::SetRFrameRate>("rFrameRate"),
     InstanceAccessor<&Stream::GetMetadata, &Stream::SetMetadata>("metadata"),
     InstanceAccessor<&Stream::GetAttachedPic>("attachedPic"),
+    InstanceAccessor<&Stream::GetPtsWrapBits, &Stream::SetPtsWrapBits>("ptsWrapBits"),
     InstanceAccessor<&Stream::GetEventFlags, &Stream::SetEventFlagsAccessor>("eventFlags"),
   });
   
@@ -44,46 +42,6 @@ Stream::Stream(const Napi::CallbackInfo& info)
 
 Stream::~Stream() {
   // We don't own the AVStream, so nothing to free
-}
-
-Napi::Value Stream::SetEventFlagsMethod(const Napi::CallbackInfo& info) {
-  Napi::Env env = info.Env();
-  if (!stream_) {
-    Napi::Error::New(env, "Stream not initialized").ThrowAsJavaScriptException();
-    return env.Undefined();
-  }
-
-  // Iterate through all arguments and OR them together
-  for (size_t i = 0; i < info.Length(); i++) {
-    if (!info[i].IsNumber()) {
-      Napi::TypeError::New(env, "All arguments must be numbers (event flags)").ThrowAsJavaScriptException();
-      return env.Undefined();
-    }
-    int flag = info[i].As<Napi::Number>().Int32Value();
-    stream_->event_flags |= flag;
-  }
-
-  return env.Undefined();
-}
-
-Napi::Value Stream::ClearEventFlagsMethod(const Napi::CallbackInfo& info) {
-  Napi::Env env = info.Env();
-  if (!stream_) {
-    Napi::Error::New(env, "Stream not initialized").ThrowAsJavaScriptException();
-    return env.Undefined();
-  }
-
-  // Iterate through all arguments and clear them with AND NOT
-  for (size_t i = 0; i < info.Length(); i++) {
-    if (!info[i].IsNumber()) {
-      Napi::TypeError::New(env, "All arguments must be numbers (event flags)").ThrowAsJavaScriptException();
-      return env.Undefined();
-    }
-    int flag = info[i].As<Napi::Number>().Int32Value();
-    stream_->event_flags &= ~flag;
-  }
-
-  return env.Undefined();
 }
 
 Napi::Value Stream::GetIndex(const Napi::CallbackInfo& info) {
@@ -335,6 +293,20 @@ Napi::Value Stream::GetAttachedPic(const Napi::CallbackInfo& info) {
   av_packet_ref(packet->Get(), &stream_->attached_pic);
   
   return packetObj;
+}
+
+Napi::Value Stream::GetPtsWrapBits(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (!stream_) {
+    return Napi::Number::New(env, 64);  // Default: no wrapping
+  }
+  return Napi::Number::New(env, stream_->pts_wrap_bits);
+}
+
+void Stream::SetPtsWrapBits(const Napi::CallbackInfo& info, const Napi::Value& value) {
+  if (stream_) {
+    stream_->pts_wrap_bits = value.As<Napi::Number>().Int32Value();
+  }
 }
 
 Napi::Value Stream::GetEventFlags(const Napi::CallbackInfo& info) {
