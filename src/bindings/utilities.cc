@@ -67,7 +67,15 @@ Napi::Object Utilities::Init(Napi::Env env, Napi::Object exports) {
   exports.Set("avCompareTs", Napi::Function::New(env, CompareTs));
   exports.Set("avRescaleQ", Napi::Function::New(env, RescaleQ));
   exports.Set("avRescaleRnd", Napi::Function::New(env, RescaleRnd));
+  exports.Set("avRescaleDelta", Napi::Function::New(env, RescaleDelta));
+  exports.Set("avGetAudioFrameDuration2", Napi::Function::New(env, GetAudioFrameDuration2));
   exports.Set("avUsleep", Napi::Function::New(env, Usleep));
+
+  // Rational arithmetic utilities
+  exports.Set("avMulQ", Napi::Function::New(env, MulQ));
+  exports.Set("avInvQ", Napi::Function::New(env, InvQ));
+  exports.Set("avGcd", Napi::Function::New(env, Gcd));
+  exports.Set("avRescaleQRnd", Napi::Function::New(env, RescaleQRnd));
 
   // Audio sample utilities
   exports.Set("avSamplesAlloc", Napi::Function::New(env, SamplesAlloc));
@@ -1429,9 +1437,127 @@ Napi::Value Utilities::RescaleRnd(const Napi::CallbackInfo& info) {
   int rnd = info[3].As<Napi::Number>().Int32Value();
   
   int64_t result = av_rescale_rnd(a, b, c, static_cast<AVRounding>(rnd));
-  
+
   // Return as BigInt for large values
   return Napi::BigInt::New(env, result);
+}
+
+Napi::Value Utilities::RescaleDelta(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+
+  if (info.Length() < 6) {
+    Napi::TypeError::New(env, "Expected 6 arguments (inTb, inTs, fsTb, duration, lastRef, outTb)")
+        .ThrowAsJavaScriptException();
+    return env.Null();
+  }
+
+  // Parse inTb (AVRational)
+  if (!info[0].IsObject()) {
+    Napi::TypeError::New(env, "inTb must be an object {num, den}")
+        .ThrowAsJavaScriptException();
+    return env.Null();
+  }
+  Napi::Object inTbObj = info[0].As<Napi::Object>();
+  AVRational inTb;
+  inTb.num = inTbObj.Get("num").As<Napi::Number>().Int32Value();
+  inTb.den = inTbObj.Get("den").As<Napi::Number>().Int32Value();
+
+  // Parse inTs (int64_t)
+  int64_t inTs;
+  if (info[1].IsBigInt()) {
+    bool lossless;
+    inTs = info[1].As<Napi::BigInt>().Int64Value(&lossless);
+  } else {
+    inTs = info[1].As<Napi::Number>().Int64Value();
+  }
+
+  // Parse fsTb (AVRational)
+  if (!info[2].IsObject()) {
+    Napi::TypeError::New(env, "fsTb must be an object {num, den}")
+        .ThrowAsJavaScriptException();
+    return env.Null();
+  }
+  Napi::Object fsTbObj = info[2].As<Napi::Object>();
+  AVRational fsTb;
+  fsTb.num = fsTbObj.Get("num").As<Napi::Number>().Int32Value();
+  fsTb.den = fsTbObj.Get("den").As<Napi::Number>().Int32Value();
+
+  // Parse duration (int)
+  int duration = info[3].As<Napi::Number>().Int32Value();
+
+  // Parse lastRef (int64_t*) - passed as object with value property that we modify
+  if (!info[4].IsObject()) {
+    Napi::TypeError::New(env, "lastRef must be an object with 'value' property")
+        .ThrowAsJavaScriptException();
+    return env.Null();
+  }
+  Napi::Object lastRefObj = info[4].As<Napi::Object>();
+  int64_t last;
+  if (lastRefObj.Has("value")) {
+    Napi::Value lastVal = lastRefObj.Get("value");
+    if (lastVal.IsBigInt()) {
+      bool lossless;
+      last = lastVal.As<Napi::BigInt>().Int64Value(&lossless);
+    } else {
+      last = lastVal.As<Napi::Number>().Int64Value();
+    }
+  } else {
+    last = AV_NOPTS_VALUE;
+  }
+
+  // Parse outTb (AVRational)
+  if (!info[5].IsObject()) {
+    Napi::TypeError::New(env, "outTb must be an object {num, den}")
+        .ThrowAsJavaScriptException();
+    return env.Null();
+  }
+  Napi::Object outTbObj = info[5].As<Napi::Object>();
+  AVRational outTb;
+  outTb.num = outTbObj.Get("num").As<Napi::Number>().Int32Value();
+  outTb.den = outTbObj.Get("den").As<Napi::Number>().Int32Value();
+
+  // Call av_rescale_delta
+  int64_t result = av_rescale_delta(inTb, inTs, fsTb, duration, &last, outTb);
+
+  // Update the lastRef object
+  lastRefObj.Set("value", Napi::BigInt::New(env, last));
+
+  // Return result
+  return Napi::BigInt::New(env, result);
+}
+
+Napi::Value Utilities::GetAudioFrameDuration2(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+
+  if (info.Length() < 2) {
+    Napi::TypeError::New(env, "Expected 2 arguments (codecpar, frameBytes)")
+        .ThrowAsJavaScriptException();
+    return env.Null();
+  }
+
+  // Parse codecpar (NativeCodecParameters)
+  if (!info[0].IsObject()) {
+    Napi::TypeError::New(env, "codecpar must be a CodecParameters object")
+        .ThrowAsJavaScriptException();
+    return env.Null();
+  }
+
+  CodecParameters* codecpar_wrapper = UnwrapNativeObject<CodecParameters>(env, info[0], "CodecParameters");
+  if (!codecpar_wrapper || !codecpar_wrapper->Get()) {
+    Napi::TypeError::New(env, "Invalid CodecParameters object")
+        .ThrowAsJavaScriptException();
+    return env.Null();
+  }
+
+  AVCodecParameters* codecpar = codecpar_wrapper->Get();
+
+  // Parse frameBytes (int)
+  int frameBytes = info[1].As<Napi::Number>().Int32Value();
+
+  // Call av_get_audio_frame_duration2
+  int duration = av_get_audio_frame_duration2(codecpar, frameBytes);
+
+  return Napi::Number::New(env, duration);
 }
 
 Napi::Value Utilities::Usleep(const Napi::CallbackInfo& info) {
@@ -1655,6 +1781,156 @@ Napi::Value Utilities::SdpCreate(const Napi::CallbackInfo& info) {
   }
   
   return Napi::String::New(env, buf);
+}
+
+Napi::Value Utilities::MulQ(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+
+  if (info.Length() < 2) {
+    Napi::TypeError::New(env, "Expected 2 arguments (a, b)")
+        .ThrowAsJavaScriptException();
+    return env.Null();
+  }
+
+  // Parse first rational
+  if (!info[0].IsObject()) {
+    Napi::TypeError::New(env, "a must be an object with num and den").ThrowAsJavaScriptException();
+    return env.Null();
+  }
+  Napi::Object a_obj = info[0].As<Napi::Object>();
+  AVRational a;
+  a.num = a_obj.Get("num").As<Napi::Number>().Int32Value();
+  a.den = a_obj.Get("den").As<Napi::Number>().Int32Value();
+
+  // Parse second rational
+  if (!info[1].IsObject()) {
+    Napi::TypeError::New(env, "b must be an object with num and den").ThrowAsJavaScriptException();
+    return env.Null();
+  }
+  Napi::Object b_obj = info[1].As<Napi::Object>();
+  AVRational b;
+  b.num = b_obj.Get("num").As<Napi::Number>().Int32Value();
+  b.den = b_obj.Get("den").As<Napi::Number>().Int32Value();
+
+  // Multiply rationals using FFmpeg's av_mul_q
+  AVRational result = av_mul_q(a, b);
+
+  // Return as object
+  Napi::Object result_obj = Napi::Object::New(env);
+  result_obj.Set("num", Napi::Number::New(env, result.num));
+  result_obj.Set("den", Napi::Number::New(env, result.den));
+
+  return result_obj;
+}
+
+Napi::Value Utilities::InvQ(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+
+  if (info.Length() < 1) {
+    Napi::TypeError::New(env, "Expected 1 argument (q)")
+        .ThrowAsJavaScriptException();
+    return env.Null();
+  }
+
+  // Parse rational
+  if (!info[0].IsObject()) {
+    Napi::TypeError::New(env, "q must be an object with num and den").ThrowAsJavaScriptException();
+    return env.Null();
+  }
+  Napi::Object q_obj = info[0].As<Napi::Object>();
+  AVRational q;
+  q.num = q_obj.Get("num").As<Napi::Number>().Int32Value();
+  q.den = q_obj.Get("den").As<Napi::Number>().Int32Value();
+
+  // Invert rational using FFmpeg's av_inv_q
+  AVRational result = av_inv_q(q);
+
+  // Return as object
+  Napi::Object result_obj = Napi::Object::New(env);
+  result_obj.Set("num", Napi::Number::New(env, result.num));
+  result_obj.Set("den", Napi::Number::New(env, result.den));
+
+  return result_obj;
+}
+
+Napi::Value Utilities::Gcd(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+
+  if (info.Length() < 2) {
+    Napi::TypeError::New(env, "Expected 2 arguments (a, b)")
+        .ThrowAsJavaScriptException();
+    return env.Null();
+  }
+
+  // Parse arguments
+  int64_t a, b;
+  if (info[0].IsBigInt()) {
+    bool lossless;
+    a = info[0].As<Napi::BigInt>().Int64Value(&lossless);
+  } else {
+    a = info[0].As<Napi::Number>().Int64Value();
+  }
+
+  if (info[1].IsBigInt()) {
+    bool lossless;
+    b = info[1].As<Napi::BigInt>().Int64Value(&lossless);
+  } else {
+    b = info[1].As<Napi::Number>().Int64Value();
+  }
+
+  // Calculate GCD using FFmpeg's av_gcd
+  int64_t result = av_gcd(a, b);
+
+  return Napi::BigInt::New(env, result);
+}
+
+Napi::Value Utilities::RescaleQRnd(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+
+  if (info.Length() < 4) {
+    Napi::TypeError::New(env, "Expected 4 arguments (a, bq, cq, rnd)")
+        .ThrowAsJavaScriptException();
+    return env.Null();
+  }
+
+  // Parse timestamp
+  int64_t a;
+  if (info[0].IsBigInt()) {
+    bool lossless;
+    a = info[0].As<Napi::BigInt>().Int64Value(&lossless);
+  } else if (info[0].IsNull() || info[0].IsUndefined()) {
+    a = AV_NOPTS_VALUE;
+  } else {
+    a = info[0].As<Napi::Number>().Int64Value();
+  }
+
+  // Parse source timebase
+  if (!info[1].IsObject()) {
+    Napi::TypeError::New(env, "bq must be an object with num and den").ThrowAsJavaScriptException();
+    return env.Null();
+  }
+  Napi::Object bq_obj = info[1].As<Napi::Object>();
+  AVRational bq;
+  bq.num = bq_obj.Get("num").As<Napi::Number>().Int32Value();
+  bq.den = bq_obj.Get("den").As<Napi::Number>().Int32Value();
+
+  // Parse destination timebase
+  if (!info[2].IsObject()) {
+    Napi::TypeError::New(env, "cq must be an object with num and den").ThrowAsJavaScriptException();
+    return env.Null();
+  }
+  Napi::Object cq_obj = info[2].As<Napi::Object>();
+  AVRational cq;
+  cq.num = cq_obj.Get("num").As<Napi::Number>().Int32Value();
+  cq.den = cq_obj.Get("den").As<Napi::Number>().Int32Value();
+
+  // Parse rounding mode
+  int rnd = info[3].As<Napi::Number>().Int32Value();
+
+  // Rescale with rounding using FFmpeg's av_rescale_q_rnd
+  int64_t result = av_rescale_q_rnd(a, bq, cq, (AVRounding)rnd);
+
+  return Napi::BigInt::New(env, result);
 }
 
 } // namespace ffmpeg

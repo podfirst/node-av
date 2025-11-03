@@ -63,7 +63,15 @@ public:
   static Napi::Value CompareTs(const Napi::CallbackInfo& info);
   static Napi::Value RescaleQ(const Napi::CallbackInfo& info);
   static Napi::Value RescaleRnd(const Napi::CallbackInfo& info);
+  static Napi::Value RescaleDelta(const Napi::CallbackInfo& info);
+  static Napi::Value GetAudioFrameDuration2(const Napi::CallbackInfo& info);
   static Napi::Value Usleep(const Napi::CallbackInfo& info);
+
+  // Rational arithmetic utilities
+  static Napi::Value MulQ(const Napi::CallbackInfo& info);
+  static Napi::Value InvQ(const Napi::CallbackInfo& info);
+  static Napi::Value Gcd(const Napi::CallbackInfo& info);
+  static Napi::Value RescaleQRnd(const Napi::CallbackInfo& info);
   
   // Audio sample utilities
   static Napi::Value SamplesAlloc(const Napi::CallbackInfo& info);
