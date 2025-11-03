@@ -268,6 +268,35 @@ export class InputFormat implements NativeWrapper<NativeInputFormat> {
   }
 
   /**
+   * Check if input format has specific flags.
+   *
+   * Tests whether all specified flags are set using bitwise AND.
+   *
+   * @param flags - One or more flag values to check
+   *
+   * @returns true if all specified flags are set, false otherwise
+   *
+   * @example
+   * ```typescript
+   * import { AVFMT_NOFILE } from 'node-av/constants';
+   *
+   * if (inputFormat.hasFlags(AVFMT_NOFILE)) {
+   *   console.log('This format does not need a file');
+   * }
+   * ```
+   *
+   * @see {@link flags} For direct flags access
+   */
+  hasFlags(...flags: AVFormatFlag[]): boolean {
+    for (const flag of flags) {
+      if ((this.native.flags & flag) !== flag) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
    * Get the underlying native InputFormat object.
    *
    * @returns The native InputFormat binding object
