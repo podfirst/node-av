@@ -215,56 +215,99 @@ Napi::Value FilterContext::BuffersrcParametersSet(const Napi::CallbackInfo& info
   }
 
   if (params.Has("format")) {
-    par->format = params.Get("format").As<Napi::Number>().Int32Value();
+    Napi::Value val = params.Get("format");
+    if (val.IsNumber()) {
+      par->format = val.As<Napi::Number>().Int32Value();
+    }
   }
   if (params.Has("timeBase")) {
-    Napi::Object tb = params.Get("timeBase").As<Napi::Object>();
-    par->time_base.num = tb.Get("num").As<Napi::Number>().Int32Value();
-    par->time_base.den = tb.Get("den").As<Napi::Number>().Int32Value();
+    Napi::Value tb = params.Get("timeBase");
+    if (tb.IsObject() && !tb.IsNull()) {
+      Napi::Object tbObj = tb.As<Napi::Object>();
+      par->time_base.num = tbObj.Get("num").As<Napi::Number>().Int32Value();
+      par->time_base.den = tbObj.Get("den").As<Napi::Number>().Int32Value();
+    }
   }
-  
+
   // Set video parameters
   if (params.Has("width")) {
-    par->width = params.Get("width").As<Napi::Number>().Int32Value();
+    Napi::Value val = params.Get("width");
+    if (val.IsNumber()) {
+      par->width = val.As<Napi::Number>().Int32Value();
+    }
   }
   if (params.Has("height")) {
-    par->height = params.Get("height").As<Napi::Number>().Int32Value();
+    Napi::Value val = params.Get("height");
+    if (val.IsNumber()) {
+      par->height = val.As<Napi::Number>().Int32Value();
+    }
   }
   if (params.Has("frameRate")) {
-    Napi::Object fr = params.Get("frameRate").As<Napi::Object>();
-    par->frame_rate.num = fr.Get("num").As<Napi::Number>().Int32Value();
-    par->frame_rate.den = fr.Get("den").As<Napi::Number>().Int32Value();
+    Napi::Value fr = params.Get("frameRate");
+    if (fr.IsObject() && !fr.IsNull()) {
+      Napi::Object frObj = fr.As<Napi::Object>();
+      par->frame_rate.num = frObj.Get("num").As<Napi::Number>().Int32Value();
+      par->frame_rate.den = frObj.Get("den").As<Napi::Number>().Int32Value();
+    }
   }
   if (params.Has("sampleAspectRatio")) {
-    Napi::Object sar = params.Get("sampleAspectRatio").As<Napi::Object>();
-    par->sample_aspect_ratio.num = sar.Get("num").As<Napi::Number>().Int32Value();
-    par->sample_aspect_ratio.den = sar.Get("den").As<Napi::Number>().Int32Value();
+    Napi::Value sar = params.Get("sampleAspectRatio");
+    if (sar.IsObject() && !sar.IsNull()) {
+      Napi::Object sarObj = sar.As<Napi::Object>();
+      par->sample_aspect_ratio.num = sarObj.Get("num").As<Napi::Number>().Int32Value();
+      par->sample_aspect_ratio.den = sarObj.Get("den").As<Napi::Number>().Int32Value();
+    }
   }
   if (params.Has("colorRange")) {
-    par->color_range = static_cast<AVColorRange>(params.Get("colorRange").As<Napi::Number>().Int32Value());
+    Napi::Value val = params.Get("colorRange");
+    if (val.IsNumber()) {
+      par->color_range = static_cast<AVColorRange>(val.As<Napi::Number>().Int32Value());
+    }
   }
   if (params.Has("colorSpace")) {
-    par->color_space = static_cast<AVColorSpace>(params.Get("colorSpace").As<Napi::Number>().Int32Value());
+    Napi::Value val = params.Get("colorSpace");
+    if (val.IsNumber()) {
+      par->color_space = static_cast<AVColorSpace>(val.As<Napi::Number>().Int32Value());
+    }
   }
   if (params.Has("alphaMode")) {
-    par->alpha_mode = static_cast<AVAlphaMode>(params.Get("alphaMode").As<Napi::Number>().Int32Value());
+    Napi::Value val = params.Get("alphaMode");
+    if (val.IsNumber()) {
+      par->alpha_mode = static_cast<AVAlphaMode>(val.As<Napi::Number>().Int32Value());
+    }
   }
 
   // Set hardware frames context if provided
-  if (params.Has("hwFramesCtx") && !params.Get("hwFramesCtx").IsNull()) {
-    HardwareFramesContext* hwFramesCtx = Napi::ObjectWrap<HardwareFramesContext>::Unwrap(params.Get("hwFramesCtx").As<Napi::Object>());
-    if (hwFramesCtx && hwFramesCtx->Get()) {
-      par->hw_frames_ctx = av_buffer_ref(hwFramesCtx->Get());
+  if (params.Has("hwFramesCtx")) {
+    Napi::Value hwFramesCtxValue = params.Get("hwFramesCtx");
+    if (hwFramesCtxValue.IsObject() && !hwFramesCtxValue.IsNull()) {
+      HardwareFramesContext* hwFramesCtx = Napi::ObjectWrap<HardwareFramesContext>::Unwrap(hwFramesCtxValue.As<Napi::Object>());
+      if (hwFramesCtx && hwFramesCtx->Get()) {
+        par->hw_frames_ctx = av_buffer_ref(hwFramesCtx->Get());
+      }
     }
   }
   
   // Set audio parameters
   if (params.Has("sampleRate")) {
-    par->sample_rate = params.Get("sampleRate").As<Napi::Number>().Int32Value();
+    Napi::Value val = params.Get("sampleRate");
+    if (val.IsNumber()) {
+      par->sample_rate = val.As<Napi::Number>().Int32Value();
+    }
   }
   if (params.Has("channelLayout")) {
-    uint64_t layout_mask = params.Get("channelLayout").As<Napi::BigInt>().Uint64Value(nullptr);
-    av_channel_layout_from_mask(&par->ch_layout, layout_mask);
+    Napi::Value chLayout = params.Get("channelLayout");
+    if (chLayout.IsObject() && !chLayout.IsNull()) {
+      Napi::Object chLayoutObj = chLayout.As<Napi::Object>();
+      if (chLayoutObj.Has("mask")) {
+        uint64_t layout_mask = chLayoutObj.Get("mask").As<Napi::BigInt>().Uint64Value(nullptr);
+        av_channel_layout_from_mask(&par->ch_layout, layout_mask);
+      }
+    } else if (chLayout.IsBigInt()) {
+      // Legacy: direct BigInt value (backward compatibility)
+      uint64_t layout_mask = chLayout.As<Napi::BigInt>().Uint64Value(nullptr);
+      av_channel_layout_from_mask(&par->ch_layout, layout_mask);
+    }
   }
   
   // Apply parameters to buffer source
