@@ -76,3 +76,4 @@ ffmpeg_examples
 /examples/tests
 /*.pdf
 /test_internal
+/analysis
