@@ -174,6 +174,34 @@ describe('CodecParameters', () => {
       params.format = AV_SAMPLE_FMT_S16;
       assert.equal(params.format, AV_SAMPLE_FMT_S16);
     });
+
+    it('should get and set bitsPerCodedSample', () => {
+      params.bitsPerCodedSample = 8;
+      assert.equal(params.bitsPerCodedSample, 8);
+
+      params.bitsPerCodedSample = 16;
+      assert.equal(params.bitsPerCodedSample, 16);
+
+      params.bitsPerCodedSample = 24;
+      assert.equal(params.bitsPerCodedSample, 24);
+
+      params.bitsPerCodedSample = 0;
+      assert.equal(params.bitsPerCodedSample, 0);
+    });
+
+    it('should get and set bitsPerRawSample', () => {
+      params.bitsPerRawSample = 8;
+      assert.equal(params.bitsPerRawSample, 8);
+
+      params.bitsPerRawSample = 10;
+      assert.equal(params.bitsPerRawSample, 10);
+
+      params.bitsPerRawSample = 12;
+      assert.equal(params.bitsPerRawSample, 12);
+
+      params.bitsPerRawSample = 0;
+      assert.equal(params.bitsPerRawSample, 0);
+    });
   });
 
   describe('Video Properties', () => {
@@ -272,6 +300,21 @@ describe('CodecParameters', () => {
       params.chromaLocation = AVCHROMA_LOC_CENTER;
       assert.equal(params.chromaLocation, AVCHROMA_LOC_CENTER);
     });
+
+    it('should get and set videoDelay', () => {
+      params.videoDelay = 0;
+      assert.equal(params.videoDelay, 0);
+
+      params.videoDelay = 1;
+      assert.equal(params.videoDelay, 1);
+
+      params.videoDelay = 2;
+      assert.equal(params.videoDelay, 2);
+
+      // Reset to 0
+      params.videoDelay = 0;
+      assert.equal(params.videoDelay, 0);
+    });
   });
 
   describe('Audio Properties', () => {
@@ -314,6 +357,22 @@ describe('CodecParameters', () => {
       assert.equal(retrieved.nbChannels, 1);
       assert.equal(retrieved.order, 0);
       assert.equal(retrieved.mask, 4n);
+    });
+
+    it('should get and set frameSize', () => {
+      // Common audio frame sizes
+      params.frameSize = 1024; // AAC
+      assert.equal(params.frameSize, 1024);
+
+      params.frameSize = 1152; // MP3
+      assert.equal(params.frameSize, 1152);
+
+      params.frameSize = 960; // Opus
+      assert.equal(params.frameSize, 960);
+
+      // Variable frame size codecs
+      params.frameSize = 0;
+      assert.equal(params.frameSize, 0);
     });
   });
 

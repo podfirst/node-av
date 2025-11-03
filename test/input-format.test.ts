@@ -208,6 +208,69 @@ describe('InputFormat', () => {
         assert.ok((flags & AVFMT_NOFILE) === 0, 'MP4 should need a file');
       }
     });
+
+    it('should check for single flag using hasFlags', () => {
+      const format = InputFormat.findInputFormat('mp4');
+      if (format) {
+        // MP4 should not have NOFILE flag
+        assert.equal(format.hasFlags(AVFMT_NOFILE as any), false);
+
+        // MP4 should not have NOTIMESTAMPS flag
+        assert.equal(format.hasFlags(AVFMT_NOTIMESTAMPS as any), false);
+      }
+
+      // RTSP should have NOFILE flag
+      const rtsp = InputFormat.findInputFormat('rtsp');
+      if (rtsp) {
+        assert.equal(rtsp.hasFlags(AVFMT_NOFILE as any), true);
+      }
+    });
+
+    it('should check for multiple flags using hasFlags', () => {
+      const format = InputFormat.findInputFormat('mp4');
+      if (format) {
+        const flags = format.flags;
+
+        // Find flags that are set for mp4
+        const setFlags: number[] = [];
+        for (let i = 0; i < 32 && setFlags.length < 2; i++) {
+          const testFlag = 1 << i;
+          if ((flags & testFlag) === testFlag) {
+            setFlags.push(testFlag);
+          }
+        }
+
+        // If we found at least 2 flags, test with both
+        if (setFlags.length >= 2) {
+          assert.equal(format.hasFlags(setFlags[0] as any, setFlags[1] as any), true);
+        }
+
+        // Test with flag that's not set
+        assert.equal(format.hasFlags(AVFMT_NOFILE as any, AVFMT_NOTIMESTAMPS as any), false);
+      }
+    });
+
+    it('should return false when only some flags are set', () => {
+      const format = InputFormat.findInputFormat('mp4');
+      if (format) {
+        const flags = format.flags;
+
+        // Find one flag that is set
+        let setFlag = 0;
+        for (let i = 0; i < 32; i++) {
+          const testFlag = 1 << i;
+          if ((flags & testFlag) === testFlag) {
+            setFlag = testFlag;
+            break;
+          }
+        }
+
+        if (setFlag !== 0) {
+          // Test with one set flag and one unset flag (NOFILE should not be set for mp4)
+          assert.equal(format.hasFlags(setFlag as any, AVFMT_NOFILE as any), false);
+        }
+      }
+    });
   });
 
   describe('Integration with FormatContext', () => {

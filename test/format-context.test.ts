@@ -593,6 +593,24 @@ describe('FormatContext', () => {
       assert.equal(ctx.maxAnalyzeDuration, 5000000n);
     });
 
+    it('should get and set maxInterleaveDelta', () => {
+      // Default is 10000000 (10 seconds)
+      const defaultValue = ctx.maxInterleaveDelta;
+      assert.ok(typeof defaultValue === 'bigint');
+
+      // Set to 5 seconds
+      ctx.maxInterleaveDelta = 5000000n;
+      assert.equal(ctx.maxInterleaveDelta, 5000000n);
+
+      // Set to unlimited buffering
+      ctx.maxInterleaveDelta = 0n;
+      assert.equal(ctx.maxInterleaveDelta, 0n);
+
+      // Set to 20 seconds
+      ctx.maxInterleaveDelta = 20000000n;
+      assert.equal(ctx.maxInterleaveDelta, 20000000n);
+    });
+
     it('should get and set metadata', () => {
       const metadata = new Dictionary();
       metadata.set('title', 'Test Video', AVFLAG_NONE);
@@ -874,6 +892,36 @@ describe('FormatContext', () => {
       ctx.flags = (AVFMT_FLAG_GENPTS | AVFMT_FLAG_IGNIDX) as AVFormatFlag;
       assert.equal(ctx.flags & AVFMT_FLAG_GENPTS, AVFMT_FLAG_GENPTS);
       assert.equal(ctx.flags & AVFMT_FLAG_IGNIDX, AVFMT_FLAG_IGNIDX);
+    });
+
+    it('should check for single flag using hasFlags', () => {
+      ctx.flags = AVFLAG_NONE;
+      assert.equal(ctx.hasFlags(AVFMT_FLAG_GENPTS), false);
+
+      ctx.setFlags(AVFMT_FLAG_GENPTS);
+      assert.equal(ctx.hasFlags(AVFMT_FLAG_GENPTS), true);
+      assert.equal(ctx.hasFlags(AVFMT_FLAG_IGNIDX), false);
+
+      ctx.setFlags(AVFMT_FLAG_IGNIDX);
+      assert.equal(ctx.hasFlags(AVFMT_FLAG_GENPTS), true);
+      assert.equal(ctx.hasFlags(AVFMT_FLAG_IGNIDX), true);
+    });
+
+    it('should check for multiple flags using hasFlags', () => {
+      ctx.flags = AVFLAG_NONE;
+      assert.equal(ctx.hasFlags(AVFMT_FLAG_GENPTS, AVFMT_FLAG_IGNIDX), false);
+
+      ctx.setFlags(AVFMT_FLAG_GENPTS);
+      assert.equal(ctx.hasFlags(AVFMT_FLAG_GENPTS, AVFMT_FLAG_IGNIDX), false);
+
+      ctx.setFlags(AVFMT_FLAG_IGNIDX);
+      assert.equal(ctx.hasFlags(AVFMT_FLAG_GENPTS, AVFMT_FLAG_IGNIDX), true);
+    });
+
+    it('should return false when only some flags are set', () => {
+      ctx.setFlags(AVFMT_FLAG_GENPTS);
+      assert.equal(ctx.hasFlags(AVFMT_FLAG_GENPTS), true);
+      assert.equal(ctx.hasFlags(AVFMT_FLAG_GENPTS, AVFMT_FLAG_IGNIDX), false);
     });
   });
 });

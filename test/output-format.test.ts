@@ -247,6 +247,58 @@ describe('OutputFormat', () => {
         assert.ok(typeof hasVariableFps === 'boolean');
       }
     });
+
+    it('should check for single flag using hasFlags', () => {
+      const format = OutputFormat.guessFormat('mp4', null, null);
+      if (format) {
+        // MP4 should not have NOFILE flag
+        assert.equal(format.hasFlags(AVFMT_NOFILE), false);
+
+        // MP4 should not have NOTIMESTAMPS flag
+        assert.equal(format.hasFlags(AVFMT_NOTIMESTAMPS), false);
+
+        // MP4 should have GLOBALHEADER flag
+        assert.equal(format.hasFlags(AVFMT_GLOBALHEADER), true);
+      }
+
+      // RTSP should have NOFILE flag
+      const rtsp = OutputFormat.guessFormat('rtsp', null, null);
+      if (rtsp) {
+        assert.equal(rtsp.hasFlags(AVFMT_NOFILE), true);
+      }
+    });
+
+    it('should check for multiple flags using hasFlags', () => {
+      const format = OutputFormat.guessFormat('mp4', null, null);
+      if (format) {
+        const flags = format.flags;
+
+        // Find flags that are set for mp4
+        const setFlags: number[] = [];
+        for (let i = 0; i < 32 && setFlags.length < 2; i++) {
+          const testFlag = 1 << i;
+          if ((flags & testFlag) === testFlag) {
+            setFlags.push(testFlag);
+          }
+        }
+
+        // If we found at least 2 flags, test with both
+        if (setFlags.length >= 2) {
+          assert.equal(format.hasFlags(setFlags[0] as any, setFlags[1] as any), true);
+        }
+
+        // Test with flag that's not set
+        assert.equal(format.hasFlags(AVFMT_NOFILE, AVFMT_NOTIMESTAMPS), false);
+      }
+    });
+
+    it('should return false when only some flags are set', () => {
+      const format = OutputFormat.guessFormat('mp4', null, null);
+      if (format) {
+        // MP4 has GLOBALHEADER but not NOFILE
+        assert.equal(format.hasFlags(AVFMT_GLOBALHEADER, AVFMT_NOFILE), false);
+      }
+    });
   });
 
   describe('Codec Support', () => {

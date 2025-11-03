@@ -1414,6 +1414,90 @@ describe('FilterContext', () => {
       outFrame.free();
       graph.free();
     });
+
+    it('should get colorspace from buffersink', async () => {
+      const graph = new FilterGraph();
+      graph.alloc();
+
+      const bufferFilter = Filter.getByName('buffer');
+      const sinkFilter = Filter.getByName('buffersink');
+      assert.ok(bufferFilter);
+      assert.ok(sinkFilter);
+
+      const bufferCtx = graph.createFilter(bufferFilter, 'src', 'video_size=1920x1080:pix_fmt=0:time_base=1/30:pixel_aspect=1/1');
+      const sinkCtx = graph.createFilter(sinkFilter, 'sink');
+      assert.ok(bufferCtx);
+      assert.ok(sinkCtx);
+
+      bufferCtx.link(0, sinkCtx, 0);
+      const configRet = await graph.config();
+      assert.equal(configRet, 0);
+
+      // Add a frame to initialize pipeline
+      const frame = new Frame();
+      frame.alloc();
+      frame.format = AV_PIX_FMT_YUV420P;
+      frame.width = 1920;
+      frame.height = 1080;
+      frame.pts = 0n;
+      frame.allocBuffer();
+
+      await bufferCtx.buffersrcAddFrame(frame);
+
+      const outFrame = new Frame();
+      outFrame.alloc();
+      await sinkCtx.buffersinkGetFrame(outFrame);
+
+      // Get colorspace
+      const colorSpace = sinkCtx.buffersinkGetColorspace();
+      assert.ok(typeof colorSpace === 'number', 'Should return a color space value');
+
+      frame.free();
+      outFrame.free();
+      graph.free();
+    });
+
+    it('should get color range from buffersink', async () => {
+      const graph = new FilterGraph();
+      graph.alloc();
+
+      const bufferFilter = Filter.getByName('buffer');
+      const sinkFilter = Filter.getByName('buffersink');
+      assert.ok(bufferFilter);
+      assert.ok(sinkFilter);
+
+      const bufferCtx = graph.createFilter(bufferFilter, 'src', 'video_size=1920x1080:pix_fmt=0:time_base=1/30:pixel_aspect=1/1');
+      const sinkCtx = graph.createFilter(sinkFilter, 'sink');
+      assert.ok(bufferCtx);
+      assert.ok(sinkCtx);
+
+      bufferCtx.link(0, sinkCtx, 0);
+      const configRet = await graph.config();
+      assert.equal(configRet, 0);
+
+      // Add a frame to initialize pipeline
+      const frame = new Frame();
+      frame.alloc();
+      frame.format = AV_PIX_FMT_YUV420P;
+      frame.width = 1920;
+      frame.height = 1080;
+      frame.pts = 0n;
+      frame.allocBuffer();
+
+      await bufferCtx.buffersrcAddFrame(frame);
+
+      const outFrame = new Frame();
+      outFrame.alloc();
+      await sinkCtx.buffersinkGetFrame(outFrame);
+
+      // Get color range
+      const colorRange = sinkCtx.buffersinkGetColorRange();
+      assert.ok(typeof colorRange === 'number', 'Should return a color range value');
+
+      frame.free();
+      outFrame.free();
+      graph.free();
+    });
   });
 
   describe('Buffer Source Parameters', () => {
@@ -1447,6 +1531,37 @@ describe('FilterContext', () => {
       // Initialize after setting parameters
       const initRet = ctx.init(null);
       assert.equal(initRet, 0, 'Should initialize successfully after setting parameters');
+
+      graph.free();
+    });
+
+    it('should set buffer source parameters with alphaMode', () => {
+      const graph = new FilterGraph();
+      graph.alloc();
+
+      const bufferFilter = Filter.getByName('buffer');
+      assert.ok(bufferFilter, 'Should find buffer filter');
+
+      const ctx = graph.allocFilter(bufferFilter, 'src');
+      assert.ok(ctx, 'Should create buffer source context');
+
+      // Set parameters with alphaMode
+      const params = {
+        width: 1280,
+        height: 720,
+        format: AV_PIX_FMT_YUV420P,
+        timeBase: { num: 1, den: 25 },
+        frameRate: { num: 25, den: 1 },
+        sampleAspectRatio: { num: 1, den: 1 },
+        hwFramesCtx: null,
+        alphaMode: 0, // No alpha
+      };
+
+      const ret = ctx.buffersrcParametersSet(params);
+      assert.equal(ret, 0, 'Should set parameters with alphaMode successfully');
+
+      const initRet = ctx.init(null);
+      assert.equal(initRet, 0, 'Should initialize successfully');
 
       graph.free();
     });

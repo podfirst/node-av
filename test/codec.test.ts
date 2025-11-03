@@ -229,6 +229,63 @@ describe('Codec', () => {
       assert.ok(!decoder.isExperimental());
     });
 
+    it('should check for single capability using hasCapabilities', () => {
+      const decoder = Codec.findDecoder(AV_CODEC_ID_H264);
+      assert.ok(decoder);
+
+      const caps = decoder.capabilities;
+      assert.ok(typeof caps === 'number');
+
+      // Test hasCapabilities with an actual capability
+      if (caps !== 0) {
+        // Find first capability bit that is set
+        for (let i = 0; i < 32; i++) {
+          const testCap = (1 << i) as any;
+          if ((caps & testCap) === testCap) {
+            assert.equal(decoder.hasCapabilities(testCap), true);
+            break;
+          }
+        }
+      }
+    });
+
+    it('should check for multiple capabilities using hasCapabilities', () => {
+      const decoder = Codec.findDecoder(AV_CODEC_ID_H264);
+      assert.ok(decoder);
+
+      const caps = decoder.capabilities;
+
+      // Find two capability bits that are set
+      const foundCaps: any[] = [];
+      for (let i = 0; i < 32 && foundCaps.length < 2; i++) {
+        const testCap = (1 << i) as any;
+        if ((caps & testCap) === testCap) {
+          foundCaps.push(testCap);
+        }
+      }
+
+      // If we found at least 2 capabilities, test with both
+      if (foundCaps.length >= 2) {
+        assert.equal(decoder.hasCapabilities(foundCaps[0], foundCaps[1]), true);
+      }
+    });
+
+    it('should return false when capability is not set', () => {
+      const decoder = Codec.findDecoder(AV_CODEC_ID_H264);
+      assert.ok(decoder);
+
+      const caps = decoder.capabilities;
+
+      // Find a capability bit that is NOT set
+      for (let i = 0; i < 32; i++) {
+        const testCap = (1 << i) as any;
+        if ((caps & testCap) !== testCap) {
+          assert.equal(decoder.hasCapabilities(testCap), false);
+          break;
+        }
+      }
+    });
+
     it('should have wrapper property', () => {
       const decoder = Codec.findDecoder(AV_CODEC_ID_H264);
       assert.ok(decoder);

@@ -594,5 +594,100 @@ describe('Option API', () => {
 
       ctx.freeContext();
     });
+
+    it('should check for single flag using hasFlags', () => {
+      const codec = Codec.findEncoderByName(FF_ENCODER_LIBX264) ?? Codec.findEncoderByName(FF_ENCODER_MPEG4);
+      assert.ok(codec);
+
+      const ctx = new CodecContext();
+      ctx.allocContext3(codec);
+
+      const options = ctx.listOptions();
+      assert.ok(options.length > 0, 'Should have options');
+
+      // Find an option with flags set
+      const optionWithFlags = options.find((opt) => opt.flags !== 0);
+      if (optionWithFlags) {
+        const flags = optionWithFlags.flags;
+
+        // Find the first flag bit that is set
+        for (let i = 0; i < 32; i++) {
+          const testFlag = 1 << i;
+          if ((flags & testFlag) === testFlag) {
+            assert.equal(optionWithFlags.hasFlags(testFlag as any), true);
+            break;
+          }
+        }
+      }
+
+      ctx.freeContext();
+    });
+
+    it('should check for multiple flags using hasFlags', () => {
+      const codec = Codec.findEncoderByName(FF_ENCODER_LIBX264) ?? Codec.findEncoderByName(FF_ENCODER_MPEG4);
+      assert.ok(codec);
+
+      const ctx = new CodecContext();
+      ctx.allocContext3(codec);
+
+      const options = ctx.listOptions();
+
+      // Find an option with multiple flags set
+      const optionWithFlags = options.find((opt) => {
+        const flags = opt.flags;
+        // Count how many bits are set
+        let count = 0;
+        for (let i = 0; i < 32; i++) {
+          if ((flags & (1 << i)) !== 0) count++;
+        }
+        return count >= 2;
+      });
+
+      if (optionWithFlags) {
+        const flags = optionWithFlags.flags;
+
+        // Find two flag bits that are set
+        const setFlags: number[] = [];
+        for (let i = 0; i < 32 && setFlags.length < 2; i++) {
+          const testFlag = 1 << i;
+          if ((flags & testFlag) === testFlag) {
+            setFlags.push(testFlag);
+          }
+        }
+
+        if (setFlags.length >= 2) {
+          assert.equal(optionWithFlags.hasFlags(setFlags[0] as any, setFlags[1] as any), true);
+        }
+      }
+
+      ctx.freeContext();
+    });
+
+    it('should return false when flag is not set', () => {
+      const codec = Codec.findEncoderByName(FF_ENCODER_LIBX264) ?? Codec.findEncoderByName(FF_ENCODER_MPEG4);
+      assert.ok(codec);
+
+      const ctx = new CodecContext();
+      ctx.allocContext3(codec);
+
+      const options = ctx.listOptions();
+
+      // Find an option and test with a flag that's not set
+      if (options.length > 0) {
+        const option = options[0];
+        const flags = option.flags;
+
+        // Find a flag bit that is NOT set
+        for (let i = 0; i < 32; i++) {
+          const testFlag = 1 << i;
+          if ((flags & testFlag) !== testFlag) {
+            assert.equal(option.hasFlags(testFlag as any), false);
+            break;
+          }
+        }
+      }
+
+      ctx.freeContext();
+    });
   });
 });

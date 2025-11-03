@@ -251,6 +251,34 @@ describe('CodecContext', () => {
       assert.ok(typeof frameNum === 'number', 'Should return a number');
       assert.ok(frameNum >= 0, 'Should be non-negative');
     });
+
+    it('should get and set bitsPerCodedSample', () => {
+      ctx.bitsPerCodedSample = 8;
+      assert.equal(ctx.bitsPerCodedSample, 8);
+
+      ctx.bitsPerCodedSample = 16;
+      assert.equal(ctx.bitsPerCodedSample, 16);
+
+      ctx.bitsPerCodedSample = 24;
+      assert.equal(ctx.bitsPerCodedSample, 24);
+
+      ctx.bitsPerCodedSample = 0;
+      assert.equal(ctx.bitsPerCodedSample, 0);
+    });
+
+    it('should get and set bitsPerRawSample', () => {
+      ctx.bitsPerRawSample = 8;
+      assert.equal(ctx.bitsPerRawSample, 8);
+
+      ctx.bitsPerRawSample = 10;
+      assert.equal(ctx.bitsPerRawSample, 10);
+
+      ctx.bitsPerRawSample = 12;
+      assert.equal(ctx.bitsPerRawSample, 12);
+
+      ctx.bitsPerRawSample = 0;
+      assert.equal(ctx.bitsPerRawSample, 0);
+    });
   });
 
   describe('Video Properties', () => {
@@ -911,6 +939,36 @@ describe('CodecContext', () => {
         ctx.flags = AVFLAG_NONE;
         assert.equal(ctx.flags, AVFLAG_NONE);
       });
+
+      it('should check for single flag using hasFlags', () => {
+        ctx.flags = AVFLAG_NONE;
+        assert.equal(ctx.hasFlags(AV_CODEC_FLAG_QSCALE), false);
+
+        ctx.setFlags(AV_CODEC_FLAG_QSCALE);
+        assert.equal(ctx.hasFlags(AV_CODEC_FLAG_QSCALE), true);
+        assert.equal(ctx.hasFlags(AV_CODEC_FLAG_PSNR), false);
+
+        ctx.setFlags(AV_CODEC_FLAG_PSNR);
+        assert.equal(ctx.hasFlags(AV_CODEC_FLAG_QSCALE), true);
+        assert.equal(ctx.hasFlags(AV_CODEC_FLAG_PSNR), true);
+      });
+
+      it('should check for multiple flags using hasFlags', () => {
+        ctx.flags = AVFLAG_NONE;
+        assert.equal(ctx.hasFlags(AV_CODEC_FLAG_QSCALE, AV_CODEC_FLAG_PSNR), false);
+
+        ctx.setFlags(AV_CODEC_FLAG_QSCALE);
+        assert.equal(ctx.hasFlags(AV_CODEC_FLAG_QSCALE, AV_CODEC_FLAG_PSNR), false);
+
+        ctx.setFlags(AV_CODEC_FLAG_PSNR);
+        assert.equal(ctx.hasFlags(AV_CODEC_FLAG_QSCALE, AV_CODEC_FLAG_PSNR), true);
+      });
+
+      it('should return false when only some flags are set', () => {
+        ctx.setFlags(AV_CODEC_FLAG_QSCALE);
+        assert.equal(ctx.hasFlags(AV_CODEC_FLAG_QSCALE), true);
+        assert.equal(ctx.hasFlags(AV_CODEC_FLAG_QSCALE, AV_CODEC_FLAG_PSNR), false);
+      });
     });
 
     describe('flags2', () => {
@@ -960,6 +1018,41 @@ describe('CodecContext', () => {
 
         ctx.flags2 = 0 as AVCodecFlag2;
         assert.equal(ctx.flags2, 0);
+      });
+
+      it('should check for single flag using hasFlags2', () => {
+        ctx.flags2 = 0 as AVCodecFlag2;
+        assert.equal(ctx.hasFlags2(0x1 as AVCodecFlag2), false);
+
+        ctx.setFlags2(0x1 as AVCodecFlag2);
+        assert.equal(ctx.hasFlags2(0x1 as AVCodecFlag2), true);
+        assert.equal(ctx.hasFlags2(0x2 as AVCodecFlag2), false);
+
+        ctx.setFlags2(0x2 as AVCodecFlag2);
+        assert.equal(ctx.hasFlags2(0x1 as AVCodecFlag2), true);
+        assert.equal(ctx.hasFlags2(0x2 as AVCodecFlag2), true);
+      });
+
+      it('should check for multiple flags using hasFlags2', () => {
+        ctx.flags2 = 0 as AVCodecFlag2;
+        assert.equal(ctx.hasFlags2(0x1 as AVCodecFlag2, 0x2 as AVCodecFlag2), false);
+
+        ctx.setFlags2(0x1 as AVCodecFlag2);
+        assert.equal(ctx.hasFlags2(0x1 as AVCodecFlag2, 0x2 as AVCodecFlag2), false);
+
+        ctx.setFlags2(0x2 as AVCodecFlag2);
+        assert.equal(ctx.hasFlags2(0x1 as AVCodecFlag2, 0x2 as AVCodecFlag2), true);
+
+        ctx.setFlags2(0x4 as AVCodecFlag2);
+        assert.equal(ctx.hasFlags2(0x1 as AVCodecFlag2, 0x2 as AVCodecFlag2), true);
+        assert.equal(ctx.hasFlags2(0x1 as AVCodecFlag2, 0x2 as AVCodecFlag2, 0x4 as AVCodecFlag2), true);
+      });
+
+      it('should return false when only some flags2 are set', () => {
+        ctx.setFlags2(0x1 as AVCodecFlag2);
+        assert.equal(ctx.hasFlags2(0x1 as AVCodecFlag2), true);
+        assert.equal(ctx.hasFlags2(0x1 as AVCodecFlag2, 0x2 as AVCodecFlag2), false);
+        assert.equal(ctx.hasFlags2(0x1 as AVCodecFlag2, 0x4 as AVCodecFlag2), false);
       });
     });
   });

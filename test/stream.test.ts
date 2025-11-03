@@ -130,6 +130,28 @@ describe('Stream', () => {
       // but our Rational class doesn't allow zero denominator
       // This is expected behavior
     });
+
+    it('should get and set ptsWrapBits', () => {
+      // Default value (typically 64 for no wrapping)
+      const defaultValue = stream.ptsWrapBits;
+      assert.ok(typeof defaultValue === 'number');
+
+      // Set to 33 (common for MPEG-TS)
+      stream.ptsWrapBits = 33;
+      assert.equal(stream.ptsWrapBits, 33);
+
+      // Set to 31 (DVB)
+      stream.ptsWrapBits = 31;
+      assert.equal(stream.ptsWrapBits, 31);
+
+      // Set to 64 (no wrapping)
+      stream.ptsWrapBits = 64;
+      assert.equal(stream.ptsWrapBits, 64);
+
+      // Reset to default
+      stream.ptsWrapBits = defaultValue;
+      assert.equal(stream.ptsWrapBits, defaultValue);
+    });
   });
 
   describe('Codec Parameters', () => {
@@ -384,6 +406,36 @@ describe('Stream', () => {
 
       stream.eventFlags = 0 as AVStreamEventFlag;
       assert.equal(stream.eventFlags, 0);
+    });
+
+    it('should check for single event flag using hasEventFlags', () => {
+      stream.eventFlags = 0 as AVStreamEventFlag;
+      assert.equal(stream.hasEventFlags(AVSTREAM_EVENT_FLAG_METADATA_UPDATED), false);
+
+      stream.setEventFlags(AVSTREAM_EVENT_FLAG_METADATA_UPDATED);
+      assert.equal(stream.hasEventFlags(AVSTREAM_EVENT_FLAG_METADATA_UPDATED), true);
+      assert.equal(stream.hasEventFlags(AVSTREAM_EVENT_FLAG_NEW_PACKETS), false);
+
+      stream.setEventFlags(AVSTREAM_EVENT_FLAG_NEW_PACKETS);
+      assert.equal(stream.hasEventFlags(AVSTREAM_EVENT_FLAG_METADATA_UPDATED), true);
+      assert.equal(stream.hasEventFlags(AVSTREAM_EVENT_FLAG_NEW_PACKETS), true);
+    });
+
+    it('should check for multiple event flags using hasEventFlags', () => {
+      stream.eventFlags = 0 as AVStreamEventFlag;
+      assert.equal(stream.hasEventFlags(AVSTREAM_EVENT_FLAG_METADATA_UPDATED, AVSTREAM_EVENT_FLAG_NEW_PACKETS), false);
+
+      stream.setEventFlags(AVSTREAM_EVENT_FLAG_METADATA_UPDATED);
+      assert.equal(stream.hasEventFlags(AVSTREAM_EVENT_FLAG_METADATA_UPDATED, AVSTREAM_EVENT_FLAG_NEW_PACKETS), false);
+
+      stream.setEventFlags(AVSTREAM_EVENT_FLAG_NEW_PACKETS);
+      assert.equal(stream.hasEventFlags(AVSTREAM_EVENT_FLAG_METADATA_UPDATED, AVSTREAM_EVENT_FLAG_NEW_PACKETS), true);
+    });
+
+    it('should return false when only some event flags are set', () => {
+      stream.setEventFlags(AVSTREAM_EVENT_FLAG_METADATA_UPDATED);
+      assert.equal(stream.hasEventFlags(AVSTREAM_EVENT_FLAG_METADATA_UPDATED), true);
+      assert.equal(stream.hasEventFlags(AVSTREAM_EVENT_FLAG_METADATA_UPDATED, AVSTREAM_EVENT_FLAG_NEW_PACKETS), false);
     });
   });
 });

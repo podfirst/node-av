@@ -118,6 +118,23 @@ describe('Packet', () => {
       // which happens during demuxing/muxing operations
     });
 
+    it('should set and get timeBase', () => {
+      // Set timebase to 1/1000 (milliseconds)
+      packet.timeBase = new Rational(1, 1000);
+      assert.equal(packet.timeBase.num, 1);
+      assert.equal(packet.timeBase.den, 1000);
+
+      // Set timebase to 1/25 (25fps)
+      packet.timeBase = new Rational(1, 25);
+      assert.equal(packet.timeBase.num, 1);
+      assert.equal(packet.timeBase.den, 25);
+
+      // Set timebase to 1/90000 (90kHz)
+      packet.timeBase = new Rational(1, 90000);
+      assert.equal(packet.timeBase.num, 1);
+      assert.equal(packet.timeBase.den, 90000);
+    });
+
     it('should set and get flags', () => {
       packet.flags = AVFLAG_NONE;
       assert.equal(packet.flags, AVFLAG_NONE);
@@ -510,6 +527,41 @@ describe('Packet', () => {
 
       packet.flags = AVFLAG_NONE;
       assert.equal(packet.flags, AVFLAG_NONE);
+    });
+
+    it('should check for single flag using hasFlags', () => {
+      packet.flags = AVFLAG_NONE;
+      assert.equal(packet.hasFlags(AV_PKT_FLAG_KEY), false);
+
+      packet.setFlags(AV_PKT_FLAG_KEY);
+      assert.equal(packet.hasFlags(AV_PKT_FLAG_KEY), true);
+      assert.equal(packet.hasFlags(AV_PKT_FLAG_CORRUPT), false);
+
+      packet.setFlags(AV_PKT_FLAG_CORRUPT);
+      assert.equal(packet.hasFlags(AV_PKT_FLAG_KEY), true);
+      assert.equal(packet.hasFlags(AV_PKT_FLAG_CORRUPT), true);
+    });
+
+    it('should check for multiple flags using hasFlags', () => {
+      packet.flags = AVFLAG_NONE;
+      assert.equal(packet.hasFlags(AV_PKT_FLAG_KEY, AV_PKT_FLAG_CORRUPT), false);
+
+      packet.setFlags(AV_PKT_FLAG_KEY);
+      assert.equal(packet.hasFlags(AV_PKT_FLAG_KEY, AV_PKT_FLAG_CORRUPT), false);
+
+      packet.setFlags(AV_PKT_FLAG_CORRUPT);
+      assert.equal(packet.hasFlags(AV_PKT_FLAG_KEY, AV_PKT_FLAG_CORRUPT), true);
+
+      packet.setFlags(AV_PKT_FLAG_DISCARD);
+      assert.equal(packet.hasFlags(AV_PKT_FLAG_KEY, AV_PKT_FLAG_CORRUPT), true);
+      assert.equal(packet.hasFlags(AV_PKT_FLAG_KEY, AV_PKT_FLAG_CORRUPT, AV_PKT_FLAG_DISCARD), true);
+    });
+
+    it('should return false when only some flags are set', () => {
+      packet.setFlags(AV_PKT_FLAG_KEY);
+      assert.equal(packet.hasFlags(AV_PKT_FLAG_KEY), true);
+      assert.equal(packet.hasFlags(AV_PKT_FLAG_KEY, AV_PKT_FLAG_CORRUPT), false);
+      assert.equal(packet.hasFlags(AV_PKT_FLAG_KEY, AV_PKT_FLAG_DISCARD), false);
     });
   });
 });

@@ -88,6 +88,62 @@ describe('Filter', () => {
       assert.equal(typeof filter.flags, 'number', 'Flags should be a number');
       assert.ok(filter.flags >= 0, 'Flags should be non-negative');
     });
+
+    it('should check for single flag using hasFlags', () => {
+      const filter = Filter.getByName('scale');
+      assert.ok(filter);
+
+      const flags = filter.flags;
+
+      // Test hasFlags with an actual flag
+      if (flags !== 0) {
+        // Find first flag bit that is set
+        for (let i = 0; i < 32; i++) {
+          const testFlag = 1 << i;
+          if ((flags & testFlag) === testFlag) {
+            assert.equal(filter.hasFlags(testFlag), true);
+            break;
+          }
+        }
+      }
+    });
+
+    it('should check for multiple flags using hasFlags', () => {
+      const filter = Filter.getByName('scale');
+      assert.ok(filter);
+
+      const flags = filter.flags;
+
+      // Find two flag bits that are set
+      const foundFlags: number[] = [];
+      for (let i = 0; i < 32 && foundFlags.length < 2; i++) {
+        const testFlag = 1 << i;
+        if ((flags & testFlag) === testFlag) {
+          foundFlags.push(testFlag);
+        }
+      }
+
+      // If we found at least 2 flags, test with both
+      if (foundFlags.length >= 2) {
+        assert.equal(filter.hasFlags(foundFlags[0], foundFlags[1]), true);
+      }
+    });
+
+    it('should return false when flag is not set', () => {
+      const filter = Filter.getByName('scale');
+      assert.ok(filter);
+
+      const flags = filter.flags;
+
+      // Find a flag bit that is NOT set
+      for (let i = 0; i < 32; i++) {
+        const testFlag = 1 << i;
+        if ((flags & testFlag) !== testFlag) {
+          assert.equal(filter.hasFlags(testFlag), false);
+          break;
+        }
+      }
+    });
   });
 
   describe('Filter Type Detection', () => {

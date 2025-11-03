@@ -157,6 +157,94 @@ describe('Frame', () => {
     });
   });
 
+  describe('Frame Flags', () => {
+    beforeEach(() => {
+      frame.alloc();
+    });
+
+    it('should set and get flags', () => {
+      frame.flags = 0;
+      assert.equal(frame.flags, 0);
+
+      frame.flags = 0x1;
+      assert.equal(frame.flags, 0x1);
+
+      frame.flags = 0x3;
+      assert.equal(frame.flags, 0x3);
+    });
+
+    it('should set and get decodeErrorFlags', () => {
+      frame.decodeErrorFlags = 0;
+      assert.equal(frame.decodeErrorFlags, 0);
+
+      frame.decodeErrorFlags = 0x1;
+      assert.equal(frame.decodeErrorFlags, 0x1);
+
+      frame.decodeErrorFlags = 0x2;
+      assert.equal(frame.decodeErrorFlags, 0x2);
+    });
+
+    it('should set single flag using setFlags', () => {
+      frame.flags = 0;
+      frame.setFlags(0x1);
+      assert.equal(frame.flags, 0x1);
+
+      frame.setFlags(0x2);
+      assert.equal(frame.flags, 0x3); // Both flags set
+    });
+
+    it('should set multiple flags using setFlags', () => {
+      frame.flags = 0;
+      frame.setFlags(0x1, 0x4);
+      assert.equal(frame.flags, 0x5); // Both 0x1 and 0x4
+    });
+
+    it('should clear single flag using clearFlags', () => {
+      frame.flags = 0x7; // Set flags 0x1, 0x2, 0x4
+      frame.clearFlags(0x2);
+      assert.equal(frame.flags, 0x5); // Only 0x1 and 0x4 remain
+    });
+
+    it('should clear multiple flags using clearFlags', () => {
+      frame.flags = 0x7; // Set flags 0x1, 0x2, 0x4
+      frame.clearFlags(0x1, 0x4);
+      assert.equal(frame.flags, 0x2); // Only 0x2 remains
+    });
+
+    it('should check for single flag using hasFlags', () => {
+      frame.flags = 0x5; // Flags 0x1 and 0x4 set
+      assert.equal(frame.hasFlags(0x1), true);
+      assert.equal(frame.hasFlags(0x4), true);
+      assert.equal(frame.hasFlags(0x2), false);
+    });
+
+    it('should check for multiple flags using hasFlags', () => {
+      frame.flags = 0x7; // Flags 0x1, 0x2, 0x4 set
+      assert.equal(frame.hasFlags(0x1, 0x2), true);
+      assert.equal(frame.hasFlags(0x1, 0x4), true);
+      assert.equal(frame.hasFlags(0x1, 0x2, 0x4), true);
+
+      // One flag missing
+      assert.equal(frame.hasFlags(0x1, 0x8), false);
+    });
+
+    it('should check for decode error flags using hasDecodeErrorFlags', () => {
+      frame.decodeErrorFlags = 0x3; // Flags 0x1 and 0x2 set
+      assert.equal(frame.hasDecodeErrorFlags(0x1), true);
+      assert.equal(frame.hasDecodeErrorFlags(0x2), true);
+      assert.equal(frame.hasDecodeErrorFlags(0x4), false);
+    });
+
+    it('should check for multiple decode error flags using hasDecodeErrorFlags', () => {
+      frame.decodeErrorFlags = 0x7; // Flags 0x1, 0x2, 0x4 set
+      assert.equal(frame.hasDecodeErrorFlags(0x1, 0x2), true);
+      assert.equal(frame.hasDecodeErrorFlags(0x1, 0x4), true);
+
+      // One flag missing
+      assert.equal(frame.hasDecodeErrorFlags(0x1, 0x8), false);
+    });
+  });
+
   describe('Audio Frame Properties', () => {
     beforeEach(() => {
       frame.alloc();
@@ -301,6 +389,28 @@ describe('Frame', () => {
       // The actual value depends on FFmpeg's internal logic
       // We just verify it returns a valid bigint
     });
+
+    it('should set and get duration', () => {
+      frame.duration = 0n;
+      assert.equal(frame.duration, 0n);
+
+      frame.duration = 1000n;
+      assert.equal(frame.duration, 1000n);
+
+      frame.duration = 3003n;
+      assert.equal(frame.duration, 3003n);
+    });
+
+    it('should set and get repeatPict', () => {
+      frame.repeatPict = 0;
+      assert.equal(frame.repeatPict, 0);
+
+      frame.repeatPict = 1;
+      assert.equal(frame.repeatPict, 1);
+
+      frame.repeatPict = 2;
+      assert.equal(frame.repeatPict, 2);
+    });
   });
 
   describe('Frame Operations', () => {
@@ -414,6 +524,31 @@ describe('Frame', () => {
 
       // Should now be writable
       assert.ok(srcFrame.isWritable);
+    });
+
+    it('should apply cropping to frame', () => {
+      // Set up a video frame
+      srcFrame.format = AV_PIX_FMT_YUV420P;
+      srcFrame.width = 1920;
+      srcFrame.height = 1080;
+      srcFrame.allocBuffer();
+
+      // applyCropping returns 0 on success or negative error
+      // Note: This may return an error if there's no crop metadata
+      // The important thing is that the method exists and returns a number
+      const ret = srcFrame.applyCropping();
+      assert.ok(typeof ret === 'number', 'applyCropping should return a number');
+    });
+
+    it('should apply cropping with flags', () => {
+      srcFrame.format = AV_PIX_FMT_YUV420P;
+      srcFrame.width = 640;
+      srcFrame.height = 480;
+      srcFrame.allocBuffer();
+
+      // Test with flags parameter (0 for default behavior)
+      const ret = srcFrame.applyCropping(0);
+      assert.ok(typeof ret === 'number', 'applyCropping with flags should return a number');
     });
   });
 

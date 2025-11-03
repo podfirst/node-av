@@ -150,6 +150,29 @@ describe('FilterGraph', () => {
 
       graph.free();
     });
+
+    it('should get and set aresample swr options', () => {
+      const graph = new FilterGraph();
+      graph.alloc();
+
+      // Initially null or empty
+      const initialOpts = graph.aresampleSwrOpts;
+      assert.ok(initialOpts === null || typeof initialOpts === 'string', 'Should be null or string');
+
+      // Set options
+      graph.aresampleSwrOpts = 'dither_method=triangular';
+      assert.equal(graph.aresampleSwrOpts, 'dither_method=triangular', 'Should update swr options');
+
+      // Set multiple options
+      graph.aresampleSwrOpts = 'resampler=soxr:precision=28';
+      assert.equal(graph.aresampleSwrOpts, 'resampler=soxr:precision=28', 'Should update swr options with multiple values');
+
+      // Clear options
+      graph.aresampleSwrOpts = null;
+      assert.equal(graph.aresampleSwrOpts, null, 'Should clear swr options');
+
+      graph.free();
+    });
   });
 
   describe('Filter Creation', () => {

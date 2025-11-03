@@ -21,7 +21,10 @@ import {
   AV_PIX_FMT_VIDEOTOOLBOX,
   AV_PIX_FMT_YUV420P,
   AV_ROUND_DOWN,
+  AV_ROUND_INF,
+  AV_ROUND_NEAR_INF,
   AV_ROUND_UP,
+  AV_ROUND_ZERO,
   AV_SAMPLE_FMT_DBL,
   AV_SAMPLE_FMT_DBLP,
   AV_SAMPLE_FMT_FLT,
@@ -38,6 +41,8 @@ import {
   Rational,
   avChannelLayoutDescribe,
   avCompareTs,
+  avGcd,
+  avGetAudioFrameDuration2,
   avGetBytesPerSample,
   avGetCodecStringDash,
   avGetCodecStringHls,
@@ -54,7 +59,11 @@ import {
   avImageCopy2,
   avImageCopyToBuffer,
   avImageGetBufferSize,
+  avInvQ,
+  avMulQ,
+  avRescaleDelta,
   avRescaleQ,
+  avRescaleQRnd,
   avRescaleRnd,
   avSampleFmtIsPlanar,
   avSamplesAlloc,
@@ -982,6 +991,211 @@ describe('Utilities', () => {
       // Both should return valid strings
       assert.ok(dashCodec, 'DASH should return codec string');
       assert.ok(hlsCodec, 'HLS should return codec string');
+
+      await media.close();
+    });
+  });
+
+  describe('Rational Number Operations', () => {
+    it('should multiply two rational numbers', () => {
+      // Simple multiplication
+      const a = new Rational(2, 3);
+      const b = new Rational(3, 4);
+      const result = avMulQ(a, b);
+      assert.equal(result.num, 1);
+      assert.equal(result.den, 2); // (2/3) * (3/4) = 6/12 = 1/2
+
+      // Multiply framerate by 2
+      const framerate = new Rational(25, 1);
+      const doubled = avMulQ(framerate, new Rational(2, 1));
+      assert.equal(doubled.num, 50);
+      assert.equal(doubled.den, 1);
+
+      // Multiply by zero
+      const zero = avMulQ(framerate, new Rational(0, 1));
+      assert.equal(zero.num, 0);
+      assert.equal(zero.den, 1);
+    });
+
+    it('should invert rational number', () => {
+      // Convert framerate to frame duration
+      const framerate = new Rational(25, 1); // 25 fps
+      const frameDuration = avInvQ(framerate);
+      assert.equal(frameDuration.num, 1);
+      assert.equal(frameDuration.den, 25); // 1/25 seconds
+
+      // NTSC framerate
+      const ntscFps = new Rational(30000, 1001);
+      const ntscDuration = avInvQ(ntscFps);
+      assert.equal(ntscDuration.num, 1001);
+      assert.equal(ntscDuration.den, 30000);
+
+      // Simple inversion
+      const simple = new Rational(3, 4);
+      const inverted = avInvQ(simple);
+      assert.equal(inverted.num, 4);
+      assert.equal(inverted.den, 3);
+    });
+
+    it('should calculate greatest common divisor', () => {
+      // Common audio sample rates
+      assert.equal(avGcd(48000, 44100), 300n);
+
+      // Simple cases
+      assert.equal(avGcd(12, 8), 4n);
+      assert.equal(avGcd(100, 50), 50n);
+      assert.equal(avGcd(7, 13), 1n); // Coprime numbers
+
+      // With bigint
+      assert.equal(avGcd(48000n, 44100n), 300n);
+
+      // Edge cases
+      assert.equal(avGcd(0, 10), 10n);
+      assert.equal(avGcd(10, 0), 10n);
+    });
+  });
+
+  describe('Advanced Rescale Functions', () => {
+    it('should rescale with rounding mode', () => {
+      const pts = 1000n;
+      const srcTb = new Rational(1, 48000);
+      const dstTb = new Rational(1, 90000);
+
+      // Round up
+      const ptsUp = avRescaleQRnd(pts, srcTb, dstTb, AV_ROUND_UP);
+      assert.ok(typeof ptsUp === 'bigint');
+      assert.ok(ptsUp >= 1875n); // 1000 * 90000 / 48000 = 1875
+
+      // Round down
+      const ptsDown = avRescaleQRnd(pts, srcTb, dstTb, AV_ROUND_DOWN);
+      assert.ok(typeof ptsDown === 'bigint');
+      assert.ok(ptsDown <= 1875n);
+
+      // Round to nearest
+      const ptsNearest = avRescaleQRnd(pts, srcTb, dstTb, AV_ROUND_NEAR_INF);
+      assert.ok(typeof ptsNearest === 'bigint');
+    });
+
+    it('should handle different rounding modes', () => {
+      const value = 10n;
+      const src = new Rational(3, 1);
+      const dst = new Rational(1, 7);
+
+      // Test all rounding modes
+      const roundZero = avRescaleQRnd(value, src, dst, AV_ROUND_ZERO);
+      assert.ok(typeof roundZero === 'bigint');
+
+      const roundInf = avRescaleQRnd(value, src, dst, AV_ROUND_INF);
+      assert.ok(typeof roundInf === 'bigint');
+
+      const roundDown = avRescaleQRnd(value, src, dst, AV_ROUND_DOWN);
+      assert.ok(typeof roundDown === 'bigint');
+
+      const roundUp = avRescaleQRnd(value, src, dst, AV_ROUND_UP);
+      assert.ok(typeof roundUp === 'bigint');
+
+      const roundNear = avRescaleQRnd(value, src, dst, AV_ROUND_NEAR_INF);
+      assert.ok(typeof roundNear === 'bigint');
+    });
+
+    it('should handle null values in rescaleQRnd', () => {
+      const srcTb = new Rational(1, 1000);
+      const dstTb = new Rational(1, 1000000);
+
+      const result = avRescaleQRnd(null, srcTb, dstTb, AV_ROUND_UP);
+      assert.ok(typeof result === 'bigint');
+    });
+
+    it('should rescale with delta', () => {
+      const inTb = new Rational(1, 48000);
+      const inTs = 1000000n;
+      const fsTb = new Rational(1, 44100);
+      const duration = 1024;
+      const lastRef = { value: 0n };
+      const outTb = new Rational(1, 96000);
+
+      const rescaled = avRescaleDelta(inTb, inTs, fsTb, duration, lastRef, outTb);
+      assert.ok(typeof rescaled === 'bigint');
+      assert.ok(rescaled > 0n);
+
+      // lastRef.value should be updated
+      assert.ok(typeof lastRef.value === 'bigint');
+    });
+
+    it('should handle audio resampling with avRescaleDelta', () => {
+      // Test common audio resampling scenario
+      const inTb = new Rational(1, 48000); // 48kHz input
+      const inTs = 48000n; // 1 second
+      const fsTb = new Rational(1, 44100); // 44.1kHz target
+      const duration = 1024; // AAC frame size
+      const lastRef = { value: 0n };
+      const outTb = new Rational(1, 44100);
+
+      const result = avRescaleDelta(inTb, inTs, fsTb, duration, lastRef, outTb);
+      assert.ok(typeof result === 'bigint');
+      assert.ok(result > 0n);
+    });
+  });
+
+  describe('Audio Frame Duration', () => {
+    it('should get audio frame duration for AAC', async () => {
+      const inputFile = getInputFile('demux.mp4');
+      const media = await MediaInput.open(inputFile);
+      const audioStream = media.audio();
+
+      if (audioStream) {
+        const codecpar = audioStream.codecpar;
+        const frameBytes = 1024;
+
+        const duration = avGetAudioFrameDuration2(codecpar, frameBytes);
+        assert.ok(typeof duration === 'number');
+        assert.ok(duration >= 0);
+
+        // AAC typically has 1024 samples per frame
+        if (duration > 0) {
+          console.log('Audio frame duration:', duration, 'samples');
+        }
+      } else {
+        console.log('Skipping audio frame duration test: no audio stream');
+      }
+
+      await media.close();
+    });
+
+    it('should handle various frame sizes', async () => {
+      const inputFile = getInputFile('demux.mp4');
+      const media = await MediaInput.open(inputFile);
+      const audioStream = media.audio();
+
+      if (audioStream) {
+        const codecpar = audioStream.codecpar;
+
+        // Test different frame byte sizes
+        const testSizes = [512, 1024, 2048, 4096];
+
+        for (const frameBytes of testSizes) {
+          const duration = avGetAudioFrameDuration2(codecpar, frameBytes);
+          assert.ok(typeof duration === 'number');
+          assert.ok(duration >= 0);
+        }
+      }
+
+      await media.close();
+    });
+
+    it('should handle zero frame bytes', async () => {
+      const inputFile = getInputFile('demux.mp4');
+      const media = await MediaInput.open(inputFile);
+      const audioStream = media.audio();
+
+      if (audioStream) {
+        const codecpar = audioStream.codecpar;
+
+        // Zero bytes should return 0 or calculated duration
+        const duration = avGetAudioFrameDuration2(codecpar, 0);
+        assert.ok(typeof duration === 'number');
+        assert.ok(duration >= 0);
+      }
 
       await media.close();
     });
