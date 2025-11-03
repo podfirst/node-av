@@ -139,6 +139,21 @@ export class FilterGraph extends OptionMember<NativeFilterGraph> implements Disp
   }
 
   /**
+   * Swresample options for aresample filter.
+   *
+   * Options string passed to swresample for audio resampling operations.
+   *
+   * Direct mapping to AVFilterGraph->aresample_swr_opts.
+   */
+  get aresampleSwrOpts(): string | null {
+    return this.native.aresampleSwrOpts;
+  }
+
+  set aresampleSwrOpts(value: string | null) {
+    this.native.aresampleSwrOpts = value;
+  }
+
+  /**
    * Allocate a filter graph.
    *
    * Allocates memory for the filter graph structure.
