@@ -422,6 +422,183 @@ export class Frame implements Disposable, NativeWrapper<NativeFrame> {
   }
 
   /**
+   * Frame flags.
+   *
+   * Combination of AVFrameFlags (e.g., AV_FRAME_FLAG_CORRUPT, AV_FRAME_FLAG_KEY).
+   *
+   * Direct mapping to AVFrame->flags.
+   */
+  get flags(): number {
+    return this.native.flags;
+  }
+
+  set flags(value: number) {
+    this.native.flags = value;
+  }
+
+  /**
+   * Decode error flags.
+   *
+   * Indicates errors detected during decoding.
+   * Non-zero value means the frame may be corrupted.
+   *
+   * Direct mapping to AVFrame->decode_error_flags.
+   */
+  get decodeErrorFlags(): number {
+    return this.native.decodeErrorFlags;
+  }
+
+  set decodeErrorFlags(value: number) {
+    this.native.decodeErrorFlags = value;
+  }
+
+  /**
+   * Frame duration.
+   *
+   * Duration of this frame in units of time_base.
+   * This is FFmpeg's best guess for how long the frame should be displayed.
+   * May be 0 if unknown or unavailable.
+   *
+   * Direct mapping to AVFrame->duration.
+   */
+  get duration(): bigint {
+    return this.native.duration;
+  }
+
+  set duration(value: bigint) {
+    this.native.duration = value;
+  }
+
+  /**
+   * Number of fields in this frame that should be repeated.
+   *
+   * For interlaced video, indicates how many times the frame should be repeated
+   * when displayed. For progressive video, this is typically 0.
+   * Formula: display_time = (repeat_pict / (2*fps))
+   *
+   * Direct mapping to AVFrame->repeat_pict.
+   */
+  get repeatPict(): number {
+    return this.native.repeatPict;
+  }
+
+  set repeatPict(value: number) {
+    this.native.repeatPict = value;
+  }
+
+  /**
+   * Set frame flags.
+   *
+   * Sets one or more flags using bitwise OR. Allows setting multiple flags
+   * without manually performing bitwise operations.
+   *
+   * @param flags - One or more flag values to set
+   *
+   * @example
+   * ```typescript
+   * import { AV_FRAME_FLAG_KEY } from 'node-av/constants';
+   *
+   * // Mark frame as key frame
+   * frame.setFlags(AV_FRAME_FLAG_KEY);
+   * ```
+   *
+   * @see {@link clearFlags} To unset flags
+   * @see {@link hasFlags} To check flags
+   * @see {@link flags} For direct flag access
+   */
+  setFlags(...flags: number[]): void {
+    for (const flag of flags) {
+      this.native.flags |= flag;
+    }
+  }
+
+  /**
+   * Clear frame flags.
+   *
+   * Clears one or more flags using bitwise AND NOT. Allows clearing multiple
+   * flags without manually performing bitwise operations.
+   *
+   * @param flags - One or more flag values to clear
+   *
+   * @example
+   * ```typescript
+   * import { AV_FRAME_FLAG_CORRUPT } from 'node-av/constants';
+   *
+   * // Clear corrupt flag
+   * frame.clearFlags(AV_FRAME_FLAG_CORRUPT);
+   * ```
+   *
+   * @see {@link setFlags} To set flags
+   * @see {@link hasFlags} To check flags
+   * @see {@link flags} For direct flag access
+   */
+  clearFlags(...flags: number[]): void {
+    for (const flag of flags) {
+      this.native.flags &= ~flag;
+    }
+  }
+
+  /**
+   * Check if frame has specific flags.
+   *
+   * Tests whether all specified flags are set using bitwise AND.
+   *
+   * @param flags - One or more flag values to check
+   *
+   * @returns true if all specified flags are set, false otherwise
+   *
+   * @example
+   * ```typescript
+   * import { AV_FRAME_FLAG_CORRUPT } from 'node-av/constants';
+   *
+   * if (frame.hasFlags(AV_FRAME_FLAG_CORRUPT)) {
+   *   console.log('Frame is corrupted');
+   * }
+   * ```
+   *
+   * @see {@link setFlags} To set flags
+   * @see {@link clearFlags} To unset flags
+   * @see {@link flags} For direct flag access
+   */
+  hasFlags(...flags: number[]): boolean {
+    for (const flag of flags) {
+      if ((this.native.flags & flag) !== flag) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Check if frame has decode errors.
+   *
+   * Tests whether all specified decode error flags are set using bitwise AND.
+   *
+   * @param flags - One or more decode error flag values to check
+   *
+   * @returns true if all specified error flags are set, false otherwise
+   *
+   * @example
+   * ```typescript
+   * import { FF_DECODE_ERROR_INVALID_BITSTREAM } from 'node-av/constants';
+   *
+   * if (frame.hasDecodeErrorFlags(FF_DECODE_ERROR_INVALID_BITSTREAM)) {
+   *   console.log('Frame has invalid bitstream error');
+   * }
+   * ```
+   *
+   * @see {@link decodeErrorFlags} For direct error flag access
+   */
+  hasDecodeErrorFlags(...flags: number[]): boolean {
+    for (const flag of flags) {
+      if ((this.native.decodeErrorFlags & flag) !== flag) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
    * Check if this is a video frame.
    *
    * Video frames have width and height > 0.
@@ -1024,6 +1201,41 @@ export class Frame implements Disposable, NativeWrapper<NativeFrame> {
    */
   removeSideData(type: AVFrameSideDataType): void {
     this.native.removeSideData(type);
+  }
+
+  /**
+   * Apply cropping to the frame.
+   *
+   * Crops the frame according to its crop metadata (AVFrame crop fields).
+   * This adjusts the frame dimensions and data pointers to reflect the cropped region.
+   * The cropped-out area is discarded, reducing frame size.
+   *
+   * Direct mapping to av_frame_apply_cropping().
+   *
+   * @param flags - Cropping flags (default: AV_FRAME_CROP_UNALIGNED = 1)
+   *                AV_FRAME_CROP_UNALIGNED allows unaligned cropping for lavfi compatibility
+   *
+   * @returns 0 on success, negative error code on failure
+   *
+   * @example
+   * ```typescript
+   * import { Frame, FFmpegError } from 'node-av';
+   *
+   * const frame = new Frame();
+   * // ... decode frame with crop metadata ...
+   *
+   * // Apply cropping based on metadata
+   * const ret = frame.applyCropping();
+   * FFmpegError.throwIfError(ret, 'Failed to apply cropping');
+   *
+   * // Frame dimensions are now updated to cropped size
+   * console.log(`Cropped to ${frame.width}x${frame.height}`);
+   * ```
+   *
+   * @see [av_frame_apply_cropping](https://ffmpeg.org/doxygen/trunk/group__lavu__frame.html#ga6b8c3f0b735c66e35c4ed48e6e7e3e8c) - FFmpeg Doxygen
+   */
+  applyCropping(flags?: number): number {
+    return this.native.applyCropping(flags);
   }
 
   /**
