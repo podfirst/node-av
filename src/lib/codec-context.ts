@@ -549,6 +549,38 @@ export class CodecContext extends OptionMember<NativeCodecContext> implements Di
   }
 
   /**
+   * Number of bits per coded sample.
+   *
+   * Bits per sample/pixel from the demuxer (needed by some codecs).
+   * For uncompressed formats, this is the bits per sample.
+   *
+   * Direct mapping to AVCodecContext->bits_per_coded_sample.
+   */
+  get bitsPerCodedSample(): number {
+    return this.native.bitsPerCodedSample;
+  }
+
+  set bitsPerCodedSample(value: number) {
+    this.native.bitsPerCodedSample = value;
+  }
+
+  /**
+   * Number of bits per raw sample.
+   *
+   * Bits per sample before compression/encoding.
+   * Only set when different from bitsPerCodedSample.
+   *
+   * Direct mapping to AVCodecContext->bits_per_raw_sample.
+   */
+  get bitsPerRawSample(): number {
+    return this.native.bitsPerRawSample;
+  }
+
+  set bitsPerRawSample(value: number) {
+    this.native.bitsPerRawSample = value;
+  }
+
+  /**
    * Current frame number.
    *
    * Frame counter for debugging.
@@ -1242,10 +1274,13 @@ export class CodecContext extends OptionMember<NativeCodecContext> implements Di
    * ```
    *
    * @see {@link clearFlags} To unset flags
+   * @see {@link hasFlags} To check flags
    * @see {@link flags} For direct flag access
    */
   setFlags(...flags: AVCodecFlag[]): void {
-    this.native.setFlags(...flags);
+    for (const flag of flags) {
+      this.native.flags = (this.native.flags | flag) as AVCodecFlag;
+    }
   }
 
   /**
@@ -1265,10 +1300,44 @@ export class CodecContext extends OptionMember<NativeCodecContext> implements Di
    * ```
    *
    * @see {@link setFlags} To set flags
+   * @see {@link hasFlags} To check flags
    * @see {@link flags} For direct flag access
    */
   clearFlags(...flags: AVCodecFlag[]): void {
-    this.native.clearFlags(...flags);
+    for (const flag of flags) {
+      this.native.flags = (this.native.flags & ~flag) as AVCodecFlag;
+    }
+  }
+
+  /**
+   * Check if codec has specific flags.
+   *
+   * Tests whether all specified flags are set using bitwise AND.
+   *
+   * @param flags - One or more flag values to check
+   *
+   * @returns true if all specified flags are set, false otherwise
+   *
+   * @example
+   * ```typescript
+   * import { AV_CODEC_FLAG_QSCALE } from 'node-av/constants';
+   *
+   * if (codecContext.hasFlags(AV_CODEC_FLAG_QSCALE)) {
+   *   console.log('QSCALE flag is set');
+   * }
+   * ```
+   *
+   * @see {@link setFlags} To set flags
+   * @see {@link clearFlags} To unset flags
+   * @see {@link flags} For direct flag access
+   */
+  hasFlags(...flags: AVCodecFlag[]): boolean {
+    for (const flag of flags) {
+      if ((this.native.flags & flag) !== flag) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /**
@@ -1288,10 +1357,13 @@ export class CodecContext extends OptionMember<NativeCodecContext> implements Di
    * ```
    *
    * @see {@link clearFlags2} To unset flags2
+   * @see {@link hasFlags2} To check flags2
    * @see {@link flags2} For direct flag2 access
    */
   setFlags2(...flags: AVCodecFlag2[]): void {
-    this.native.setFlags2(...flags);
+    for (const flag of flags) {
+      this.native.flags2 = (this.native.flags2 | flag) as AVCodecFlag2;
+    }
   }
 
   /**
@@ -1311,10 +1383,44 @@ export class CodecContext extends OptionMember<NativeCodecContext> implements Di
    * ```
    *
    * @see {@link setFlags2} To set flags2
+   * @see {@link hasFlags2} To check flags2
    * @see {@link flags2} For direct flag2 access
    */
   clearFlags2(...flags: AVCodecFlag2[]): void {
-    this.native.clearFlags2(...flags);
+    for (const flag of flags) {
+      this.native.flags2 = (this.native.flags2 & ~flag) as AVCodecFlag2;
+    }
+  }
+
+  /**
+   * Check if codec has specific flags2.
+   *
+   * Tests whether all specified flags2 are set using bitwise AND.
+   *
+   * @param flags - One or more flag2 values to check
+   *
+   * @returns true if all specified flags2 are set, false otherwise
+   *
+   * @example
+   * ```typescript
+   * import { AV_CODEC_FLAG2_FAST } from 'node-av/constants';
+   *
+   * if (codecContext.hasFlags2(AV_CODEC_FLAG2_FAST)) {
+   *   console.log('FAST flag2 is set');
+   * }
+   * ```
+   *
+   * @see {@link setFlags2} To set flags2
+   * @see {@link clearFlags2} To unset flags2
+   * @see {@link flags2} For direct flag2 access
+   */
+  hasFlags2(...flags: AVCodecFlag2[]): boolean {
+    for (const flag of flags) {
+      if ((this.native.flags2 & flag) !== flag) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /**
