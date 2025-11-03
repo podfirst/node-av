@@ -35,10 +35,6 @@ Napi::Object CodecContext::Init(Napi::Env env, Napi::Object exports) {
     InstanceMethod<&CodecContext::ReceivePacketAsync>("receivePacket"),
     InstanceMethod<&CodecContext::ReceivePacketSync>("receivePacketSync"),
     InstanceMethod<&CodecContext::SetHardwarePixelFormat>("setHardwarePixelFormat"),
-    InstanceMethod<&CodecContext::SetFlagsMethod>("setFlags"),
-    InstanceMethod<&CodecContext::ClearFlagsMethod>("clearFlags"),
-    InstanceMethod<&CodecContext::SetFlags2Method>("setFlags2"),
-    InstanceMethod<&CodecContext::ClearFlags2Method>("clearFlags2"),
     InstanceMethod<&CodecContext::Dispose>(Napi::Symbol::WellKnown(env, "dispose")),
 
     InstanceAccessor<&CodecContext::GetCodecType, &CodecContext::SetCodecType>("codecType"),
@@ -73,6 +69,8 @@ Napi::Object CodecContext::Init(Napi::Env env, Napi::Object exports) {
     InstanceAccessor<&CodecContext::GetChannels, &CodecContext::SetChannels>("channels"),
     InstanceAccessor<&CodecContext::GetSampleFormat, &CodecContext::SetSampleFormat>("sampleFormat"),
     InstanceAccessor<&CodecContext::GetFrameSize, &CodecContext::SetFrameSize>("frameSize"),
+    InstanceAccessor<&CodecContext::GetBitsPerCodedSample, &CodecContext::SetBitsPerCodedSample>("bitsPerCodedSample"),
+    InstanceAccessor<&CodecContext::GetBitsPerRawSample, &CodecContext::SetBitsPerRawSample>("bitsPerRawSample"),
     InstanceAccessor<&CodecContext::GetFrameNumber>("frameNumber"),
     InstanceAccessor<&CodecContext::GetChannelLayout, &CodecContext::SetChannelLayout>("channelLayout"),
     InstanceAccessor<&CodecContext::GetQMin, &CodecContext::SetQMin>("qMin"),
@@ -683,6 +681,34 @@ void CodecContext::SetFrameSize(const Napi::CallbackInfo& info, const Napi::Valu
   }
 }
 
+Napi::Value CodecContext::GetBitsPerCodedSample(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (!context_) {
+    return Napi::Number::New(env, 0);
+  }
+  return Napi::Number::New(env, context_->bits_per_coded_sample);
+}
+
+void CodecContext::SetBitsPerCodedSample(const Napi::CallbackInfo& info, const Napi::Value& value) {
+  if (context_) {
+    context_->bits_per_coded_sample = value.As<Napi::Number>().Int32Value();
+  }
+}
+
+Napi::Value CodecContext::GetBitsPerRawSample(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (!context_) {
+    return Napi::Number::New(env, 0);
+  }
+  return Napi::Number::New(env, context_->bits_per_raw_sample);
+}
+
+void CodecContext::SetBitsPerRawSample(const Napi::CallbackInfo& info, const Napi::Value& value) {
+  if (context_) {
+    context_->bits_per_raw_sample = value.As<Napi::Number>().Int32Value();
+  }
+}
+
 Napi::Value CodecContext::GetFrameNumber(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
   if (!context_) {
@@ -936,90 +962,6 @@ Napi::Value CodecContext::SetHardwarePixelFormat(const Napi::CallbackInfo& info)
   
   // Set the static callback function
   context_->get_format = CodecContext::GetFormatCallback;
-  
-  return env.Undefined();
-}
-
-Napi::Value CodecContext::SetFlagsMethod(const Napi::CallbackInfo& info) {
-  Napi::Env env = info.Env();
-
-  if (!context_) {
-    Napi::Error::New(env, "CodecContext not allocated").ThrowAsJavaScriptException();
-    return env.Undefined();
-  }
-
-  // Iterate through all arguments and OR them together
-  for (size_t i = 0; i < info.Length(); i++) {
-    if (!info[i].IsNumber()) {
-      Napi::TypeError::New(env, "All arguments must be numbers (flags)").ThrowAsJavaScriptException();
-      return env.Undefined();
-    }
-    int flag = info[i].As<Napi::Number>().Int32Value();
-    context_->flags |= flag;
-  }
-
-  return env.Undefined();
-}
-
-Napi::Value CodecContext::ClearFlagsMethod(const Napi::CallbackInfo& info) {
-  Napi::Env env = info.Env();
-
-  if (!context_) {
-    Napi::Error::New(env, "CodecContext not allocated").ThrowAsJavaScriptException();
-    return env.Undefined();
-  }
-
-  // Iterate through all arguments and clear them with AND NOT
-  for (size_t i = 0; i < info.Length(); i++) {
-    if (!info[i].IsNumber()) {
-      Napi::TypeError::New(env, "All arguments must be numbers (flags)").ThrowAsJavaScriptException();
-      return env.Undefined();
-    }
-    int flag = info[i].As<Napi::Number>().Int32Value();
-    context_->flags &= ~flag;
-  }
-
-  return env.Undefined();
-}
-
-Napi::Value CodecContext::SetFlags2Method(const Napi::CallbackInfo& info) {
-  Napi::Env env = info.Env();
-
-  if (!context_) {
-    Napi::Error::New(env, "CodecContext not allocated").ThrowAsJavaScriptException();
-    return env.Undefined();
-  }
-
-  // Iterate through all arguments and OR them together
-  for (size_t i = 0; i < info.Length(); i++) {
-    if (!info[i].IsNumber()) {
-      Napi::TypeError::New(env, "All arguments must be numbers (flags)").ThrowAsJavaScriptException();
-      return env.Undefined();
-    }
-    int flag = info[i].As<Napi::Number>().Int32Value();
-    context_->flags2 |= flag;
-  }
-
-  return env.Undefined();
-}
-
-Napi::Value CodecContext::ClearFlags2Method(const Napi::CallbackInfo& info) {
-  Napi::Env env = info.Env();
-
-  if (!context_) {
-    Napi::Error::New(env, "CodecContext not allocated").ThrowAsJavaScriptException();
-    return env.Undefined();
-  }
-
-  // Iterate through all arguments and clear them with AND NOT
-  for (size_t i = 0; i < info.Length(); i++) {
-    if (!info[i].IsNumber()) {
-      Napi::TypeError::New(env, "All arguments must be numbers (flags)").ThrowAsJavaScriptException();
-      return env.Undefined();
-    }
-    int flag = info[i].As<Napi::Number>().Int32Value();
-    context_->flags2 &= ~flag;
-  }
 
   return env.Undefined();
 }

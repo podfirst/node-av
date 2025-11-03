@@ -53,10 +53,6 @@ private:
   Napi::Value ReceivePacketAsync(const Napi::CallbackInfo& info);
   Napi::Value ReceivePacketSync(const Napi::CallbackInfo& info);
   Napi::Value IsOpen(const Napi::CallbackInfo& info);
-  Napi::Value SetFlagsMethod(const Napi::CallbackInfo& info);
-  Napi::Value ClearFlagsMethod(const Napi::CallbackInfo& info);
-  Napi::Value SetFlags2Method(const Napi::CallbackInfo& info);
-  Napi::Value ClearFlags2Method(const Napi::CallbackInfo& info);
   Napi::Value Dispose(const Napi::CallbackInfo& info);
 
   Napi::Value GetCodecType(const Napi::CallbackInfo& info);
@@ -151,6 +147,12 @@ private:
 
   Napi::Value GetFrameSize(const Napi::CallbackInfo& info);
   void SetFrameSize(const Napi::CallbackInfo& info, const Napi::Value& value);
+
+  Napi::Value GetBitsPerCodedSample(const Napi::CallbackInfo& info);
+  void SetBitsPerCodedSample(const Napi::CallbackInfo& info, const Napi::Value& value);
+
+  Napi::Value GetBitsPerRawSample(const Napi::CallbackInfo& info);
+  void SetBitsPerRawSample(const Napi::CallbackInfo& info, const Napi::Value& value);
 
   Napi::Value GetFrameNumber(const Napi::CallbackInfo& info);
 
