@@ -26,6 +26,7 @@ Napi::Object Frame::Init(Napi::Env env, Napi::Object exports) {
     InstanceMethod<&Frame::GetSideData>("getSideData"),
     InstanceMethod<&Frame::NewSideData>("newSideData"),
     InstanceMethod<&Frame::RemoveSideData>("removeSideData"),
+    InstanceMethod<&Frame::ApplyCropping>("applyCropping"),
     InstanceMethod<&Frame::Dispose>(Napi::Symbol::WellKnown(env, "dispose")),
 
     InstanceAccessor<&Frame::GetFormat, &Frame::SetFormat>("format"),
@@ -52,6 +53,10 @@ Napi::Object Frame::Init(Napi::Env env, Napi::Object exports) {
     InstanceAccessor<&Frame::GetExtendedData>("extendedData"),
     InstanceAccessor<&Frame::GetIsWritable>("isWritable"),
     InstanceAccessor<&Frame::GetHwFramesCtx, &Frame::SetHwFramesCtx>("hwFramesCtx"),
+    InstanceAccessor<&Frame::GetFlags, &Frame::SetFlags>("flags"),
+    InstanceAccessor<&Frame::GetDecodeErrorFlags, &Frame::SetDecodeErrorFlags>("decodeErrorFlags"),
+    InstanceAccessor<&Frame::GetDuration, &Frame::SetDuration>("duration"),
+    InstanceAccessor<&Frame::GetRepeatPict, &Frame::SetRepeatPict>("repeatPict"),
   });
   
   constructor = Napi::Persistent(func);
@@ -1037,6 +1042,95 @@ Napi::Value Frame::RemoveSideData(const Napi::CallbackInfo& info) {
   
   av_frame_remove_side_data(frame_, type);
   return env.Undefined();
+}
+
+Napi::Value Frame::GetFlags(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (!frame_) {
+    return env.Null();
+  }
+  return Napi::Number::New(env, frame_->flags);
+}
+
+void Frame::SetFlags(const Napi::CallbackInfo& info, const Napi::Value& value) {
+  if (!frame_) {
+    return;
+  }
+  if (value.IsNumber()) {
+    frame_->flags = value.As<Napi::Number>().Int32Value();
+  }
+}
+
+Napi::Value Frame::GetDecodeErrorFlags(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (!frame_) {
+    return env.Null();
+  }
+  return Napi::Number::New(env, frame_->decode_error_flags);
+}
+
+void Frame::SetDecodeErrorFlags(const Napi::CallbackInfo& info, const Napi::Value& value) {
+  if (!frame_) {
+    return;
+  }
+  if (value.IsNumber()) {
+    frame_->decode_error_flags = value.As<Napi::Number>().Int32Value();
+  }
+}
+
+Napi::Value Frame::GetDuration(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (!frame_) {
+    return env.Null();
+  }
+  return Napi::BigInt::New(env, frame_->duration);
+}
+
+void Frame::SetDuration(const Napi::CallbackInfo& info, const Napi::Value& value) {
+  if (!frame_) {
+    return;
+  }
+  if (value.IsBigInt()) {
+    bool lossless;
+    frame_->duration = value.As<Napi::BigInt>().Int64Value(&lossless);
+  }
+}
+
+Napi::Value Frame::GetRepeatPict(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (!frame_) {
+    return env.Null();
+  }
+  return Napi::Number::New(env, frame_->repeat_pict);
+}
+
+void Frame::SetRepeatPict(const Napi::CallbackInfo& info, const Napi::Value& value) {
+  if (!frame_) {
+    return;
+  }
+  if (value.IsNumber()) {
+    frame_->repeat_pict = value.As<Napi::Number>().Int32Value();
+  }
+}
+
+Napi::Value Frame::ApplyCropping(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+
+  if (!frame_) {
+    Napi::TypeError::New(env, "Frame has been freed").ThrowAsJavaScriptException();
+    return env.Null();
+  }
+
+  // Get flags argument (default to AV_FRAME_CROP_UNALIGNED = 1 << 0)
+  int flags = 1 << 0; // AV_FRAME_CROP_UNALIGNED
+  if (info.Length() > 0 && info[0].IsNumber()) {
+    flags = info[0].As<Napi::Number>().Int32Value();
+  }
+
+  // Apply cropping using FFmpeg's av_frame_apply_cropping
+  int ret = av_frame_apply_cropping(frame_, flags);
+
+  return Napi::Number::New(env, ret);
 }
 
 Napi::Value Frame::Dispose(const Napi::CallbackInfo& info) {

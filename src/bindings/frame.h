@@ -107,14 +107,28 @@ private:
   
   Napi::Value GetChromaLocation(const Napi::CallbackInfo& info);
   void SetChromaLocation(const Napi::CallbackInfo& info, const Napi::Value& value);
-  
+
   Napi::Value GetData(const Napi::CallbackInfo& info);
   Napi::Value GetExtendedData(const Napi::CallbackInfo& info);
-  
+
   Napi::Value GetIsWritable(const Napi::CallbackInfo& info);
 
   Napi::Value GetHwFramesCtx(const Napi::CallbackInfo& info);
   void SetHwFramesCtx(const Napi::CallbackInfo& info, const Napi::Value& value);
+
+  Napi::Value GetFlags(const Napi::CallbackInfo& info);
+  void SetFlags(const Napi::CallbackInfo& info, const Napi::Value& value);
+
+  Napi::Value GetDecodeErrorFlags(const Napi::CallbackInfo& info);
+  void SetDecodeErrorFlags(const Napi::CallbackInfo& info, const Napi::Value& value);
+
+  Napi::Value GetDuration(const Napi::CallbackInfo& info);
+  void SetDuration(const Napi::CallbackInfo& info, const Napi::Value& value);
+
+  Napi::Value GetRepeatPict(const Napi::CallbackInfo& info);
+  void SetRepeatPict(const Napi::CallbackInfo& info, const Napi::Value& value);
+
+  Napi::Value ApplyCropping(const Napi::CallbackInfo& info);
 };
 
 } // namespace ffmpeg
