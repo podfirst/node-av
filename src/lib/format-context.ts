@@ -169,6 +169,30 @@ export class FormatContext extends OptionMember<NativeFormatContext> implements 
   }
 
   /**
+   * Maximum buffering duration for interleaving.
+   *
+   * Specifies the maximum difference between the timestamps of the
+   * first and the last packet in the muxing queue, above which libavformat
+   * will output a packet regardless of whether it has queued a packet for all
+   * the streams.
+   *
+   * Set to 0 for unlimited buffering
+   *
+   * Default: 10000000 (10 seconds in microseconds)
+   *
+   * Muxing only, set before avformat_write_header().
+   *
+   * Direct mapping to AVFormatContext->max_interleave_delta.
+   */
+  get maxInterleaveDelta(): bigint {
+    return this.native.maxInterleaveDelta;
+  }
+
+  set maxInterleaveDelta(value: bigint) {
+    this.native.maxInterleaveDelta = value;
+  }
+
+  /**
    * Container metadata.
    *
    * Key-value pairs of metadata (title, author, etc.).
@@ -1257,10 +1281,13 @@ export class FormatContext extends OptionMember<NativeFormatContext> implements 
    * ```
    *
    * @see {@link clearFlags} To unset flags
+   * @see {@link hasFlags} To check flags
    * @see {@link flags} For direct flag access
    */
   setFlags(...flags: AVFormatFlag[]): void {
-    this.native.setFlags(...flags);
+    for (const flag of flags) {
+      this.native.flags = (this.native.flags | flag) as AVFormatFlag;
+    }
   }
 
   /**
@@ -1280,10 +1307,44 @@ export class FormatContext extends OptionMember<NativeFormatContext> implements 
    * ```
    *
    * @see {@link setFlags} To set flags
+   * @see {@link hasFlags} To check flags
    * @see {@link flags} For direct flag access
    */
   clearFlags(...flags: AVFormatFlag[]): void {
-    this.native.clearFlags(...flags);
+    for (const flag of flags) {
+      this.native.flags = (this.native.flags & ~flag) as AVFormatFlag;
+    }
+  }
+
+  /**
+   * Check if format context has specific flags.
+   *
+   * Tests whether all specified flags are set using bitwise AND.
+   *
+   * @param flags - One or more flag values to check
+   *
+   * @returns true if all specified flags are set, false otherwise
+   *
+   * @example
+   * ```typescript
+   * import { AVFMT_FLAG_GENPTS } from 'node-av/constants';
+   *
+   * if (formatContext.hasFlags(AVFMT_FLAG_GENPTS)) {
+   *   console.log('GENPTS flag is set');
+   * }
+   * ```
+   *
+   * @see {@link setFlags} To set flags
+   * @see {@link clearFlags} To unset flags
+   * @see {@link flags} For direct flag access
+   */
+  hasFlags(...flags: AVFormatFlag[]): boolean {
+    for (const flag of flags) {
+      if ((this.native.flags & flag) !== flag) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /**
