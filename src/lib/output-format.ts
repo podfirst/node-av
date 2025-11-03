@@ -1,6 +1,6 @@
 import { bindings } from './binding.js';
 
-import type { AVCodecID, AVFormatFlag } from '../constants/constants.js';
+import type { AVCodecID, AVFormatConstants, AVFormatFlag } from '../constants/constants.js';
 import type { NativeOutputFormat, NativeWrapper } from './native-types.js';
 
 /**
@@ -184,6 +184,35 @@ export class OutputFormat implements NativeWrapper<NativeOutputFormat> {
    */
   get flags(): AVFormatFlag {
     return this.native.flags;
+  }
+
+  /**
+   * Check if output format has specific flags.
+   *
+   * Tests whether all specified flags are set using bitwise AND.
+   *
+   * @param flags - One or more flag values to check
+   *
+   * @returns true if all specified flags are set, false otherwise
+   *
+   * @example
+   * ```typescript
+   * import { AVFMT_GLOBALHEADER } from 'node-av/constants';
+   *
+   * if (outputFormat.hasFlags(AVFMT_GLOBALHEADER)) {
+   *   console.log('This format requires global headers');
+   * }
+   * ```
+   *
+   * @see {@link flags} For direct flags access
+   */
+  hasFlags(...flags: (AVFormatFlag | AVFormatConstants)[]): boolean {
+    for (const flag of flags) {
+      if ((this.native.flags & flag) !== flag) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /**
