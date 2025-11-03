@@ -27,6 +27,8 @@ Napi::Object CodecParameters::Init(Napi::Env env, Napi::Object exports) {
     InstanceAccessor<&CodecParameters::GetExtradataSize>("extradataSize"),
     InstanceAccessor<&CodecParameters::GetFormat, &CodecParameters::SetFormat>("format"),
     InstanceAccessor<&CodecParameters::GetBitRate, &CodecParameters::SetBitRate>("bitRate"),
+    InstanceAccessor<&CodecParameters::GetBitsPerCodedSample, &CodecParameters::SetBitsPerCodedSample>("bitsPerCodedSample"),
+    InstanceAccessor<&CodecParameters::GetBitsPerRawSample, &CodecParameters::SetBitsPerRawSample>("bitsPerRawSample"),
     InstanceAccessor<&CodecParameters::GetProfile, &CodecParameters::SetProfile>("profile"),
     InstanceAccessor<&CodecParameters::GetLevel, &CodecParameters::SetLevel>("level"),
     InstanceAccessor<&CodecParameters::GetWidth, &CodecParameters::SetWidth>("width"),
@@ -41,7 +43,9 @@ Napi::Object CodecParameters::Init(Napi::Env env, Napi::Object exports) {
     InstanceAccessor<&CodecParameters::GetChannelLayout, &CodecParameters::SetChannelLayout>("channelLayout"),
     InstanceAccessor<&CodecParameters::GetChannels, &CodecParameters::SetChannels>("channels"),
     InstanceAccessor<&CodecParameters::GetSampleRate, &CodecParameters::SetSampleRate>("sampleRate"),
+    InstanceAccessor<&CodecParameters::GetFrameSize, &CodecParameters::SetFrameSize>("frameSize"),
     InstanceAccessor<&CodecParameters::GetInitialPadding, &CodecParameters::SetInitialPadding>("initialPadding"),
+    InstanceAccessor<&CodecParameters::GetVideoDelay, &CodecParameters::SetVideoDelay>("videoDelay"),
   });
   
   constructor = Napi::Persistent(func);
@@ -390,6 +394,34 @@ void CodecParameters::SetBitRate(const Napi::CallbackInfo& info, const Napi::Val
   }
 }
 
+Napi::Value CodecParameters::GetBitsPerCodedSample(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (!params_) {
+    return Napi::Number::New(env, 0);
+  }
+  return Napi::Number::New(env, params_->bits_per_coded_sample);
+}
+
+void CodecParameters::SetBitsPerCodedSample(const Napi::CallbackInfo& info, const Napi::Value& value) {
+  if (params_) {
+    params_->bits_per_coded_sample = value.As<Napi::Number>().Int32Value();
+  }
+}
+
+Napi::Value CodecParameters::GetBitsPerRawSample(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (!params_) {
+    return Napi::Number::New(env, 0);
+  }
+  return Napi::Number::New(env, params_->bits_per_raw_sample);
+}
+
+void CodecParameters::SetBitsPerRawSample(const Napi::CallbackInfo& info, const Napi::Value& value) {
+  if (params_) {
+    params_->bits_per_raw_sample = value.As<Napi::Number>().Int32Value();
+  }
+}
+
 Napi::Value CodecParameters::GetProfile(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
   if (!params_) {
@@ -610,6 +642,20 @@ void CodecParameters::SetSampleRate(const Napi::CallbackInfo& info, const Napi::
   }
 }
 
+Napi::Value CodecParameters::GetFrameSize(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (!params_) {
+    return Napi::Number::New(env, 0);
+  }
+  return Napi::Number::New(env, params_->frame_size);
+}
+
+void CodecParameters::SetFrameSize(const Napi::CallbackInfo& info, const Napi::Value& value) {
+  if (params_) {
+    params_->frame_size = value.As<Napi::Number>().Int32Value();
+  }
+}
+
 Napi::Value CodecParameters::GetInitialPadding(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
   if (!params_) {
@@ -621,6 +667,20 @@ Napi::Value CodecParameters::GetInitialPadding(const Napi::CallbackInfo& info) {
 void CodecParameters::SetInitialPadding(const Napi::CallbackInfo& info, const Napi::Value& value) {
   if (params_) {
     params_->initial_padding = value.As<Napi::Number>().Int32Value();
+  }
+}
+
+Napi::Value CodecParameters::GetVideoDelay(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (!params_) {
+    return Napi::Number::New(env, 0);
+  }
+  return Napi::Number::New(env, params_->video_delay);
+}
+
+void CodecParameters::SetVideoDelay(const Napi::CallbackInfo& info, const Napi::Value& value) {
+  if (params_) {
+    params_->video_delay = value.As<Napi::Number>().Int32Value();
   }
 }
 

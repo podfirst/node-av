@@ -68,7 +68,13 @@ private:
   
   Napi::Value GetBitRate(const Napi::CallbackInfo& info);
   void SetBitRate(const Napi::CallbackInfo& info, const Napi::Value& value);
-  
+
+  Napi::Value GetBitsPerCodedSample(const Napi::CallbackInfo& info);
+  void SetBitsPerCodedSample(const Napi::CallbackInfo& info, const Napi::Value& value);
+
+  Napi::Value GetBitsPerRawSample(const Napi::CallbackInfo& info);
+  void SetBitsPerRawSample(const Napi::CallbackInfo& info, const Napi::Value& value);
+
   Napi::Value GetProfile(const Napi::CallbackInfo& info);
   void SetProfile(const Napi::CallbackInfo& info, const Napi::Value& value);
   
@@ -111,8 +117,14 @@ private:
   Napi::Value GetSampleRate(const Napi::CallbackInfo& info);
   void SetSampleRate(const Napi::CallbackInfo& info, const Napi::Value& value);
 
+  Napi::Value GetFrameSize(const Napi::CallbackInfo& info);
+  void SetFrameSize(const Napi::CallbackInfo& info, const Napi::Value& value);
+
   Napi::Value GetInitialPadding(const Napi::CallbackInfo& info);
   void SetInitialPadding(const Napi::CallbackInfo& info, const Napi::Value& value);
+
+  Napi::Value GetVideoDelay(const Napi::CallbackInfo& info);
+  void SetVideoDelay(const Napi::CallbackInfo& info, const Napi::Value& value);
 };
 
 } // namespace ffmpeg
