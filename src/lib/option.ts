@@ -178,6 +178,35 @@ export class OptionInfo {
   }
 
   /**
+   * Check if option has specific flags.
+   *
+   * Tests whether all specified flags are set using bitwise AND.
+   *
+   * @param flags - One or more flag values to check
+   *
+   * @returns true if all specified flags are set, false otherwise
+   *
+   * @example
+   * ```typescript
+   * import { AV_OPT_FLAG_ENCODING_PARAM } from 'node-av/constants';
+   *
+   * if (option.hasFlags(AV_OPT_FLAG_ENCODING_PARAM)) {
+   *   console.log('This option is used for encoding');
+   * }
+   * ```
+   *
+   * @see {@link flags} For direct flags access
+   */
+  hasFlags(...flags: AVOptionFlag[]): boolean {
+    for (const flag of flags) {
+      if ((this.native.flags & flag) !== flag) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
    * Option unit.
    *
    * Unit string for grouping related options.
