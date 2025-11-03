@@ -274,6 +274,22 @@ export class Stream implements NativeWrapper<NativeStream> {
   }
 
   /**
+   * Number of bits for PTS wrap-around detection.
+   *
+   * Used for timestamp wrap-around correction in formats with limited timestamp bits.
+   * Common values: 33 (MPEG-TS), 31 (DVB), 64 (no wrapping).
+   *
+   * Direct mapping to AVStream->pts_wrap_bits.
+   */
+  get ptsWrapBits(): number {
+    return this.native.ptsWrapBits;
+  }
+
+  set ptsWrapBits(value: number) {
+    this.native.ptsWrapBits = value;
+  }
+
+  /**
    * Stream metadata.
    *
    * Dictionary containing stream-specific metadata
@@ -338,10 +354,13 @@ export class Stream implements NativeWrapper<NativeStream> {
    * ```
    *
    * @see {@link clearEventFlags} To unset event flags
+   * @see {@link hasEventFlags} To check event flags
    * @see {@link eventFlags} For direct event flag access
    */
   setEventFlags(...flags: AVStreamEventFlag[]): void {
-    this.native.setEventFlags(...flags);
+    for (const flag of flags) {
+      this.native.eventFlags = (this.native.eventFlags | flag) as AVStreamEventFlag;
+    }
   }
 
   /**
@@ -361,10 +380,44 @@ export class Stream implements NativeWrapper<NativeStream> {
    * ```
    *
    * @see {@link setEventFlags} To set event flags
+   * @see {@link hasEventFlags} To check event flags
    * @see {@link eventFlags} For direct event flag access
    */
   clearEventFlags(...flags: AVStreamEventFlag[]): void {
-    this.native.clearEventFlags(...flags);
+    for (const flag of flags) {
+      this.native.eventFlags = (this.native.eventFlags & ~flag) as AVStreamEventFlag;
+    }
+  }
+
+  /**
+   * Check if stream has specific event flags.
+   *
+   * Tests whether all specified event flags are set using bitwise AND.
+   *
+   * @param flags - One or more event flag values to check
+   *
+   * @returns true if all specified event flags are set, false otherwise
+   *
+   * @example
+   * ```typescript
+   * import { AVSTREAM_EVENT_FLAG_METADATA_UPDATED } from 'node-av/constants';
+   *
+   * if (stream.hasEventFlags(AVSTREAM_EVENT_FLAG_METADATA_UPDATED)) {
+   *   console.log('Stream metadata was updated');
+   * }
+   * ```
+   *
+   * @see {@link setEventFlags} To set event flags
+   * @see {@link clearEventFlags} To unset event flags
+   * @see {@link eventFlags} For direct event flag access
+   */
+  hasEventFlags(...flags: AVStreamEventFlag[]): boolean {
+    for (const flag of flags) {
+      if ((this.native.eventFlags & flag) !== flag) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /**
