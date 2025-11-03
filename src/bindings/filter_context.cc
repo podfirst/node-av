@@ -40,6 +40,8 @@ Napi::Object FilterContext::Init(Napi::Env env, Napi::Object exports) {
     InstanceMethod<&FilterContext::BuffersinkGetFrameRate>("buffersinkGetFrameRate"),
     InstanceMethod<&FilterContext::BuffersinkGetSampleRate>("buffersinkGetSampleRate"),
     InstanceMethod<&FilterContext::BuffersinkGetChannelLayout>("buffersinkGetChannelLayout"),
+    InstanceMethod<&FilterContext::BuffersinkGetColorspace>("buffersinkGetColorspace"),
+    InstanceMethod<&FilterContext::BuffersinkGetColorRange>("buffersinkGetColorRange"),
     InstanceMethod(Napi::Symbol::WellKnown(env, "dispose"), &FilterContext::Dispose),
 
     InstanceAccessor<&FilterContext::GetName, &FilterContext::SetName>("name"),
@@ -244,7 +246,10 @@ Napi::Value FilterContext::BuffersrcParametersSet(const Napi::CallbackInfo& info
   if (params.Has("colorSpace")) {
     par->color_space = static_cast<AVColorSpace>(params.Get("colorSpace").As<Napi::Number>().Int32Value());
   }
-  
+  if (params.Has("alphaMode")) {
+    par->alpha_mode = static_cast<AVAlphaMode>(params.Get("alphaMode").As<Napi::Number>().Int32Value());
+  }
+
   // Set hardware frames context if provided
   if (params.Has("hwFramesCtx") && !params.Get("hwFramesCtx").IsNull()) {
     HardwareFramesContext* hwFramesCtx = Napi::ObjectWrap<HardwareFramesContext>::Unwrap(params.Get("hwFramesCtx").As<Napi::Object>());
@@ -433,8 +438,34 @@ Napi::Value FilterContext::BuffersinkGetChannelLayout(const Napi::CallbackInfo& 
   }
   
   av_channel_layout_uninit(&ch_layout);
-  
+
   return result;
+}
+
+Napi::Value FilterContext::BuffersinkGetColorspace(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  AVFilterContext* ctx = Get();
+
+  if (!ctx) {
+    Napi::TypeError::New(env, "FilterContext is not initialized").ThrowAsJavaScriptException();
+    return env.Null();
+  }
+
+  enum AVColorSpace colorspace = av_buffersink_get_colorspace(ctx);
+  return Napi::Number::New(env, static_cast<int>(colorspace));
+}
+
+Napi::Value FilterContext::BuffersinkGetColorRange(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  AVFilterContext* ctx = Get();
+
+  if (!ctx) {
+    Napi::TypeError::New(env, "FilterContext is not initialized").ThrowAsJavaScriptException();
+    return env.Null();
+  }
+
+  enum AVColorRange color_range = av_buffersink_get_color_range(ctx);
+  return Napi::Number::New(env, static_cast<int>(color_range));
 }
 
 Napi::Value FilterContext::GetName(const Napi::CallbackInfo& info) {

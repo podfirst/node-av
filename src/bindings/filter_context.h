@@ -75,6 +75,8 @@ private:
   Napi::Value BuffersinkGetFrameRate(const Napi::CallbackInfo& info);
   Napi::Value BuffersinkGetSampleRate(const Napi::CallbackInfo& info);
   Napi::Value BuffersinkGetChannelLayout(const Napi::CallbackInfo& info);
+  Napi::Value BuffersinkGetColorspace(const Napi::CallbackInfo& info);
+  Napi::Value BuffersinkGetColorRange(const Napi::CallbackInfo& info);
   Napi::Value Dispose(const Napi::CallbackInfo& info);
 
   Napi::Value GetName(const Napi::CallbackInfo& info);
