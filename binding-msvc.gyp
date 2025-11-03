@@ -57,6 +57,8 @@
                 "src/bindings/bitstream_filter_context_async.cc",
                 "src/bindings/bitstream_filter_context_sync.cc",
                 "src/bindings/option.cc",
+                "src/bindings/sync_queue.cc",
+                "externals/jellyfin-ffmpeg/fftools/sync_queue.c",
             ],
             "include_dirs": [
                 "<!@(node -p \"require('node-addon-api').include\")",

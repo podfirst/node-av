@@ -28,6 +28,7 @@
 #include "hardware_frames_context.h"
 #include "log.h"
 #include "option.h"
+#include "sync_queue.h"
 
 namespace ffmpeg {
 
@@ -82,7 +83,10 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   
   // Options System
   AVOptionWrapper::Init(env, exports);
-  
+
+  // Sync Queue
+  SyncQueue::Init(env, exports);
+
   return exports;
 }
 
