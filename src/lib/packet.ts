@@ -117,6 +117,22 @@ export class Packet implements Disposable, NativeWrapper<NativePacket> {
   }
 
   /**
+   * Timebase for timestamps in this packet.
+   *
+   * Used by av_interleaved_write_frame() to correctly sort packets from different streams.
+   * Must be set to the output stream's timebase before calling av_interleaved_write_frame().
+   *
+   * Direct mapping to AVPacket->time_base.
+   */
+  get timeBase(): IRational {
+    return this.native.timeBase;
+  }
+
+  set timeBase(value: IRational) {
+    this.native.timeBase = value;
+  }
+
+  /**
    * Byte position in stream.
    *
    * Byte position of packet data in the input file.
@@ -518,10 +534,13 @@ export class Packet implements Disposable, NativeWrapper<NativePacket> {
    * ```
    *
    * @see {@link clearFlags} To unset flags
+   * @see {@link hasFlags} To check flags
    * @see {@link flags} For direct flag access
    */
   setFlags(...flags: AVPacketFlag[]): void {
-    this.native.setFlags(...flags);
+    for (const flag of flags) {
+      this.native.flags = (this.native.flags | flag) as AVPacketFlag;
+    }
   }
 
   /**
@@ -541,10 +560,44 @@ export class Packet implements Disposable, NativeWrapper<NativePacket> {
    * ```
    *
    * @see {@link setFlags} To set flags
+   * @see {@link hasFlags} To check flags
    * @see {@link flags} For direct flag access
    */
   clearFlags(...flags: AVPacketFlag[]): void {
-    this.native.clearFlags(...flags);
+    for (const flag of flags) {
+      this.native.flags = (this.native.flags & ~flag) as AVPacketFlag;
+    }
+  }
+
+  /**
+   * Check if packet has specific flags.
+   *
+   * Tests whether all specified flags are set using bitwise AND.
+   *
+   * @param flags - One or more flag values to check
+   *
+   * @returns true if all specified flags are set, false otherwise
+   *
+   * @example
+   * ```typescript
+   * import { AV_PKT_FLAG_KEY } from 'node-av/constants';
+   *
+   * if (packet.hasFlags(AV_PKT_FLAG_KEY)) {
+   *   console.log('This is a keyframe packet');
+   * }
+   * ```
+   *
+   * @see {@link setFlags} To set flags
+   * @see {@link clearFlags} To unset flags
+   * @see {@link flags} For direct flag access
+   */
+  hasFlags(...flags: AVPacketFlag[]): boolean {
+    for (const flag of flags) {
+      if ((this.native.flags & flag) !== flag) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /**
