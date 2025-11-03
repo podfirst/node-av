@@ -163,8 +163,6 @@ private:
   Napi::Value GetRTSPStreamInfo(const Napi::CallbackInfo& info);
   Napi::Value SendRTSPPacketAsync(const Napi::CallbackInfo& info);
   Napi::Value SendRTSPPacketSync(const Napi::CallbackInfo& info);
-  Napi::Value SetFlagsMethod(const Napi::CallbackInfo& info);
-  Napi::Value ClearFlagsMethod(const Napi::CallbackInfo& info);
   Napi::Value DisposeAsync(const Napi::CallbackInfo& info);
 
   Napi::Value GetUrl(const Napi::CallbackInfo& info);
@@ -184,7 +182,10 @@ private:
   
   Napi::Value GetMaxAnalyzeDuration(const Napi::CallbackInfo& info);
   void SetMaxAnalyzeDuration(const Napi::CallbackInfo& info, const Napi::Value& value);
-  
+
+  Napi::Value GetMaxInterleaveDelta(const Napi::CallbackInfo& info);
+  void SetMaxInterleaveDelta(const Napi::CallbackInfo& info, const Napi::Value& value);
+
   Napi::Value GetMetadata(const Napi::CallbackInfo& info);
   void SetMetadata(const Napi::CallbackInfo& info, const Napi::Value& value);
   

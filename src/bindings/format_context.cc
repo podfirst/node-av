@@ -50,8 +50,6 @@ Napi::Object FormatContext::Init(Napi::Env env, Napi::Object exports) {
     InstanceMethod<&FormatContext::GetRTSPStreamInfo>("getRTSPStreamInfo"),
     InstanceMethod<&FormatContext::SendRTSPPacketAsync>("sendRTSPPacket"),
     InstanceMethod<&FormatContext::SendRTSPPacketSync>("sendRTSPPacketSync"),
-    InstanceMethod<&FormatContext::SetFlagsMethod>("setFlags"),
-    InstanceMethod<&FormatContext::ClearFlagsMethod>("clearFlags"),
     InstanceMethod(Napi::Symbol::WellKnown(env, "asyncDispose"), &FormatContext::DisposeAsync),
 
     InstanceAccessor<&FormatContext::GetStreams, nullptr>("streams"),
@@ -63,6 +61,7 @@ Napi::Object FormatContext::Init(Napi::Env env, Napi::Object exports) {
     InstanceAccessor<&FormatContext::GetFlags, &FormatContext::SetFlagsAccessor>("flags"),
     InstanceAccessor<&FormatContext::GetProbesize, &FormatContext::SetProbesize>("probesize"),
     InstanceAccessor<&FormatContext::GetMaxAnalyzeDuration, &FormatContext::SetMaxAnalyzeDuration>("maxAnalyzeDuration"),
+    InstanceAccessor<&FormatContext::GetMaxInterleaveDelta, &FormatContext::SetMaxInterleaveDelta>("maxInterleaveDelta"),
     InstanceAccessor<&FormatContext::GetMetadata, &FormatContext::SetMetadata>("metadata"),
     InstanceAccessor<&FormatContext::GetIformat, nullptr>("iformat"),
     InstanceAccessor<&FormatContext::GetOformat, &FormatContext::SetOformat>("oformat"),
@@ -547,48 +546,6 @@ Napi::Value FormatContext::GetRTSPStreamInfo(const Napi::CallbackInfo& info) {
   return streams;
 }
 
-Napi::Value FormatContext::SetFlagsMethod(const Napi::CallbackInfo& info) {
-  Napi::Env env = info.Env();
-
-  if (!ctx_) {
-    Napi::Error::New(env, "FormatContext not allocated").ThrowAsJavaScriptException();
-    return env.Undefined();
-  }
-
-  // Iterate through all arguments and OR them together
-  for (size_t i = 0; i < info.Length(); i++) {
-    if (!info[i].IsNumber()) {
-      Napi::TypeError::New(env, "All arguments must be numbers (flags)").ThrowAsJavaScriptException();
-      return env.Undefined();
-    }
-    int flag = info[i].As<Napi::Number>().Int32Value();
-    ctx_->flags |= flag;
-  }
-
-  return env.Undefined();
-}
-
-Napi::Value FormatContext::ClearFlagsMethod(const Napi::CallbackInfo& info) {
-  Napi::Env env = info.Env();
-
-  if (!ctx_) {
-    Napi::Error::New(env, "FormatContext not allocated").ThrowAsJavaScriptException();
-    return env.Undefined();
-  }
-
-  // Iterate through all arguments and clear them with AND NOT
-  for (size_t i = 0; i < info.Length(); i++) {
-    if (!info[i].IsNumber()) {
-      Napi::TypeError::New(env, "All arguments must be numbers (flags)").ThrowAsJavaScriptException();
-      return env.Undefined();
-    }
-    int flag = info[i].As<Napi::Number>().Int32Value();
-    ctx_->flags &= ~flag;
-  }
-
-  return env.Undefined();
-}
-
 Napi::Value FormatContext::GetStreams(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
   
@@ -749,18 +706,46 @@ Napi::Value FormatContext::GetMaxAnalyzeDuration(const Napi::CallbackInfo& info)
 
 void FormatContext::SetMaxAnalyzeDuration(const Napi::CallbackInfo& info, const Napi::Value& value) {
   Napi::Env env = info.Env();
-  
+
   AVFormatContext* ctx = ctx_;
   if (!ctx) {
     Napi::Error::New(env, "Format context not allocated").ThrowAsJavaScriptException();
     return;
   }
-  
+
   if (value.IsBigInt()) {
     bool lossless;
     ctx->max_analyze_duration = value.As<Napi::BigInt>().Int64Value(&lossless);
   } else if (value.IsNumber()) {
     ctx->max_analyze_duration = value.As<Napi::Number>().Int64Value();
+  }
+}
+
+Napi::Value FormatContext::GetMaxInterleaveDelta(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+
+  AVFormatContext* ctx = ctx_;
+  if (!ctx) {
+    return Napi::BigInt::New(env, static_cast<int64_t>(0));
+  }
+
+  return Napi::BigInt::New(env, ctx->max_interleave_delta);
+}
+
+void FormatContext::SetMaxInterleaveDelta(const Napi::CallbackInfo& info, const Napi::Value& value) {
+  Napi::Env env = info.Env();
+
+  AVFormatContext* ctx = ctx_;
+  if (!ctx) {
+    Napi::Error::New(env, "Format context not allocated").ThrowAsJavaScriptException();
+    return;
+  }
+
+  if (value.IsBigInt()) {
+    bool lossless;
+    ctx->max_interleave_delta = value.As<Napi::BigInt>().Int64Value(&lossless);
+  } else if (value.IsNumber()) {
+    ctx->max_interleave_delta = value.As<Napi::Number>().Int64Value();
   }
 }
 
