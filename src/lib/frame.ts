@@ -1231,8 +1231,6 @@ export class Frame implements Disposable, NativeWrapper<NativeFrame> {
    * // Frame dimensions are now updated to cropped size
    * console.log(`Cropped to ${frame.width}x${frame.height}`);
    * ```
-   *
-   * @see [av_frame_apply_cropping](https://ffmpeg.org/doxygen/trunk/group__lavu__frame.html#ga6b8c3f0b735c66e35c4ed48e6e7e3e8c) - FFmpeg Doxygen
    */
   applyCropping(flags?: number): number {
     return this.native.applyCropping(flags);
