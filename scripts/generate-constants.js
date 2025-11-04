@@ -66,7 +66,14 @@ const parseEnums = (headerPath) => {
     return {};
   }
 
-  const content = readFileSync(headerPath, 'utf8');
+  let content = readFileSync(headerPath, 'utf8');
+
+  // FIRST: Remove ALL comments from the entire file content
+  // This prevents issues with braces inside comments (like @code{.c})
+  content = content
+    .replace(/\/\*[\s\S]*?\*\//g, '') // Remove /* ... */ and /** ... */ comments
+    .replace(/\/\/.*$/gm, '');        // Remove // comments
+
   const enums = {};
 
   // Find all enum blocks (including typedef enums)
@@ -84,16 +91,15 @@ const parseEnums = (headerPath) => {
     }
 
     const values = [];
+
+    // Split enum content into lines (comments already removed from file content)
     const lines = enumContent.split(/[,\n]/);
     let currentValue = enumName === 'AVMediaType' ? -1 : 0;
     let isFirstValue = true;
 
     for (const line of lines) {
-      // Skip comments and empty lines
-      const cleanLine = line
-        .replace(/\/\*.*?\*\//g, '')
-        .replace(/\/\/.*$/, '')
-        .trim();
+      // Skip empty lines
+      const cleanLine = line.trim();
       if (!cleanLine) continue;
 
       // Match enum values (including AVCOL_*, AVDISCARD_*, AVCHROMA_LOC_*, FF_SUB_CHARENC_MODE_*, SWS_*)

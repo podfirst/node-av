@@ -48,6 +48,12 @@ export type AVCodecConfig = number & { readonly [__ffmpeg_brand]: 'AVCodecConfig
 
 export const AV_CODEC_CONFIG_PIX_FORMAT = 0 as AVCodecConfig;
 export const AV_CODEC_CONFIG_FRAME_RATE = 1 as AVCodecConfig;
+export const AV_CODEC_CONFIG_SAMPLE_RATE = 2 as AVCodecConfig;
+export const AV_CODEC_CONFIG_SAMPLE_FORMAT = 3 as AVCodecConfig;
+export const AV_CODEC_CONFIG_CHANNEL_LAYOUT = 4 as AVCodecConfig;
+export const AV_CODEC_CONFIG_COLOR_RANGE = 5 as AVCodecConfig;
+export const AV_CODEC_CONFIG_COLOR_SPACE = 6 as AVCodecConfig;
+export const AV_CODEC_CONFIG_ALPHA_MODE = 7 as AVCodecConfig;
 
 // libavcodec/avcodec.h
 export type AVPictureStructure = number & { readonly [__ffmpeg_brand]: 'AVPictureStructure' };
@@ -843,6 +849,7 @@ export type AVChannelOrder = number & { readonly [__ffmpeg_brand]: 'AVChannelOrd
 export const AV_CHANNEL_ORDER_UNSPEC = 0 as AVChannelOrder;
 export const AV_CHANNEL_ORDER_NATIVE = 1 as AVChannelOrder;
 export const AV_CHANNEL_ORDER_CUSTOM = 2 as AVChannelOrder;
+export const AV_CHANNEL_ORDER_AMBISONIC = 3 as AVChannelOrder;
 
 // libavutil/channel_layout.h
 export type AVMatrixEncoding = number & { readonly [__ffmpeg_brand]: 'AVMatrixEncoding' };
@@ -1032,6 +1039,7 @@ export const AV_ROUND_INF = 1 as AVRounding;
 export const AV_ROUND_DOWN = 2 as AVRounding;
 export const AV_ROUND_UP = 3 as AVRounding;
 export const AV_ROUND_NEAR_INF = 5 as AVRounding;
+export const AV_ROUND_PASS_MINMAX = 8192 as AVRounding;
 
 // libavutil/opt.h
 export type AVOptionType = number & { readonly [__ffmpeg_brand]: 'AVOptionType' };
@@ -1489,6 +1497,14 @@ export const AV_SPHERICAL_PARAMETRIC_IMMERSIVE = 6 as AVSphericalProjection;
 export type AVStereo3DType = number & { readonly [__ffmpeg_brand]: 'AVStereo3DType' };
 
 export const AV_STEREO3D_2D = 0 as AVStereo3DType;
+export const AV_STEREO3D_SIDEBYSIDE = 1 as AVStereo3DType;
+export const AV_STEREO3D_TOPBOTTOM = 2 as AVStereo3DType;
+export const AV_STEREO3D_FRAMESEQUENCE = 3 as AVStereo3DType;
+export const AV_STEREO3D_CHECKERBOARD = 4 as AVStereo3DType;
+export const AV_STEREO3D_SIDEBYSIDE_QUINCUNX = 5 as AVStereo3DType;
+export const AV_STEREO3D_LINES = 6 as AVStereo3DType;
+export const AV_STEREO3D_COLUMNS = 7 as AVStereo3DType;
+export const AV_STEREO3D_UNSPEC = 8 as AVStereo3DType;
 
 // libavutil/stereo3d.h
 export type AVStereo3DView = number & { readonly [__ffmpeg_brand]: 'AVStereo3DView' };
