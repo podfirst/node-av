@@ -45,7 +45,7 @@ import type {
   NativeStream,
   NativeSyncQueue,
 } from './native-types.js';
-import type { ChannelLayout, IRational } from './types.js';
+import type { ChannelLayout, IDimension, IRational } from './types.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -160,7 +160,7 @@ interface NativeOptionStatic {
   getRational(obj: OptionCapableObject, name: string, searchFlags?: AVOptionSearchFlags): IRational | null;
   getPixelFormat(obj: OptionCapableObject, name: string, searchFlags?: AVOptionSearchFlags): AVPixelFormat | null;
   getSampleFormat(obj: OptionCapableObject, name: string, searchFlags?: AVOptionSearchFlags): AVSampleFormat | null;
-  getImageSize(obj: OptionCapableObject, name: string, searchFlags?: AVOptionSearchFlags): { width: number; height: number } | null;
+  getImageSize(obj: OptionCapableObject, name: string, searchFlags?: AVOptionSearchFlags): IDimension | null;
   getChannelLayout(obj: OptionCapableObject, name: string, searchFlags?: AVOptionSearchFlags): ChannelLayout | null;
   getDict(obj: OptionCapableObject, name: string, searchFlags?: AVOptionSearchFlags): NativeDictionary | null;
 

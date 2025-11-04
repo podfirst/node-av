@@ -59,7 +59,7 @@ import type {
 } from '../constants/index.js';
 import type { OptionCapableObject } from './binding.js';
 import type { NativeOption } from './native-types.js';
-import type { ChannelLayout, IRational } from './types.js';
+import type { ChannelLayout, IDimension, IRational } from './types.js';
 
 /**
  * Option information descriptor.
@@ -520,7 +520,7 @@ export class Option {
    * console.log('Output size:', size); // { width: 1920, height: 1080 }
    * ```
    */
-  static getImageSize(obj: OptionCapableObject, name: string, searchFlags: AVOptionSearchFlags = AVFLAG_NONE): { width: number; height: number } | null {
+  static getImageSize(obj: OptionCapableObject, name: string, searchFlags: AVOptionSearchFlags = AVFLAG_NONE): IDimension | null {
     return bindings.Option.getImageSize(obj, name, searchFlags);
   }
 
@@ -1057,7 +1057,7 @@ export class OptionMember<T extends OptionCapableObject> {
   setOption(name: string, value: IRational, type: AVOptionTypeVideoRate, searchFlags?: AVOptionSearchFlags): number;
   setOption(name: string, value: AVPixelFormat, type: AVOptionTypePixelFmt, searchFlags?: AVOptionSearchFlags): number;
   setOption(name: string, value: AVSampleFormat, type: AVOptionTypeSampleFmt, searchFlags?: AVOptionSearchFlags): number;
-  setOption(name: string, value: { width: number; height: number }, type: AVOptionTypeImageSize, searchFlags?: AVOptionSearchFlags): number;
+  setOption(name: string, value: IDimension, type: AVOptionTypeImageSize, searchFlags?: AVOptionSearchFlags): number;
   setOption(name: string, value: number | bigint, type: AVOptionTypeChLayout, searchFlags?: AVOptionSearchFlags): number;
   setOption(name: string, value: Buffer, type: AVOptionTypeBinary, searchFlags?: AVOptionSearchFlags): number;
   setOption(name: string, value: number[], type: AVOptionTypeBinaryIntArray, searchFlags?: AVOptionSearchFlags): number;
@@ -1278,7 +1278,7 @@ export class OptionMember<T extends OptionCapableObject> {
   getOption(name: string, type: AVOptionTypeVideoRate, searchFlags?: AVOptionSearchFlags): IRational | null;
   getOption(name: string, type: AVOptionTypePixelFmt, searchFlags?: AVOptionSearchFlags): AVPixelFormat | null;
   getOption(name: string, type: AVOptionTypeSampleFmt, searchFlags?: AVOptionSearchFlags): AVSampleFormat | null;
-  getOption(name: string, type: AVOptionTypeImageSize, searchFlags?: AVOptionSearchFlags): { width: number; height: number } | null;
+  getOption(name: string, type: AVOptionTypeImageSize, searchFlags?: AVOptionSearchFlags): IDimension | null;
   getOption(name: string, type: AVOptionTypeChLayout, searchFlags?: AVOptionSearchFlags): ChannelLayout | null;
   getOption(name: string, type: AVOptionTypeDict, searchFlags?: AVOptionSearchFlags): Dictionary | null;
   getOption(name: string, type: AVOptionTypeBinary, searchFlags?: AVOptionSearchFlags): string | null;
@@ -1615,7 +1615,7 @@ export class OptionMember<T extends OptionCapableObject> {
         // Image size type - handle all input types
         case AV_OPT_TYPE_IMAGE_SIZE:
           if (typeof value === 'object' && 'width' in value && 'height' in value) {
-            return this.setOption(name, value as { width: number; height: number }, AV_OPT_TYPE_IMAGE_SIZE);
+            return this.setOption(name, value as IDimension, AV_OPT_TYPE_IMAGE_SIZE);
           } else if (typeof value === 'string') {
             // Try to parse "1920x1080" format
             const match = /^(\d+)x(\d+)$/.exec(value);

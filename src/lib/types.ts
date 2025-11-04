@@ -21,6 +21,17 @@ export interface IRational {
 }
 
 /**
+ * Video dimension interface
+ */
+export interface IDimension {
+  /** Width in pixels */
+  width: number;
+
+  /** Height in pixels */
+  height: number;
+}
+
+/**
  * Audio channel layout description
  * Maps to AVChannelLayout in FFmpeg
  */
