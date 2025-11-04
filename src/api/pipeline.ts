@@ -1,4 +1,5 @@
-import type { Frame, Packet } from '../lib/index.js';
+import type { Frame } from '../lib/frame.js';
+import type { Packet } from '../lib/packet.js';
 import type { Stream } from '../lib/stream.js';
 import type { BitStreamFilterAPI } from './bitstream-filter.js';
 import type { Decoder } from './decoder.js';

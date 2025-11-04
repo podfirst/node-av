@@ -1,7 +1,7 @@
 import { bindings } from '../../lib/binding.js';
 import { FFmpegError } from '../../lib/error.js';
 
-import type { AVSampleFormat } from '../../constants/constants.js';
+import type { AVSampleFormat } from '../../constants/index.js';
 
 /**
  * Audio sample allocation result.

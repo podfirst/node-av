@@ -1,6 +1,6 @@
 import { bindings } from '../../lib/binding.js';
 
-import type { AVMediaType } from '../../constants/constants.js';
+import type { AVMediaType } from '../../constants/index.js';
 
 /**
  * Media type utilities.

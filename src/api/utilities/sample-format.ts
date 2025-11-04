@@ -1,6 +1,6 @@
 import { bindings } from '../../lib/binding.js';
 
-import type { AVSampleFormat } from '../../constants/constants.js';
+import type { AVSampleFormat } from '../../constants/index.js';
 
 /**
  * Audio sample format utilities.

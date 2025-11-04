@@ -1,6 +1,6 @@
 import { bindings } from '../../lib/binding.js';
 
-import type { AVRounding } from '../../constants/constants.js';
+import type { AVRounding } from '../../constants/index.js';
 import type { IRational } from '../../lib/types.js';
 
 /**

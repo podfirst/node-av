@@ -1,7 +1,7 @@
 import { AVSEEK_CUR, AVSEEK_END, AVSEEK_SET, AVSEEK_SIZE } from '../constants/constants.js';
 import { IOContext } from '../lib/index.js';
 
-import type { AVSeekWhence } from '../constants/constants.js';
+import type { AVSeekWhence } from '../constants/index.js';
 import type { IOInputCallbacks, MediaInputOptions } from './types.js';
 
 /**

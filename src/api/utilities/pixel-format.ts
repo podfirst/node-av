@@ -1,6 +1,6 @@
 import { bindings } from '../../lib/binding.js';
 
-import type { AVPixelFormat } from '../../constants/constants.js';
+import type { AVPixelFormat } from '../../constants/index.js';
 
 /**
  * Video pixel format utilities.

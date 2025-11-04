@@ -17,7 +17,7 @@ import {
 import { Filter } from '../lib/filter.js';
 import { avGetPixFmtName, avGetSampleFmtName } from '../lib/utilities.js';
 
-import type { AVPixelFormat, AVSampleFormat } from '../constants/constants.js';
+import type { AVPixelFormat, AVSampleFormat } from '../constants/index.js';
 import type { HardwareContext } from './hardware.js';
 
 /**

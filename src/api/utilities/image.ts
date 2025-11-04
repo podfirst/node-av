@@ -1,7 +1,7 @@
 import { bindings } from '../../lib/binding.js';
 import { FFmpegError } from '../../lib/error.js';
 
-import type { AVPixelFormat } from '../../constants/constants.js';
+import type { AVPixelFormat } from '../../constants/index.js';
 
 /**
  * Image buffer allocation result.

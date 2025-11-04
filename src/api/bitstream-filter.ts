@@ -1,7 +1,10 @@
 import { AVERROR_EAGAIN, AVERROR_EOF } from '../constants/constants.js';
-import { BitStreamFilter, BitStreamFilterContext, FFmpegError, Packet } from '../lib/index.js';
+import { BitStreamFilterContext } from '../lib/bitstream-filter-context.js';
+import { BitStreamFilter } from '../lib/bitstream-filter.js';
+import { FFmpegError } from '../lib/error.js';
+import { Packet } from '../lib/packet.js';
 
-import type { Stream } from '../lib/index.js';
+import type { Stream } from '../lib/stream.js';
 
 /**
  * High-level bitstream filter for packet processing.

@@ -4,7 +4,7 @@ import { FormatContext } from '../../lib/format-context.js';
 import { Rational } from '../../lib/rational.js';
 import { avSdpCreate } from '../../lib/utilities.js';
 
-import type { AVCodecID } from '../../constants/constants.js';
+import type { AVCodecID } from '../../constants/index.js';
 import type { MediaOutput } from '../media-output.js';
 
 /**
