@@ -19,8 +19,7 @@ import { MediaInput } from './media-input.js';
 import { MediaOutput } from './media-output.js';
 import { pipeline } from './pipeline.js';
 
-import type { AVCodecID, AVHWDeviceType } from '../constants/constants.js';
-import type { FFHWDeviceType } from '../constants/hardware.js';
+import type { AVCodecID, AVHWDeviceType, FFHWDeviceType } from '../constants/index.js';
 import type { PipelineControl } from './pipeline.js';
 import type { IOOutputCallbacks, MediaInputOptions } from './types.js';
 
@@ -276,6 +275,25 @@ export class FMP4Stream {
   }
 
   /**
+   * Get the media input instance.
+   *
+   * Used for accessing the underlying media input.
+   * Only available after start() is called.
+   *
+   * @returns MediaInput instance or undefined if not started
+   *
+   * @example
+   * ```typescript
+   * const stream = FMP4Stream.create('input.mp4', {
+   * const input = stream.getInput();
+   * console.log('Bitrate:', input?.bitRate);
+   * ```
+   */
+  getInput(): MediaInput | undefined {
+    return this.input;
+  }
+
+  /**
    * Get the codec string that will be used by client.
    *
    * Returns the MIME type codec string based on input codecs and transcoding decisions.
@@ -302,34 +320,36 @@ export class FMP4Stream {
       throw new Error('Input not opened. Call start() first to open the input.');
     }
 
-    const videoStream = this.input.video()!;
+    const videoStream = this.input.video();
     const audioStream = this.input.audio();
 
-    const videoCodecId = videoStream.codecpar.codecId;
+    const videoCodecId = videoStream?.codecpar.codecId;
     const audioCodecId = audioStream?.codecpar.codecId;
 
     // Determine video codec string
-    let videoCodec: string;
-    const needsVideoTranscode = !this.isVideoCodecSupported(videoCodecId);
+    let videoCodec: string | null = null;
+    if (videoCodecId) {
+      const needsVideoTranscode = !this.isVideoCodecSupported(videoCodecId);
 
-    if (needsVideoTranscode) {
-      // Transcoding to H.264
-      videoCodec = FMP4_CODECS.H264;
-    } else if (videoCodecId === AV_CODEC_ID_H264) {
-      // H.264 - use HLS codec string from input
-      const hlsCodec = avGetCodecStringHls(videoStream.codecpar);
-      videoCodec = hlsCodec ?? FMP4_CODECS.H264;
-    } else if (videoCodecId === AV_CODEC_ID_HEVC) {
-      // H.265 - use HLS codec string from input
-      const hlsCodec = avGetCodecStringHls(videoStream.codecpar);
-      videoCodec = hlsCodec ?? FMP4_CODECS.H265;
-    } else if (videoCodecId === AV_CODEC_ID_AV1) {
-      // AV1 - use HLS codec string from input
-      const hlsCodec = avGetCodecStringHls(videoStream.codecpar);
-      videoCodec = hlsCodec ?? FMP4_CODECS.AV1;
-    } else {
-      // Fallback to H.264 (should not happen as we transcode unsupported codecs)
-      videoCodec = FMP4_CODECS.H264;
+      if (needsVideoTranscode) {
+        // Transcoding to H.264
+        videoCodec = FMP4_CODECS.H264;
+      } else if (videoCodecId === AV_CODEC_ID_H264) {
+        // H.264 - use HLS codec string from input
+        const hlsCodec = avGetCodecStringHls(videoStream.codecpar);
+        videoCodec = hlsCodec ?? FMP4_CODECS.H264;
+      } else if (videoCodecId === AV_CODEC_ID_HEVC) {
+        // H.265 - use HLS codec string from input
+        const hlsCodec = avGetCodecStringHls(videoStream.codecpar);
+        videoCodec = hlsCodec ?? FMP4_CODECS.H265;
+      } else if (videoCodecId === AV_CODEC_ID_AV1) {
+        // AV1 - use HLS codec string from input
+        const hlsCodec = avGetCodecStringHls(videoStream.codecpar);
+        videoCodec = hlsCodec ?? FMP4_CODECS.AV1;
+      } else {
+        // Fallback to H.264 (should not happen as we transcode unsupported codecs)
+        videoCodec = FMP4_CODECS.H264;
+      }
     }
 
     // Determine audio codec string
@@ -356,37 +376,7 @@ export class FMP4Stream {
     }
 
     // Combine video and audio codec strings
-    return audioCodec ? `${videoCodec},${audioCodec}` : videoCodec;
-  }
-
-  /**
-   * Get the resolution of the input video stream.
-   *
-   * @returns Object with width and height properties
-   *
-   * @throws {Error} If called before start() is called
-   *
-   * @example
-   * ```typescript
-   * const stream = await FMP4Stream.create('input.mp4', {
-   *   supportedCodecs: 'avc1.640029,mp4a.40.2'
-   * });
-   *
-   * await stream.start(); // Must start first
-   * const resolution = stream.getResolution();
-   * console.log(`Width: ${resolution.width}, Height: ${resolution.height}`);
-   * ```
-   */
-  getResolution(): { width: number; height: number } {
-    if (!this.input) {
-      throw new Error('Input not opened. Call start() first to open the input.');
-    }
-
-    const videoStream = this.input.video()!;
-    return {
-      width: videoStream.codecpar.width,
-      height: videoStream.codecpar.height,
-    };
+    return [videoCodec, audioCodec].filter(Boolean).join(',');
   }
 
   /**
@@ -422,22 +412,13 @@ export class FMP4Stream {
     }
 
     // Open input if not already open
-    if (!this.input) {
-      this.input = await MediaInput.open(this.inputUrl, this.inputOptions);
+    this.input ??= await MediaInput.open(this.inputUrl, this.inputOptions);
 
-      const videoStream = this.input.video();
-      if (!videoStream) {
-        await this.input.close();
-        this.input = undefined;
-        throw new Error('No video stream found in input');
-      }
-    }
-
-    const videoStream = this.input.video()!;
+    const videoStream = this.input.video();
     const audioStream = this.input.audio();
 
     // Check if video needs transcoding
-    const needsVideoTranscode = !this.isVideoCodecSupported(videoStream.codecpar.codecId);
+    const needsVideoTranscode = videoStream && !this.isVideoCodecSupported(videoStream.codecpar.codecId);
 
     if (needsVideoTranscode) {
       // Check if we need hardware acceleration
@@ -454,9 +435,8 @@ export class FMP4Stream {
       });
 
       this.videoEncoder = await Encoder.create(FF_ENCODER_LIBX264, {
-        timeBase: videoStream.timeBase,
-        frameRate: videoStream.avgFrameRate,
         maxBFrames: 0,
+        decoder: this.videoDecoder,
       });
     }
 
@@ -472,12 +452,12 @@ export class FMP4Stream {
       const targetSampleRate = 44100;
       const filterChain = FilterPreset.chain().aformat(AV_SAMPLE_FMT_FLTP, targetSampleRate, 'stereo').build();
 
-      this.audioFilter = FilterAPI.create(filterChain, {
-        timeBase: audioStream.timeBase,
-      });
+      // FilterAPI now auto-calculates timeBase from first frame (FFmpeg behavior)
+      this.audioFilter = FilterAPI.create(filterChain, {});
 
       this.audioEncoder = await Encoder.create(FF_ENCODER_AAC, {
-        timeBase: { num: 1, den: targetSampleRate },
+        decoder: this.audioDecoder,
+        filter: this.audioFilter,
       });
     }
 
@@ -578,9 +558,10 @@ export class FMP4Stream {
       return;
     }
 
+    const hasVideo = this.input?.video() !== undefined;
     const hasAudio = this.input?.audio() !== undefined;
 
-    if (hasAudio) {
+    if (hasAudio && hasVideo) {
       this.pipeline = pipeline(
         {
           video: this.input,
@@ -595,7 +576,7 @@ export class FMP4Stream {
           audio: this.output,
         },
       );
-    } else {
+    } else if (hasVideo) {
       this.pipeline = pipeline(
         {
           video: this.input,
@@ -607,6 +588,20 @@ export class FMP4Stream {
           video: this.output,
         },
       );
+    } else if (hasAudio) {
+      this.pipeline = pipeline(
+        {
+          audio: this.input,
+        },
+        {
+          audio: [this.audioDecoder, this.audioFilter, this.audioEncoder],
+        },
+        {
+          audio: this.output,
+        },
+      );
+    } else {
+      throw new Error('No audio or video streams found in input');
     }
 
     await this.pipeline.completion;
