@@ -13,6 +13,7 @@ Napi::Object CodecParser::Init(Napi::Env env, Napi::Object exports) {
     InstanceMethod<&CodecParser::InitParser>("init"),
     InstanceMethod<&CodecParser::Parse2>("parse2"),
     InstanceMethod<&CodecParser::Close>("close"),
+    InstanceAccessor<&CodecParser::GetRepeatPict>("repeatPict"),
   });
   
   constructor = Napi::Persistent(func);
@@ -27,7 +28,7 @@ CodecParser::CodecParser(const Napi::CallbackInfo& info)
 }
 
 CodecParser::~CodecParser() {
-  if (parser_ctx_) {
+  if (parser_ctx_ && owns_parser_) {
     av_parser_close(parser_ctx_);
     parser_ctx_ = nullptr;
   }
@@ -137,13 +138,31 @@ Napi::Value CodecParser::Parse2(const Napi::CallbackInfo& info) {
 
 Napi::Value CodecParser::Close(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
-  if (parser_ctx_) {
+
+  if (parser_ctx_ && owns_parser_) {
     av_parser_close(parser_ctx_);
     parser_ctx_ = nullptr;
   }
-  
+
   return env.Undefined();
+}
+
+void CodecParser::SetParserContext(AVCodecParserContext* parser_ctx, bool owns) {
+  if (parser_ctx_ && owns_parser_) {
+    av_parser_close(parser_ctx_);
+  }
+  parser_ctx_ = parser_ctx;
+  owns_parser_ = owns;
+}
+
+Napi::Value CodecParser::GetRepeatPict(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+
+  if (!parser_ctx_) {
+    return Napi::Number::New(env, 0);
+  }
+
+  return Napi::Number::New(env, parser_ctx_->repeat_pict);
 }
 
 } // namespace ffmpeg

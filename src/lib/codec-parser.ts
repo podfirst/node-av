@@ -147,6 +147,32 @@ export class CodecParser implements Disposable, NativeWrapper<NativeCodecParser>
   }
 
   /**
+   * Number of pictures to repeat for field-based interlaced content.
+   *
+   * Used to calculate frame duration for interlaced video:
+   * `frame_duration = (1 + repeat_pict) * time_base`
+   *
+   * Commonly used in H.264 to display telecined material.
+   * Value comes from the codec parser after parsing a frame.
+   *
+   * Direct mapping to AVCodecParserContext.repeat_pict.
+   *
+   * @returns Repeat picture count (0 for progressive, >0 for interlaced)
+   *
+   * @example
+   * ```typescript
+   * const parser = stream.parser;
+   * if (parser) {
+   *   const fields = 1 + parser.repeatPict;
+   *   console.log(`Frame uses ${fields} fields`);
+   * }
+   * ```
+   */
+  get repeatPict(): number {
+    return this.native.repeatPict;
+  }
+
+  /**
    * Close the codec parser.
    *
    * Releases all resources associated with the parser.
