@@ -65,13 +65,19 @@ private:
 class CCSendPacketWorker : public Napi::AsyncWorker {
 public:
   CCSendPacketWorker(Napi::Env env, CodecContext* ctx, Packet* packet)
-    : Napi::AsyncWorker(env), 
-      ctx_(ctx), 
-      packet_(packet), 
+    : Napi::AsyncWorker(env),
+      ctx_(ctx),
+      packet_(packet),
       ret_(0),
       deferred_(Napi::Promise::Deferred::New(env)) {}
 
   void Execute() override {
+    // Null checks to prevent use-after-free crashes
+    if (!ctx_ || !ctx_->context_) {
+      ret_ = AVERROR(EINVAL);
+      return;
+    }
+
     ret_ = avcodec_send_packet(ctx_->context_, packet_ ? packet_->Get() : nullptr);
   }
 
@@ -97,13 +103,19 @@ private:
 class CCReceiveFrameWorker : public Napi::AsyncWorker {
 public:
   CCReceiveFrameWorker(Napi::Env env, CodecContext* ctx, Frame* frame)
-    : Napi::AsyncWorker(env), 
-      ctx_(ctx), 
-      frame_(frame), 
+    : Napi::AsyncWorker(env),
+      ctx_(ctx),
+      frame_(frame),
       ret_(0),
       deferred_(Napi::Promise::Deferred::New(env)) {}
 
   void Execute() override {
+    // Null checks to prevent use-after-free crashes
+    if (!ctx_ || !ctx_->context_) {
+      ret_ = AVERROR(EINVAL);
+      return;
+    }
+
     ret_ = avcodec_receive_frame(ctx_->context_, frame_->Get());
   }
 
@@ -187,13 +199,19 @@ private:
 class CCReceivePacketWorker : public Napi::AsyncWorker {
 public:
   CCReceivePacketWorker(Napi::Env env, CodecContext* ctx, Packet* packet)
-    : Napi::AsyncWorker(env), 
-      ctx_(ctx), 
-      packet_(packet), 
+    : Napi::AsyncWorker(env),
+      ctx_(ctx),
+      packet_(packet),
       ret_(0),
       deferred_(Napi::Promise::Deferred::New(env)) {}
 
   void Execute() override {
+    // Null checks to prevent use-after-free crashes
+    if (!ctx_ || !ctx_->context_) {
+      ret_ = AVERROR(EINVAL);
+      return;
+    }
+
     ret_ = avcodec_receive_packet(ctx_->context_, packet_->Get());
   }
 
