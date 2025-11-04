@@ -1,7 +1,7 @@
 import { isRtcp, RtpPacket } from 'werift';
 
 import { AV_HWDEVICE_TYPE_NONE } from '../constants/constants.js';
-import { FF_ENCODER_LIBOPUS, FF_ENCODER_LIBX264, FF_ENCODER_LIBX265, type FFAudioEncoder, type FFVideoEncoder } from '../constants/encoders.js';
+import { FF_ENCODER_LIBOPUS, FF_ENCODER_LIBX264, FF_ENCODER_LIBX265 } from '../constants/encoders.js';
 import { Codec } from '../lib/codec.js';
 import { Decoder } from './decoder.js';
 import { Encoder } from './encoder.js';
@@ -12,8 +12,7 @@ import { MediaInput } from './media-input.js';
 import { MediaOutput } from './media-output.js';
 import { pipeline } from './pipeline.js';
 
-import type { AVCodecID, AVHWDeviceType, AVSampleFormat } from '../constants/constants.js';
-import type { FFHWDeviceType } from '../constants/hardware.js';
+import type { AVCodecID, AVHWDeviceType, AVSampleFormat, FFAudioEncoder, FFHWDeviceType, FFVideoEncoder } from '../constants/index.js';
 import type { PipelineControl } from './pipeline.js';
 import type { EncoderOptions, MediaInputOptions } from './types.js';
 
@@ -255,7 +254,15 @@ export class RTPStream {
    *
    * @returns MediaInput instance or undefined if not started
    *
-   * @internal
+   * @example
+   * ```typescript
+   * const stream = RTPStream.create('input.mp4', {
+   *   onVideoPacket: (rtp) => sendRtp(rtp)
+   * });
+   * await stream.start();
+   * const input = stream.getInput();
+   * console.log('Bitrate:', input?.bitRate);
+   * ```
    */
   getInput(): MediaInput | undefined {
     return this.input;
@@ -293,22 +300,13 @@ export class RTPStream {
       return;
     }
 
-    if (!this.input) {
-      this.input = await MediaInput.open(this.inputUrl, this.inputOptions);
+    this.input ??= await MediaInput.open(this.inputUrl, this.inputOptions);
 
-      const videoStream = this.input.video();
-      if (!videoStream) {
-        await this.input.close();
-        this.input = undefined;
-        throw new Error('No video stream found in input');
-      }
-    }
-
-    const videoStream = this.input.video()!;
+    const videoStream = this.input.video();
     const audioStream = this.input.audio();
 
     // Setup video transcoding if needed
-    if (!this.isVideoCodecSupported(videoStream.codecpar.codecId)) {
+    if (videoStream && !this.isVideoCodecSupported(videoStream.codecpar.codecId)) {
       // Check if we need hardware acceleration
       if (this.options.hardware === 'auto') {
         this.hardwareContext = HardwareContext.auto();
@@ -350,8 +348,6 @@ export class RTPStream {
       };
 
       this.videoEncoder = await Encoder.create(encoderCodec, {
-        timeBase: videoStream.timeBase,
-        frameRate: videoStream.avgFrameRate,
         maxBFrames: 0,
         options: encoderOptions,
       });
@@ -363,7 +359,8 @@ export class RTPStream {
     let audioSequenceNumber = Math.floor(Math.random() * 0xffff);
 
     // Calculate video timestamp increment
-    let fps = this.options.video.fps ?? videoStream.avgFrameRate.num / videoStream.avgFrameRate.den;
+    const videoStreamFps = videoStream ? videoStream.avgFrameRate.num / videoStream.avgFrameRate.den : 20;
+    let fps = this.options.video.fps ?? videoStreamFps;
     if (!isFinite(fps) || fps <= 0 || isNaN(fps)) {
       fps = 20; // Default to 20 FPS if invalid
     }
@@ -454,9 +451,8 @@ export class RTPStream {
       // Create audio filter for resampling
       const filterChain = FilterPreset.chain().aformat(targetSampleFormat, targetSampleRate, channelLayoutStr).build();
 
-      this.audioFilter = FilterAPI.create(filterChain, {
-        timeBase: audioStream.timeBase,
-      });
+      // FilterAPI now auto-calculates timeBase from first frame (FFmpeg behavior)
+      this.audioFilter = FilterAPI.create(filterChain, {});
 
       let encoderOptions: EncoderOptions['options'] = {};
       if (encoderCodec.name === FF_ENCODER_LIBOPUS) {
@@ -470,7 +466,6 @@ export class RTPStream {
       };
 
       this.audioEncoder = await Encoder.create(encoderCodec, {
-        timeBase: { num: 1, den: targetSampleRate },
         options: encoderOptions,
       });
     }
@@ -534,13 +529,14 @@ export class RTPStream {
    * @internal
    */
   private async runPipeline(): Promise<void> {
-    if (!this.input || !this.videoOutput) {
+    if (!this.input) {
       return;
     }
 
+    const hasVideo = this.input.video() !== undefined && this.videoOutput !== undefined;
     const hasAudio = this.input.audio() !== undefined && this.audioOutput !== undefined;
 
-    if (hasAudio && this.audioOutput) {
+    if (hasAudio && hasVideo) {
       this.pipeline = pipeline(
         {
           video: this.input,
@@ -551,11 +547,11 @@ export class RTPStream {
           audio: [this.audioDecoder, this.audioFilter, this.audioEncoder],
         },
         {
-          video: this.videoOutput,
-          audio: this.audioOutput,
+          video: this.videoOutput!,
+          audio: this.audioOutput!,
         },
       );
-    } else {
+    } else if (hasVideo) {
       this.pipeline = pipeline(
         {
           video: this.input,
@@ -564,9 +560,23 @@ export class RTPStream {
           video: [this.videoDecoder, this.videoEncoder],
         },
         {
-          video: this.videoOutput,
+          video: this.videoOutput!,
         },
       );
+    } else if (hasAudio) {
+      this.pipeline = pipeline(
+        {
+          audio: this.input,
+        },
+        {
+          audio: [this.audioDecoder, this.audioFilter, this.audioEncoder],
+        },
+        {
+          audio: this.audioOutput!,
+        },
+      );
+    } else {
+      throw new Error('No audio or video streams found in input');
     }
 
     await this.pipeline.completion;
