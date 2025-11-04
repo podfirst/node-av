@@ -1,7 +1,7 @@
 import { AudioFifo } from '../lib/audio-fifo.js';
 import { Frame } from '../lib/frame.js';
 
-import type { AVSampleFormat } from '../constants/constants.js';
+import type { AVSampleFormat } from '../constants/index.js';
 import type { ChannelLayout } from '../lib/types.js';
 
 /**
@@ -155,8 +155,10 @@ export class AudioFrameBuffer implements Disposable {
     }
 
     if (this.firstFramePts === null) {
-      this.firstFramePts = frame.pts ?? 0n;
-      this.nextPts = this.firstFramePts;
+      // Always start PTS from 0 for encoder frames
+      // Input frames may be in different timebase than encoder expects
+      this.firstFramePts = 0n;
+      this.nextPts = 0n;
     }
 
     // Write frame data to FIFO
@@ -185,8 +187,10 @@ export class AudioFrameBuffer implements Disposable {
     }
 
     if (this.firstFramePts === null) {
-      this.firstFramePts = frame.pts ?? 0n;
-      this.nextPts = this.firstFramePts;
+      // Always start PTS from 0 for encoder frames
+      // Input frames may be in different timebase than encoder expects
+      this.firstFramePts = 0n;
+      this.nextPts = 0n;
     }
 
     // Write frame data to FIFO
