@@ -133,8 +133,7 @@ if (canCopyVideo) {
   // Create encoder with explicit video parameters
   // Use YUV420P for libx264 as it's the most compatible format
   videoEncoder = await Encoder.create(FF_ENCODER_LIBX264, {
-    timeBase: videoStream.timeBase,
-    frameRate: videoStream.avgFrameRate,
+    decoder: videoDecoder,
   });
 
   videoIdx = output.addStream(videoEncoder);
@@ -150,13 +149,12 @@ if (canCopyAudio) {
 
   // Create filter chain that converts to the format needed by AAC encoder
   const filterChain = FilterPreset.chain().aformat(AV_SAMPLE_FMT_FLTP, 48000, 'stereo').asetnsamples(1024).build();
-  audioFilter = FilterAPI.create(filterChain, {
-    timeBase: audioStream.timeBase,
-  });
+  audioFilter = FilterAPI.create(filterChain);
 
   // AAC encoder
   audioEncoder = await Encoder.create(FF_ENCODER_AAC, {
-    timeBase: audioStream.timeBase,
+    decoder: audioDecoder,
+    filter: audioFilter,
     bitrate: '192k',
   });
 

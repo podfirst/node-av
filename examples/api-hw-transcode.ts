@@ -74,8 +74,7 @@ if (!encoderCodec) {
 
 console.log(`Creating encoder: ${encoderCodec.name}...`);
 using encoder = await Encoder.create(encoderCodec, {
-  timeBase: videoStream.timeBase,
-  frameRate: videoStream.avgFrameRate,
+  decoder,
 });
 
 // Create output using MediaOutput

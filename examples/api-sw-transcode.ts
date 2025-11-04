@@ -51,8 +51,7 @@ const decoder = await Decoder.create(videoStream);
 // Create software encoder (CPU)
 console.log('Setting up software encoder...');
 const encoder = await Encoder.create(FF_ENCODER_LIBX264, {
-  timeBase: videoStream.timeBase,
-  frameRate: videoStream.avgFrameRate,
+  decoder,
   bitrate: '2M',
   gopSize: 60,
   options: {

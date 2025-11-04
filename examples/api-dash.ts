@@ -105,16 +105,13 @@ using decoder = await Decoder.create(videoStream);
 // Create filter (ensure YUV420P for DASH compatibility)
 const filterChain = FilterPreset.chain().format(AV_PIX_FMT_YUV420P).build();
 console.log(`\nCreating filter: ${filterChain}`);
-using filter = FilterAPI.create(filterChain, {
-  frameRate: videoStream.avgFrameRate,
-  timeBase: videoStream.timeBase,
-});
+using filter = FilterAPI.create(filterChain);
 
 // Create encoder
 console.log('\nCreating H.265 encoder...');
 using encoder = await Encoder.create(FF_ENCODER_LIBX265, {
-  frameRate: videoStream.avgFrameRate,
-  timeBase: videoStream.timeBase,
+  decoder,
+  filter,
   bitrate,
   options: {
     preset,

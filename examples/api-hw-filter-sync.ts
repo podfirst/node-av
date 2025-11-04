@@ -75,7 +75,6 @@ using decoder = Decoder.createSync(videoStream, {
 const filterChain = FilterPreset.chain(hwOpencl).format(AV_PIX_FMT_GRAY8).hwupload().sobel().hwdownload().format([AV_PIX_FMT_GRAY8, AV_PIX_FMT_NV12]).build();
 console.log('Creating filter with:', filterChain);
 using filter = FilterAPI.create(filterChain, {
-  timeBase: videoStream.timeBase,
   hardware: hwOpencl,
 });
 
@@ -88,8 +87,8 @@ if (!encoderCodec) {
 // Create encoder
 console.log(`Creating encoder: ${encoderCodec.name}...`);
 using encoder = Encoder.createSync(encoderCodec, {
-  timeBase: videoStream.timeBase,
-  frameRate: videoStream.avgFrameRate,
+  decoder,
+  filter,
 });
 
 // Create output using MediaOutput

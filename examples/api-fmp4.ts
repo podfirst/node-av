@@ -23,8 +23,10 @@
  *   tsx examples/api-fmp4.ts rtsp://server/live --chunk-mode --buffer 8192
  */
 
-import { AV_HWDEVICE_TYPE_NONE, FMP4_CODECS, FMP4Stream, type FMP4Data } from '../src/index.js';
+import { AV_HWDEVICE_TYPE_NONE, FMP4_CODECS, FMP4Stream } from '../src/index.js';
 import { prepareTestEnvironment } from './index.js';
+
+import type { FMP4Data } from '../src/index.js';
 
 // Parse command line arguments
 const args = process.argv.slice(2);
@@ -116,8 +118,6 @@ const onData = (data: Buffer, info: FMP4Data) => {
         ftypReceived = true;
         console.log(`\n✓ Initialization Segment (${box.type}) received (${box.size} bytes)`);
         console.log(`Codec string for client: ${stream.getCodecString()}`);
-        const resolution = stream.getResolution();
-        console.log(`Video resolution: ${resolution.width}x${resolution.height}`);
       }
       if (box.type === 'moov' && !moovReceived) {
         moovReceived = true;

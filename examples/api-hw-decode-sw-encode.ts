@@ -73,16 +73,14 @@ const decoder = await Decoder.create(videoStream, {
 console.log('Setting up format conversion filter...');
 const filterChain = FilterPreset.chain(hw).hwdownload().format([AV_PIX_FMT_NV12, AV_PIX_FMT_YUV420P]).build();
 using filter = FilterAPI.create(filterChain, {
-  timeBase: videoStream.timeBase,
-  frameRate: videoStream.avgFrameRate,
   hardware: hw,
 });
 
 // Create software encoder (CPU)
 console.log('Setting up software encoder...');
 using encoder = await Encoder.create(FF_ENCODER_LIBX264, {
-  timeBase: videoStream.timeBase,
-  frameRate: videoStream.avgFrameRate,
+  decoder,
+  filter,
   options: {
     preset: 'medium',
     crf: '23',

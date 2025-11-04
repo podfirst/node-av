@@ -52,15 +52,12 @@ async function extractFrameAsPNG(frameNumber: number) {
 
   // Create filter to convert to RGB24
   const filterChain = FilterPreset.chain().format(AV_PIX_FMT_RGB24).build();
-  using filter = FilterAPI.create(filterChain, {
-    timeBase: videoStream.timeBase,
-    frameRate: videoStream.avgFrameRate,
-  });
+  using filter = FilterAPI.create(filterChain);
 
   // Create PNG encoder
   using pngEncoder = await Encoder.create(FF_ENCODER_PNG, {
-    timeBase: videoStream.timeBase,
-    frameRate: videoStream.avgFrameRate,
+    decoder,
+    filter,
   });
 
   let currentFrame = 0;
@@ -117,8 +114,7 @@ async function extractFramesAtInterval(intervalSeconds: number, count: number) {
 
   // Create JPEG encoder for thumbnails
   using jpegEncoder = await Encoder.create(FF_ENCODER_MJPEG, {
-    timeBase: videoStream.timeBase,
-    frameRate: videoStream.avgFrameRate,
+    decoder,
     bitrate: '2M',
     options: {
       strict: 'experimental',
@@ -224,15 +220,12 @@ async function generateGIF(startTime: number, duration: number) {
 
   // Create filter to convert to RGB24 (GIF requires this)
   const filterChain = FilterPreset.chain().format(AV_PIX_FMT_RGB8).build();
-  using filter = FilterAPI.create(filterChain, {
-    timeBase: videoStream.timeBase,
-    frameRate: videoStream.avgFrameRate,
-  });
+  using filter = FilterAPI.create(filterChain);
 
   // Create encoder
   using encoder = await Encoder.create(FF_ENCODER_GIF, {
-    timeBase: videoStream.timeBase,
-    frameRate: videoStream.avgFrameRate,
+    decoder,
+    filter,
     options: {
       // GIF specific options can be set here
       // e.g., loop count, palette size, etc.

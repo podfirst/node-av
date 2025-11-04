@@ -108,8 +108,6 @@ const filterChain = FilterPreset.chain(hardware)
 
 console.log(`Creating filter: ${filterChain}`);
 using filter = FilterAPI.create(filterChain, {
-  timeBase: videoStream.timeBase,
-  frameRate: videoStream.avgFrameRate,
   hardware,
 });
 
@@ -121,8 +119,8 @@ if (!encoderCodec) {
 
 console.log(`Creating encoder: ${encoderCodec.name}...`);
 using encoder = await Encoder.create(encoderCodec, {
-  timeBase: videoStream.timeBase,
-  frameRate: videoStream.avgFrameRate,
+  decoder,
+  filter,
   bitrate: '1M',
 });
 

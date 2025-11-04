@@ -47,8 +47,7 @@ using decoder = await Decoder.create(videoStream);
 // Create encoder
 console.log('Creating encoder...');
 using encoder = await Encoder.create(FF_ENCODER_LIBX264, {
-  frameRate: videoStream.avgFrameRate,
-  timeBase: videoStream.timeBase,
+  decoder,
   bitrate: '1M',
   gopSize: 60,
   options: {

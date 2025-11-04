@@ -72,7 +72,7 @@ const parseEnums = (headerPath) => {
   // This prevents issues with braces inside comments (like @code{.c})
   content = content
     .replace(/\/\*[\s\S]*?\*\//g, '') // Remove /* ... */ and /** ... */ comments
-    .replace(/\/\/.*$/gm, '');        // Remove // comments
+    .replace(/\/\/.*$/gm, ''); // Remove // comments
 
   const enums = {};
 

@@ -115,8 +115,7 @@ using audioDecoder = await Decoder.create(audioStream);
 // Create encoders
 console.log('Creating encoders...');
 using videoEncoder = await Encoder.create(FF_ENCODER_LIBX264, {
-  timeBase: { num: 1, den: videoFps },
-  frameRate: { num: videoFps, den: 1 },
+  decoder: videoDecoder,
   bitrate: '2M',
   gopSize: 60,
   options: {
@@ -126,16 +125,14 @@ using videoEncoder = await Encoder.create(FF_ENCODER_LIBX264, {
 });
 
 using audioEncoder = await Encoder.create(FF_ENCODER_AAC, {
-  timeBase: { num: 1, den: audioRate },
+  decoder: audioDecoder,
   bitrate: '192k',
 });
 
 // Create audio filter to handle frame size and format conversion
 console.log('Creating audio filter for format conversion...');
 const filterChain = FilterPreset.chain().aformat([AV_SAMPLE_FMT_FLTP], 48000, 'stereo').asetnsamples(1024).build();
-using audioFilter = FilterAPI.create(filterChain, {
-  timeBase: audioStream.timeBase,
-});
+using audioFilter = FilterAPI.create(filterChain);
 
 // Process with pipeline
 console.log('Setting up muxing pipeline...');

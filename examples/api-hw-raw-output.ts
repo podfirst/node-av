@@ -104,8 +104,6 @@ using decoder = await Decoder.create(videoStream, {
 const filterChain = FilterPreset.chain(hardware).scale(scaleWidth, scaleHeight).hwdownload().format(AV_PIX_FMT_NV12).fps(fps).build();
 console.log(`Creating filter: ${filterChain}`);
 using filter = FilterAPI.create(filterChain, {
-  timeBase: videoStream.timeBase,
-  frameRate: videoStream.avgFrameRate,
   hardware,
 });
 
@@ -117,8 +115,8 @@ if (!encoderCodec) {
 
 console.log(`Creating encoder: ${encoderCodec.name}...`);
 using encoder = await Encoder.create(FF_ENCODER_RAWVIDEO, {
-  timeBase: videoStream.timeBase,
-  frameRate: videoStream.avgFrameRate,
+  decoder,
+  filter,
   bitrate: '2M',
   gopSize: 60,
 });

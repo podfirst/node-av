@@ -75,11 +75,12 @@ wss.on('connection', async (ws: WebSocket) => {
 
         // Send codec string to client for addSourceBuffer
         if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: 'mse', value: codecString, resolution: stream.getResolution() }));
+          const input = stream.getInput();
+          const videoStream = input?.video();
+          const width = videoStream?.codecpar.width ?? 0;
+          const height = videoStream?.codecpar.height ?? 0;
+          ws.send(JSON.stringify({ type: 'mse', value: codecString, resolution: { width, height } }));
         }
-
-        // Wait for user to stop or stream to end naturally
-        // Note: stream.start() returns immediately, pipeline runs in background
       }
     } catch (error) {
       console.error('[WebSocket] Error:', error);

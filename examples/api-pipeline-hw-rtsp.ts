@@ -119,8 +119,6 @@ using decoder = await Decoder.create(videoStream, {
 const filterChain = FilterPreset.chain(hardware).scale(scaleWidth, scaleHeight).custom('setpts=N/FRAME_RATE/TB').build();
 
 using filter = FilterAPI.create(filterChain, {
-  timeBase: videoStream.timeBase,
-  frameRate: videoStream.avgFrameRate,
   hardware,
 });
 
@@ -131,8 +129,8 @@ if (!encoderCodec) {
 }
 
 using encoder = await Encoder.create(encoderCodec, {
-  timeBase: videoStream.timeBase,
-  frameRate: videoStream.avgFrameRate,
+  decoder,
+  filter,
   bitrate: '2M',
   gopSize: 60,
 });
