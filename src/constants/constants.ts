@@ -4,6 +4,8 @@
  * DO NOT EDIT MANUALLY
  */
 
+import type { IRational } from '../lib/types.js';
+
 // Brand symbol for type safety
 const __ffmpeg_brand = Symbol('__ffmpeg_brand');
 
@@ -2373,7 +2375,31 @@ export {
 } from '../lib/error.js';
 
 // Special time constants
+export const AV_TIME_BASE_Q: IRational = { num: 1, den: AV_TIME_BASE };
 export const AV_NOPTS_VALUE = -9223372036854775808n; // INT64_MIN
+
+// Integer limit constants (from C stdint.h/limits.h)
+// These are platform-independent fixed values for standard integer types
+export const INT8_MIN = -128; // -(2^7)
+export const INT8_MAX = 127; // 2^7 - 1
+export const UINT8_MAX = 255; // 2^8 - 1
+export const INT16_MIN = -32768; // -(2^15)
+export const INT16_MAX = 32767; // 2^15 - 1
+export const UINT16_MAX = 65535; // 2^16 - 1
+export const INT32_MIN = -2147483648; // -(2^31)
+export const INT32_MAX = 2147483647; // 2^31 - 1
+export const UINT32_MAX = 4294967295; // 2^32 - 1
+export const INT64_MIN = -9223372036854775808n; // -(2^63) as BigInt
+export const INT64_MAX = 9223372036854775807n; // 2^63 - 1 as BigInt
+export const UINT64_MAX = 18446744073709551615n; // 2^64 - 1 as BigInt
+
+// Legacy C type limits (these map to the above based on typical platform sizes)
+export const INT_MIN = INT32_MIN; // Typically 32-bit on modern systems
+export const INT_MAX = INT32_MAX; // Typically 32-bit on modern systems
+export const UINT_MAX = UINT32_MAX; // Typically 32-bit on modern systems
+export const LONG_MIN = INT64_MIN; // 64-bit on 64-bit systems, 32-bit on 32-bit systems
+export const LONG_MAX = INT64_MAX; // 64-bit on 64-bit systems, 32-bit on 32-bit systems
+export const ULONG_MAX = UINT64_MAX; // 64-bit on 64-bit systems, 32-bit on 32-bit systems
 
 // Helper function to cast numbers to branded types
 export function cast<T>(value: number): T {

@@ -323,6 +323,8 @@ const generateTypeScript = () => {
  * DO NOT EDIT MANUALLY
  */
 
+import type { IRational } from '../lib/types.js';
+
 // Brand symbol for type safety
 const __ffmpeg_brand = Symbol('__ffmpeg_brand');
 
@@ -745,7 +747,33 @@ const __ffmpeg_brand = Symbol('__ffmpeg_brand');
 
   // Add special time constants
   output += '// Special time constants\n';
+  output += 'export const AV_TIME_BASE_Q: IRational = { num: 1, den: AV_TIME_BASE };\n';
   output += 'export const AV_NOPTS_VALUE = -9223372036854775808n; // INT64_MIN\n\n';
+
+  // Add integer limit constants (from C's stdint.h/limits.h)
+  output += '// Integer limit constants (from C stdint.h/limits.h)\n';
+  output += '// These are platform-independent fixed values for standard integer types\n';
+  output += 'export const INT8_MIN = -128;                      // -(2^7)\n';
+  output += 'export const INT8_MAX = 127;                       // 2^7 - 1\n';
+  output += 'export const UINT8_MAX = 255;                      // 2^8 - 1\n';
+  output += 'export const INT16_MIN = -32768;                   // -(2^15)\n';
+  output += 'export const INT16_MAX = 32767;                    // 2^15 - 1\n';
+  output += 'export const UINT16_MAX = 65535;                   // 2^16 - 1\n';
+  output += 'export const INT32_MIN = -2147483648;              // -(2^31)\n';
+  output += 'export const INT32_MAX = 2147483647;               // 2^31 - 1\n';
+  output += 'export const UINT32_MAX = 4294967295;              // 2^32 - 1\n';
+  output += 'export const INT64_MIN = -9223372036854775808n;    // -(2^63) as BigInt\n';
+  output += 'export const INT64_MAX = 9223372036854775807n;     // 2^63 - 1 as BigInt\n';
+  output += 'export const UINT64_MAX = 18446744073709551615n;   // 2^64 - 1 as BigInt\n';
+  output += '\n';
+  output += '// Legacy C type limits (these map to the above based on typical platform sizes)\n';
+  output += 'export const INT_MIN = INT32_MIN;                  // Typically 32-bit on modern systems\n';
+  output += 'export const INT_MAX = INT32_MAX;                  // Typically 32-bit on modern systems\n';
+  output += 'export const UINT_MAX = UINT32_MAX;                // Typically 32-bit on modern systems\n';
+  output += 'export const LONG_MIN = INT64_MIN;                 // 64-bit on 64-bit systems, 32-bit on 32-bit systems\n';
+  output += 'export const LONG_MAX = INT64_MAX;                 // 64-bit on 64-bit systems, 32-bit on 32-bit systems\n';
+  output += 'export const ULONG_MAX = UINT64_MAX;               // 64-bit on 64-bit systems, 32-bit on 32-bit systems\n';
+  output += '\n';
 
   // Export convenience function for creating branded values
   output += '// Helper function to cast numbers to branded types\n';
