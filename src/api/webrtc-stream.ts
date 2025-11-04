@@ -10,9 +10,10 @@ import {
   AV_CODEC_ID_VP8,
   AV_CODEC_ID_VP9,
 } from '../constants/constants.js';
-import { RTPStream, type RTPStreamOptions } from './rtp-stream.js';
+import { RTPStream } from './rtp-stream.js';
 
-import type { AVCodecID } from '../constants/constants.js';
+import type { AVCodecID } from '../constants/index.js';
+import type { RTPStreamOptions } from './rtp-stream.js';
 
 /**
  * Codec information for WebRTC streaming.
@@ -25,7 +26,7 @@ export interface WebRTCCodecInfo {
    * Video codec configuration.
    * Combines RTP parameters (mimeType, clockRate, etc.) with FFmpeg codec ID.
    */
-  video: Partial<RTCRtpCodecParameters> & {
+  video?: Partial<RTCRtpCodecParameters> & {
     codecId: AVCodecID;
   };
 
@@ -122,7 +123,6 @@ export interface WebRTCStreamOptions extends Omit<RTPStreamOptions, 'onVideoPack
  */
 export class WebRTCStream {
   private stream!: RTPStream;
-  private codecInfo?: WebRTCCodecInfo;
   private pc: RTCPeerConnection | null = null;
   private videoTrack: MediaStreamTrack | null = null;
   private audioTrack: MediaStreamTrack | null = null;
@@ -157,10 +157,6 @@ export class WebRTCStream {
    * @param options - Session configuration options
    *
    * @returns Configured WebRTC session instance
-   *
-   * @throws {Error} If no video stream found in input
-   *
-   * @throws {FFmpegError} If input cannot be opened
    *
    * @example
    * ```typescript
@@ -278,28 +274,21 @@ export class WebRTCStream {
    * ```
    */
   getCodecs(): WebRTCCodecInfo {
-    if (this.codecInfo) {
-      return this.codecInfo;
-    }
-
     const input = this.stream.getInput();
     if (!input) {
-      throw new Error('Input not open - this should not happen after create()');
+      return {
+        video: undefined,
+        audio: undefined,
+      };
     }
 
     const videoStream = input.video();
-    if (!videoStream) {
-      throw new Error('No video stream found in input');
-    }
-
     const audioStream = input.audio();
 
-    this.codecInfo = {
-      video: this.getVideoCodecConfig(videoStream.codecpar.codecId),
-      audio: audioStream ? this.getAudioCodecConfig(audioStream.codecpar.codecId) : undefined,
+    return {
+      video: this.getVideoCodecConfig(videoStream?.codecpar.codecId),
+      audio: this.getAudioCodecConfig(audioStream?.codecpar.codecId),
     };
-
-    return this.codecInfo;
   }
 
   /**
@@ -454,11 +443,11 @@ export class WebRTCStream {
    *
    * @param codecId - FFmpeg codec ID
    *
-   * @returns RTP codec parameters with codec ID
+   * @returns RTP codec parameters with codec ID or undefined if unsupported
    *
    * @internal
    */
-  private getVideoCodecConfig(codecId: AVCodecID): Partial<RTCRtpCodecParameters> & { codecId: AVCodecID } {
+  private getVideoCodecConfig(codecId?: AVCodecID): (Partial<RTCRtpCodecParameters> & { codecId: AVCodecID }) | undefined {
     let mimeType: string;
     const clockRate = 90000;
     let payloadType: number;
@@ -485,7 +474,7 @@ export class WebRTCStream {
         payloadType = 98;
         break;
       default:
-        throw new Error(`Unsupported video codec: ${codecId}`);
+        return undefined;
     }
 
     return { mimeType, clockRate, payloadType, codecId };
@@ -496,11 +485,11 @@ export class WebRTCStream {
    *
    * @param codecId - FFmpeg codec ID
    *
-   * @returns RTP codec parameters with codec ID
+   * @returns RTP codec parameters with codec ID or undefined if unsupported
    *
    * @internal
    */
-  private getAudioCodecConfig(codecId: AVCodecID): Partial<RTCRtpCodecParameters> & { codecId: AVCodecID } {
+  private getAudioCodecConfig(codecId?: AVCodecID): (Partial<RTCRtpCodecParameters> & { codecId: AVCodecID }) | undefined {
     let mimeType: string;
     let clockRate: number;
     let channels: number;
@@ -526,7 +515,7 @@ export class WebRTCStream {
         payloadType = 0;
         break;
       default:
-        throw new Error(`Unsupported audio codec: ${codecId}`);
+        return undefined;
     }
 
     return { mimeType, clockRate, channels, payloadType, codecId };
