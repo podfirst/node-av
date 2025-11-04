@@ -1,4 +1,5 @@
 import { CodecParameters } from './codec-parameters.js';
+import { CodecParser } from './codec-parser.js';
 import { Dictionary } from './dictionary.js';
 import { Rational } from './rational.js';
 
@@ -50,6 +51,7 @@ import type { Packet } from './packet.js';
 export class Stream implements NativeWrapper<NativeStream> {
   private native: NativeStream;
   private _codecpar?: CodecParameters; // Cache the wrapped codecpar
+  private _parser?: CodecParser; // Cache the wrapped parser
 
   /**
    * @param native - The native stream instance
@@ -335,6 +337,48 @@ export class Stream implements NativeWrapper<NativeStream> {
 
   set eventFlags(value: AVStreamEventFlag) {
     this.native.eventFlags = value;
+  }
+
+  /**
+   * Get the codec parser attached to this stream.
+   *
+   * Returns the parser context if the stream has an active parser, null otherwise.
+   * Parsers are automatically created by FFmpeg for certain formats and codecs.
+   * Useful for accessing parser state like repeat_pict for interlaced video.
+   *
+   * Direct mapping to av_stream_get_parser().
+   *
+   * @returns Parser context or null if no parser attached
+   *
+   * @example
+   * ```typescript
+   * const parser = stream.parser;
+   * if (parser) {
+   *   const fields = 1 + parser.repeatPict;
+   *   console.log(`Frame uses ${fields} fields`);
+   * }
+   * ```
+   *
+   * @see {@link CodecParser} For parser details
+   */
+  get parser(): CodecParser | null {
+    const native = this.native.parser;
+    if (!native) {
+      // Clear cache if native is null
+      this._parser = undefined;
+      return null;
+    }
+
+    // Return cached wrapper if available and still valid
+    if (this._parser && (this._parser as any).native === native) {
+      return this._parser;
+    }
+
+    // Create and cache new wrapper
+    const parser = Object.create(CodecParser.prototype) as CodecParser;
+    (parser as any).native = native;
+    this._parser = parser;
+    return parser;
   }
 
   /**

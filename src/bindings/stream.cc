@@ -1,5 +1,6 @@
 #include "stream.h"
 #include "codec_parameters.h"
+#include "codec_parser.h"
 #include "dictionary.h"
 #include "packet.h"
 #include "common.h"
@@ -26,8 +27,9 @@ Napi::Object Stream::Init(Napi::Env env, Napi::Object exports) {
     InstanceAccessor<&Stream::GetAttachedPic>("attachedPic"),
     InstanceAccessor<&Stream::GetPtsWrapBits, &Stream::SetPtsWrapBits>("ptsWrapBits"),
     InstanceAccessor<&Stream::GetEventFlags, &Stream::SetEventFlagsAccessor>("eventFlags"),
+    InstanceAccessor<&Stream::GetParser>("parser"),
   });
-  
+
   constructor = Napi::Persistent(func);
   constructor.SuppressDestruct();
   
@@ -321,6 +323,31 @@ void Stream::SetEventFlagsAccessor(const Napi::CallbackInfo& info, const Napi::V
   if (stream_) {
     stream_->event_flags = value.As<Napi::Number>().Int32Value();
   }
+}
+
+Napi::Value Stream::GetParser(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+
+  if (!stream_) {
+    return env.Null();
+  }
+
+  // Get parser from stream using av_stream_get_parser
+  AVCodecParserContext* parser_ctx = av_stream_get_parser(stream_);
+  if (!parser_ctx) {
+    return env.Null();
+  }
+
+  // Create CodecParser wrapper
+  // Note: Parser context is owned by AVStream, so we don't transfer ownership
+  Napi::Object parserObj = CodecParser::constructor.New({});
+  CodecParser* parser = UnwrapNativeObject<CodecParser>(env, parserObj, "CodecParser");
+
+  if (parser) {
+    parser->SetParserContext(parser_ctx, false); // false = not owned
+  }
+
+  return parserObj;
 }
 
 } // namespace ffmpeg

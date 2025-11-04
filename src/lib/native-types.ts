@@ -269,6 +269,8 @@ export interface NativeCodecContext extends Disposable {
 export interface NativeCodecParser {
   readonly __brand: 'NativeCodecParser';
 
+  repeatPict: number;
+
   init(codecId: AVCodecID): void;
   parse2(codecContext: NativeCodecContext, packet: NativePacket, data: Buffer, pts: bigint, dts: bigint, pos: number): number;
   close(): void;
@@ -451,6 +453,7 @@ export interface NativeOutputFormat {
 export interface NativeStream {
   readonly __brand: 'NativeStream';
 
+  readonly parser: NativeCodecParser | null;
   readonly index: number;
   readonly attachedPic: NativePacket | null;
   id: number;

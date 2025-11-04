@@ -77,6 +77,8 @@ private:
 
   Napi::Value GetEventFlags(const Napi::CallbackInfo& info);
   void SetEventFlagsAccessor(const Napi::CallbackInfo& info, const Napi::Value& value);
+
+  Napi::Value GetParser(const Napi::CallbackInfo& info);
 };
 
 } // namespace ffmpeg
