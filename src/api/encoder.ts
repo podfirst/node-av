@@ -1,11 +1,29 @@
-import { AVERROR_EAGAIN, AVERROR_EOF, AVMEDIA_TYPE_AUDIO } from '../constants/constants.js';
-import { Codec, CodecContext, Dictionary, FFmpegError, Packet, Rational } from '../lib/index.js';
+import {
+  AV_CODEC_CAP_ENCODER_REORDERED_OPAQUE,
+  AV_CODEC_CAP_PARAM_CHANGE,
+  AV_CODEC_FLAG_COPY_OPAQUE,
+  AV_CODEC_FLAG_FRAME_DURATION,
+  AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX,
+  AV_CODEC_HW_CONFIG_METHOD_HW_FRAMES_CTX,
+  AV_PIX_FMT_NONE,
+  AV_PKT_FLAG_TRUSTED,
+  AVCHROMA_LOC_UNSPECIFIED,
+  AVERROR_EAGAIN,
+  AVERROR_EOF,
+  AVMEDIA_TYPE_AUDIO,
+  AVMEDIA_TYPE_VIDEO,
+} from '../constants/constants.js';
+import { CodecContext } from '../lib/codec-context.js';
+import { Codec } from '../lib/codec.js';
+import { Dictionary } from '../lib/dictionary.js';
+import { FFmpegError } from '../lib/error.js';
+import { Packet } from '../lib/packet.js';
+import { Rational } from '../lib/rational.js';
 import { AudioFrameBuffer } from './audio-frame-buffer.js';
 import { parseBitrate } from './utils.js';
 
-import type { AVCodecFlag, AVCodecID, AVPixelFormat, AVSampleFormat } from '../constants/constants.js';
-import type { FFEncoderCodec } from '../constants/encoders.js';
-import type { Frame } from '../lib/index.js';
+import type { AVCodecFlag, AVCodecID, AVPixelFormat, AVSampleFormat, FFEncoderCodec } from '../constants/index.js';
+import type { Frame } from '../lib/frame.js';
 import type { EncoderOptions } from './types.js';
 
 /**
@@ -108,7 +126,7 @@ export class Encoder implements Disposable {
    *
    * @param encoderCodec - Codec name, ID, or instance to use for encoding
    *
-   * @param options - Encoder configuration options including required timeBase
+   * @param options - Optional encoder configuration options including required timeBase
    *
    * @returns Configured encoder instance
    *
@@ -151,7 +169,7 @@ export class Encoder implements Disposable {
    * @see {@link EncoderOptions} For configuration options
    * @see {@link createSync} For synchronous version
    */
-  static async create(encoderCodec: FFEncoderCodec | AVCodecID | Codec, options: EncoderOptions): Promise<Encoder> {
+  static async create(encoderCodec: FFEncoderCodec | AVCodecID | Codec, options: EncoderOptions = {}): Promise<Encoder> {
     let codec: Codec | null = null;
     let codecName = '';
 
@@ -208,17 +226,6 @@ export class Encoder implements Disposable {
       codecContext.rcBufferSize = Number(bufSize);
     }
 
-    if (options.threads !== undefined) {
-      codecContext.threadCount = options.threads;
-    }
-
-    codecContext.timeBase = new Rational(options.timeBase.num, options.timeBase.den);
-    codecContext.pktTimebase = new Rational(options.timeBase.num, options.timeBase.den);
-
-    if (options.frameRate) {
-      codecContext.framerate = new Rational(options.frameRate.num, options.frameRate.den);
-    }
-
     const opts = options.options ? Dictionary.fromObject(options.options) : undefined;
 
     return new Encoder(codecContext, codec, options, opts);
@@ -236,7 +243,7 @@ export class Encoder implements Disposable {
    *
    * @param encoderCodec - Codec name, ID, or instance to use for encoding
    *
-   * @param options - Encoder configuration options including required timeBase
+   * @param options - Optional encoder configuration options including required timeBase
    *
    * @returns Configured encoder instance
    *
@@ -281,7 +288,7 @@ export class Encoder implements Disposable {
    * @see {@link EncoderOptions} For configuration options
    * @see {@link create} For async version
    */
-  static createSync(encoderCodec: FFEncoderCodec | AVCodecID | Codec, options: EncoderOptions): Encoder {
+  static createSync(encoderCodec: FFEncoderCodec | AVCodecID | Codec, options: EncoderOptions = {}): Encoder {
     let codec: Codec | null = null;
     let codecName = '';
 
@@ -338,17 +345,6 @@ export class Encoder implements Disposable {
       codecContext.rcBufferSize = Number(bufSize);
     }
 
-    if (options.threads !== undefined) {
-      codecContext.threadCount = options.threads;
-    }
-
-    if (options.frameRate) {
-      codecContext.framerate = new Rational(options.frameRate.num, options.frameRate.den);
-    }
-
-    codecContext.timeBase = new Rational(options.timeBase.num, options.timeBase.den);
-    codecContext.pktTimebase = new Rational(options.timeBase.num, options.timeBase.den);
-
     const opts = options.options ? Dictionary.fromObject(options.options) : undefined;
 
     return new Encoder(codecContext, codec, options, opts);
@@ -385,6 +381,119 @@ export class Encoder implements Disposable {
    */
   get isEncoderInitialized(): boolean {
     return this.initialized;
+  }
+
+  /**
+   * Codec flags.
+   *
+   * @returns Current codec flags
+   *
+   * @throws {Error} If encoder is closed
+   *
+   * @example
+   * ```typescript
+   * const flags = encoder.codecFlags;
+   * console.log('Current flags:', flags);
+   * ```
+   *
+   * @see {@link setCodecFlags} To set flags
+   * @see {@link clearCodecFlags} To clear flags
+   * @see {@link hasCodecFlags} To check flags
+   */
+  get codecFlags(): AVCodecFlag {
+    if (this.isClosed) {
+      throw new Error('Cannot get flags on closed encoder');
+    }
+    return this.codecContext.flags;
+  }
+
+  /**
+   * Set codec flags.
+   *
+   * @param flags - One or more flag values to set
+   *
+   * @throws {Error} If encoder is already initialized or closed
+   *
+   * @example
+   * ```typescript
+   * import { AV_CODEC_FLAG_GLOBAL_HEADER, AV_CODEC_FLAG_QSCALE } from 'node-av/constants';
+   *
+   * // Set multiple flags before initialization
+   * encoder.setCodecFlags(AV_CODEC_FLAG_GLOBAL_HEADER, AV_CODEC_FLAG_QSCALE);
+   * ```
+   *
+   * @see {@link clearCodecFlags} To clear flags
+   * @see {@link hasCodecFlags} To check flags
+   * @see {@link codecFlags} For direct flag access
+   */
+  setCodecFlags(...flags: AVCodecFlag[]): void {
+    if (this.isClosed) {
+      throw new Error('Cannot set flags on closed encoder');
+    }
+    if (this.initialized) {
+      throw new Error('Cannot set flags on already initialized encoder');
+    }
+    this.codecContext.setFlags(...flags);
+  }
+
+  /**
+   * Clear codec flags.
+   *
+   * @param flags - One or more flag values to clear
+   *
+   * @throws {Error} If encoder is already initialized or closed
+   *
+   * @example
+   * ```typescript
+   * import { AV_CODEC_FLAG_QSCALE } from 'node-av/constants';
+   *
+   * // Clear specific flag before initialization
+   * encoder.clearCodecFlags(AV_CODEC_FLAG_QSCALE);
+   * ```
+   *
+   * @see {@link setCodecFlags} To set flags
+   * @see {@link hasCodecFlags} To check flags
+   * @see {@link codecFlags} For direct flag access
+   */
+  clearCodecFlags(...flags: AVCodecFlag[]): void {
+    if (this.isClosed) {
+      throw new Error('Cannot clear flags on closed encoder');
+    }
+    if (this.initialized) {
+      throw new Error('Cannot clear flags on already initialized encoder');
+    }
+    this.codecContext.clearFlags(...flags);
+  }
+
+  /**
+   * Check if codec has specific flags.
+   *
+   * Tests whether all specified codec flags are set using bitwise AND.
+   *
+   * @param flags - One or more flag values to check
+   *
+   * @returns true if all specified flags are set, false otherwise
+   *
+   * @throws {Error} If encoder is closed
+   *
+   * @example
+   * ```typescript
+   * import { AV_CODEC_FLAG_GLOBAL_HEADER } from 'node-av/constants';
+   *
+   * if (encoder.hasCodecFlags(AV_CODEC_FLAG_GLOBAL_HEADER)) {
+   *   console.log('Global header flag is set');
+   * }
+   * ```
+   *
+   * @see {@link setCodecFlags} To set flags
+   * @see {@link clearCodecFlags} To clear flags
+   * @see {@link codecFlags} For direct flag access
+   */
+  hasCodecFlags(...flags: AVCodecFlag[]): boolean {
+    if (this.isClosed) {
+      throw new Error('Cannot check flags on closed encoder');
+    }
+    return this.codecContext.hasFlags(...flags);
   }
 
   /**
@@ -427,6 +536,10 @@ export class Encoder implements Disposable {
    * Sends a frame to the encoder and attempts to receive an encoded packet.
    * On first frame, automatically initializes encoder with frame properties.
    * Handles internal buffering - may return null if more frames needed.
+   *
+   * **Note**: This method receives only ONE packet per call.
+   * A single frame can produce multiple packets (e.g., B-frames, codec buffering).
+   * To receive all packets from a frame, use {@link encodeAll} or {@link packets} instead.
    *
    * Direct mapping to avcodec_send_frame() and avcodec_receive_packet().
    *
@@ -478,19 +591,30 @@ export class Encoder implements Disposable {
       await this.initialize(frame);
     }
 
+    // Prepare frame for encoding (set quality, validate channel count)
+    if (frame) {
+      this.prepareFrameForEncoding(frame);
+    }
+
     // Send frame to encoder
     const sendRet = await this.codecContext.sendFrame(frame);
-    if (sendRet < 0 && sendRet !== AVERROR_EOF) {
-      // Encoder might be full, try to receive first
+
+    // Handle EAGAIN: encoder buffer is full, need to read packets first
+    // Unlike FFmpeg CLI which reads ALL packets in a loop, our encode() returns
+    // only one packet at a time. This means the encoder can still have packets
+    // from previous frames when we try to send a new frame.
+    if (sendRet === AVERROR_EAGAIN) {
+      // Encoder is full, receive a packet first
       const packet = await this.receive();
       if (packet) {
         return packet;
       }
+      // If receive() returned null, this is unexpected - treat as error
+      throw new Error('Encoder returned EAGAIN but no packet available');
+    }
 
-      // If still failing, it's an error
-      if (sendRet !== AVERROR_EAGAIN) {
-        FFmpegError.throwIfError(sendRet, 'Failed to send frame');
-      }
+    if (sendRet < 0 && sendRet !== AVERROR_EOF) {
+      FFmpegError.throwIfError(sendRet, 'Failed to send frame');
     }
 
     // Try to receive packet
@@ -504,6 +628,10 @@ export class Encoder implements Disposable {
    * Sends a frame to the encoder and attempts to receive an encoded packet.
    * On first frame, automatically initializes encoder with frame properties.
    * Handles internal buffering - may return null if more frames needed.
+   *
+   * **Note**: This method receives only ONE packet per call.
+   * A single frame can produce multiple packets (e.g., B-frames, codec buffering).
+   * To receive all packets from a frame, use {@link encodeAllSync} or {@link packetsSync} instead.
    *
    * Direct mapping to avcodec_send_frame() and avcodec_receive_packet().
    *
@@ -555,17 +683,30 @@ export class Encoder implements Disposable {
       this.initializeSync(frame);
     }
 
+    // Prepare frame for encoding (set quality, validate channel count)
+    if (frame) {
+      this.prepareFrameForEncoding(frame);
+    }
+
     // Send frame to encoder
     const sendRet = this.codecContext.sendFrameSync(frame);
-    if (sendRet < 0 && sendRet !== AVERROR_EOF) {
-      // Encoder might be full, try to receive first
-      const packet = this.receiveSync();
-      if (packet) return packet;
 
-      // If still failing, it's an error
-      if (sendRet !== AVERROR_EAGAIN) {
-        FFmpegError.throwIfError(sendRet, 'Failed to send frame');
+    // Handle EAGAIN: encoder buffer is full, need to read packets first
+    // Unlike FFmpeg CLI which reads ALL packets in a loop, our encode() returns
+    // only one packet at a time. This means the encoder can still have packets
+    // from previous frames when we try to send a new frame.
+    if (sendRet === AVERROR_EAGAIN) {
+      // Encoder is full, receive a packet first
+      const packet = this.receiveSync();
+      if (packet) {
+        return packet;
       }
+      // If receive() returned null, this is unexpected - treat as error
+      throw new Error('Encoder returned EAGAIN but no packet available');
+    }
+
+    if (sendRet < 0 && sendRet !== AVERROR_EOF) {
+      FFmpegError.throwIfError(sendRet, 'Failed to send frame');
     }
 
     // Try to receive packet
@@ -637,8 +778,13 @@ export class Encoder implements Disposable {
 
       // Pull and encode all available fixed-size frames
       const packets: Packet[] = [];
-      let bufferedFrame;
-      while ((bufferedFrame = await this.audioFrameBuffer.pull()) !== null) {
+      let _bufferedFrame;
+      while (!this.isClosed && (_bufferedFrame = await this.audioFrameBuffer.pull()) !== null) {
+        using bufferedFrame = _bufferedFrame;
+
+        // Prepare buffered frame for encoding (set quality, validate channel count)
+        this.prepareFrameForEncoding(bufferedFrame);
+
         // Send buffered frame to encoder
         const sendRet = await this.codecContext.sendFrame(bufferedFrame);
         if (sendRet < 0 && sendRet !== AVERROR_EOF && sendRet !== AVERROR_EAGAIN) {
@@ -646,40 +792,33 @@ export class Encoder implements Disposable {
         }
 
         // Receive packets
-        let packet;
-        while ((packet = await this.receive()) !== null) {
+        while (!this.isClosed) {
+          const packet = await this.receive();
+          if (!packet) break;
           packets.push(packet);
         }
-
-        // Free buffered frame
-        bufferedFrame.free();
       }
       return packets;
     }
 
     // Standard encoding path (video or audio without fixed frame size)
+    // Prepare frame for encoding (set quality, validate channel count)
+    if (frame) {
+      this.prepareFrameForEncoding(frame);
+    }
+
+    // Send frame first, error immediately if send fails
     const sendRet = await this.codecContext.sendFrame(frame);
     if (sendRet < 0 && sendRet !== AVERROR_EOF) {
-      // Encoder might be full, try to receive first
-      const packets: Packet[] = [];
-      let packet;
-      while ((packet = await this.receive()) !== null) {
-        packets.push(packet);
-      }
-      if (packets.length > 0) {
-        return packets;
-      }
-
-      // If still failing, it's an error
-      if (sendRet !== AVERROR_EAGAIN) {
-        FFmpegError.throwIfError(sendRet, 'Failed to send frame');
-      }
+      FFmpegError.throwIfError(sendRet, 'Failed to send frame to encoder');
+      return [];
     }
 
     // Receive all available packets
     const packets: Packet[] = [];
-    let packet;
-    while ((packet = await this.receive()) !== null) {
+    while (!this.isClosed) {
+      const packet = await this.receive();
+      if (!packet) break;
       packets.push(packet);
     }
     return packets;
@@ -751,8 +890,13 @@ export class Encoder implements Disposable {
 
       // Pull and encode all available fixed-size frames
       const packets: Packet[] = [];
-      let bufferedFrame;
-      while ((bufferedFrame = this.audioFrameBuffer.pullSync()) !== null) {
+      let _bufferedFrame;
+      while (!this.isClosed && (_bufferedFrame = this.audioFrameBuffer.pullSync()) !== null) {
+        using bufferedFrame = _bufferedFrame;
+
+        // Prepare buffered frame for encoding (set quality, validate channel count)
+        this.prepareFrameForEncoding(bufferedFrame);
+
         // Send buffered frame to encoder
         const sendRet = this.codecContext.sendFrameSync(bufferedFrame);
         if (sendRet < 0 && sendRet !== AVERROR_EOF && sendRet !== AVERROR_EAGAIN) {
@@ -760,40 +904,33 @@ export class Encoder implements Disposable {
         }
 
         // Receive packets
-        let packet;
-        while ((packet = this.receiveSync()) !== null) {
+        while (!this.isClosed) {
+          const packet = this.receiveSync();
+          if (!packet) break;
           packets.push(packet);
         }
-
-        // Free buffered frame
-        bufferedFrame.free();
       }
       return packets;
     }
 
     // Standard encoding path (video or audio without fixed frame size)
+    // Prepare frame for encoding (set quality, validate channel count)
+    if (frame) {
+      this.prepareFrameForEncoding(frame);
+    }
+
+    // Send frame first, error immediately if send fails
     const sendRet = this.codecContext.sendFrameSync(frame);
     if (sendRet < 0 && sendRet !== AVERROR_EOF) {
-      // Encoder might be full, try to receive first
-      const packets: Packet[] = [];
-      let packet;
-      while ((packet = this.receiveSync()) !== null) {
-        packets.push(packet);
-      }
-      if (packets.length > 0) {
-        return packets;
-      }
-
-      // If still failing, it's an error
-      if (sendRet !== AVERROR_EAGAIN) {
-        FFmpegError.throwIfError(sendRet, 'Failed to send frame');
-      }
+      FFmpegError.throwIfError(sendRet, 'Failed to send frame to encoder');
+      return [];
     }
 
     // Receive all available packets
     const packets: Packet[] = [];
-    let packet;
-    while ((packet = this.receiveSync()) !== null) {
+    while (!this.isClosed) {
+      const packet = this.receiveSync();
+      if (!packet) break;
       packets.push(packet);
     }
     return packets;
@@ -861,7 +998,7 @@ export class Encoder implements Disposable {
    */
   async *packets(frames: AsyncIterable<Frame>): AsyncGenerator<Packet> {
     // Process frames
-    for await (const frame of frames) {
+    for await (using frame of frames) {
       if (this.isClosed) {
         break;
       }
@@ -871,39 +1008,49 @@ export class Encoder implements Disposable {
         await this.initialize(frame);
       }
 
-      try {
-        // If audio encoder with fixed frame size, use AudioFrameBuffer
-        if (this.audioFrameBuffer) {
-          // Push frame into buffer
-          await this.audioFrameBuffer.push(frame);
+      // If audio encoder with fixed frame size, use AudioFrameBuffer
+      if (this.audioFrameBuffer) {
+        // Push frame into buffer
+        await this.audioFrameBuffer.push(frame);
 
-          // Pull and encode all available fixed-size frames
-          let _bufferedFrame;
-          while ((_bufferedFrame = await this.audioFrameBuffer.pull()) !== null) {
-            using bufferedFrame = _bufferedFrame;
+        // Pull and encode all available fixed-size frames
+        let _bufferedFrame;
+        while (!this.isClosed && (_bufferedFrame = await this.audioFrameBuffer.pull()) !== null) {
+          using bufferedFrame = _bufferedFrame;
 
-            // Send buffered frame to encoder
-            const sendRet = await this.codecContext.sendFrame(bufferedFrame);
-            if (sendRet < 0 && sendRet !== AVERROR_EOF && sendRet !== AVERROR_EAGAIN) {
-              FFmpegError.throwIfError(sendRet, 'Failed to send frame');
-            }
+          // Prepare buffered frame for encoding (set quality, validate channel count)
+          this.prepareFrameForEncoding(bufferedFrame);
 
-            // Receive packets
-            let packet;
-            while ((packet = await this.receive()) !== null) {
-              yield packet;
-            }
+          // Send buffered frame to encoder
+          const sendRet = await this.codecContext.sendFrame(bufferedFrame);
+          if (sendRet < 0 && sendRet !== AVERROR_EOF && sendRet !== AVERROR_EAGAIN) {
+            FFmpegError.throwIfError(sendRet, 'Failed to send frame');
           }
-        } else {
-          // Process frames
-          const packet = await this.encode(frame);
-          if (packet) {
+
+          // Receive packets
+          while (!this.isClosed) {
+            const packet = await this.receive();
+            if (!packet) break;
             yield packet;
           }
         }
-      } finally {
-        // Free the input frame after encoding
-        frame.free();
+      } else {
+        // Prepare frame for encoding (set quality, validate channel count)
+        this.prepareFrameForEncoding(frame);
+
+        // Send frame to encoder
+        const sendRet = await this.codecContext.sendFrame(frame);
+        if (sendRet < 0 && sendRet !== AVERROR_EOF && sendRet !== AVERROR_EAGAIN) {
+          FFmpegError.throwIfError(sendRet, 'Failed to send frame');
+        }
+
+        // Receive ALL packets
+        // A single frame can produce multiple packets (e.g., B-frames, lookahead)
+        while (!this.isClosed) {
+          const packet = await this.receive();
+          if (!packet) break;
+          yield packet;
+        }
       }
     }
 
@@ -965,7 +1112,7 @@ export class Encoder implements Disposable {
    */
   *packetsSync(frames: Iterable<Frame>): Generator<Packet> {
     // Process frames
-    for (const frame of frames) {
+    for (using frame of frames) {
       if (this.isClosed) {
         break;
       }
@@ -975,39 +1122,49 @@ export class Encoder implements Disposable {
         this.initializeSync(frame);
       }
 
-      try {
-        // If audio encoder with fixed frame size, use AudioFrameBuffer
-        if (this.audioFrameBuffer) {
-          // Push frame into buffer
-          this.audioFrameBuffer.pushSync(frame);
+      // If audio encoder with fixed frame size, use AudioFrameBuffer
+      if (this.audioFrameBuffer) {
+        // Push frame into buffer
+        this.audioFrameBuffer.pushSync(frame);
 
-          // Pull and encode all available fixed-size frames
-          let _bufferedFrame;
-          while ((_bufferedFrame = this.audioFrameBuffer.pullSync()) !== null) {
-            using bufferedFrame = _bufferedFrame;
+        // Pull and encode all available fixed-size frames
+        let _bufferedFrame;
+        while (!this.isClosed && (_bufferedFrame = this.audioFrameBuffer.pullSync()) !== null) {
+          using bufferedFrame = _bufferedFrame;
 
-            // Send buffered frame to encoder
-            const sendRet = this.codecContext.sendFrameSync(bufferedFrame);
-            if (sendRet < 0 && sendRet !== AVERROR_EOF && sendRet !== AVERROR_EAGAIN) {
-              FFmpegError.throwIfError(sendRet, 'Failed to send frame');
-            }
+          // Prepare buffered frame for encoding (set quality, validate channel count)
+          this.prepareFrameForEncoding(bufferedFrame);
 
-            // Receive packets
-            let packet;
-            while ((packet = this.receiveSync()) !== null) {
-              yield packet;
-            }
+          // Send buffered frame to encoder
+          const sendRet = this.codecContext.sendFrameSync(bufferedFrame);
+          if (sendRet < 0 && sendRet !== AVERROR_EOF && sendRet !== AVERROR_EAGAIN) {
+            FFmpegError.throwIfError(sendRet, 'Failed to send frame');
           }
-        } else {
-          // Process frames
-          const packet = this.encodeSync(frame);
-          if (packet) {
+
+          // Receive packets
+          while (!this.isClosed) {
+            const packet = this.receiveSync();
+            if (!packet) break;
             yield packet;
           }
         }
-      } finally {
-        // Free the input frame after encoding
-        frame.free();
+      } else {
+        // Prepare frame for encoding (set quality, validate channel count)
+        this.prepareFrameForEncoding(frame);
+
+        // Send frame to encoder
+        const sendRet = this.codecContext.sendFrameSync(frame);
+        if (sendRet < 0 && sendRet !== AVERROR_EOF && sendRet !== AVERROR_EAGAIN) {
+          FFmpegError.throwIfError(sendRet, 'Failed to send frame');
+        }
+
+        // Receive ALL packets
+        // A single frame can produce multiple packets (e.g., B-frames, lookahead)
+        while (!this.isClosed) {
+          const packet = this.receiveSync();
+          if (!packet) break;
+          yield packet;
+        }
       }
     }
 
@@ -1056,10 +1213,10 @@ export class Encoder implements Disposable {
     if (this.audioFrameBuffer && this.audioFrameBuffer.size > 0) {
       // Pull any remaining partial frame (may be less than frameSize)
       // For the final frame, we pad or truncate as needed
-      let bufferedFrame;
-      while ((bufferedFrame = await this.audioFrameBuffer.pull()) !== null) {
+      let _bufferedFrame;
+      while (!this.isClosed && (_bufferedFrame = await this.audioFrameBuffer.pull()) !== null) {
+        using bufferedFrame = _bufferedFrame;
         await this.codecContext.sendFrame(bufferedFrame);
-        bufferedFrame.free();
       }
     }
 
@@ -1109,10 +1266,10 @@ export class Encoder implements Disposable {
     if (this.audioFrameBuffer && this.audioFrameBuffer.size > 0) {
       // Pull any remaining partial frame (may be less than frameSize)
       // For the final frame, we pad or truncate as needed
-      let bufferedFrame;
-      while ((bufferedFrame = this.audioFrameBuffer.pullSync()) !== null) {
+      let _bufferedFrame;
+      while (!this.isClosed && (_bufferedFrame = this.audioFrameBuffer.pullSync()) !== null) {
+        using bufferedFrame = _bufferedFrame;
         this.codecContext.sendFrameSync(bufferedFrame);
-        bufferedFrame.free();
       }
     }
 
@@ -1152,8 +1309,9 @@ export class Encoder implements Disposable {
     // Send flush signal
     await this.flush();
 
-    let packet;
-    while ((packet = await this.receive()) !== null) {
+    while (!this.isClosed) {
+      const packet = await this.receive();
+      if (!packet) break;
       yield packet;
     }
   }
@@ -1186,8 +1344,9 @@ export class Encoder implements Disposable {
     // Send flush signal
     this.flushSync();
 
-    let packet;
-    while ((packet = this.receiveSync()) !== null) {
+    while (!this.isClosed) {
+      const packet = this.receiveSync();
+      if (!packet) break;
       yield packet;
     }
   }
@@ -1242,6 +1401,12 @@ export class Encoder implements Disposable {
     const ret = await this.codecContext.receivePacket(this.packet);
 
     if (ret === 0) {
+      // Set packet timebase to codec timebase
+      this.packet.timeBase = this.codecContext.timeBase;
+
+      // Mark packet as trusted (from encoder)
+      this.packet.setFlags(AV_PKT_FLAG_TRUSTED);
+
       // Got a packet, clone it for the user
       return this.packet.clone();
     } else if (ret === AVERROR_EAGAIN || ret === AVERROR_EOF) {
@@ -1305,6 +1470,12 @@ export class Encoder implements Disposable {
     const ret = this.codecContext.receivePacketSync(this.packet);
 
     if (ret === 0) {
+      // Set packet timebase to codec timebase
+      this.packet.timeBase = this.codecContext.timeBase;
+
+      // Mark packet as trusted (from encoder)
+      this.packet.setFlags(AV_PKT_FLAG_TRUSTED);
+
       // Got a packet, clone it for the user
       return this.packet.clone();
     } else if (ret === AVERROR_EAGAIN || ret === AVERROR_EOF) {
@@ -1350,6 +1521,39 @@ export class Encoder implements Disposable {
   }
 
   /**
+   * Get encoder codec.
+   *
+   * Returns the codec used by this encoder.
+   * Useful for checking codec capabilities and properties.
+   *
+   * @returns Codec instance
+   *
+   * @internal
+   *
+   * @see {@link Codec} For codec details
+   */
+  getCodec(): Codec {
+    return this.codec;
+  }
+
+  /**
+   * Get underlying codec context.
+   *
+   * Returns the codec context for advanced operations.
+   * Useful for accessing low-level codec properties and settings.
+   * Returns null if encoder is closed or not initialized.
+   *
+   * @returns Codec context or null if closed/not initialized
+   *
+   * @internal
+   *
+   * @see {@link CodecContext} For context details
+   */
+  getCodecContext(): CodecContext | null {
+    return !this.isClosed && this.initialized ? this.codecContext : null;
+  }
+
+  /**
    * Initialize encoder from first frame.
    *
    * Sets codec context parameters from frame properties.
@@ -1363,6 +1567,27 @@ export class Encoder implements Disposable {
    * @internal
    */
   private async initialize(frame: Frame): Promise<void> {
+    // FFmpeg CLI sets time_base from first frame
+    // This ensures encoder timeBase matches the actual frame timeBase from filter/decoder
+    this.codecContext.timeBase = frame.timeBase;
+
+    // Get bits_per_raw_sample from decoder if available
+    if (this.options.decoder) {
+      const decoderCtx = this.options.decoder.getCodecContext();
+      if (decoderCtx && decoderCtx.bitsPerRawSample > 0) {
+        this.codecContext.bitsPerRawSample = decoderCtx.bitsPerRawSample;
+      }
+    }
+
+    // Get framerate from filter if available
+    // This matches FFmpeg CLI behavior where encoder gets frame_rate_filter from FrameData
+    if (this.options.filter && frame.isVideo()) {
+      const filterFrameRate = this.options.filter.frameRate;
+      if (filterFrameRate) {
+        this.codecContext.framerate = new Rational(filterFrameRate.num, filterFrameRate.den);
+      }
+    }
+
     if (frame.isVideo()) {
       this.codecContext.width = frame.width;
       this.codecContext.height = frame.height;
@@ -1372,15 +1597,27 @@ export class Encoder implements Disposable {
       this.codecContext.colorPrimaries = frame.colorPrimaries;
       this.codecContext.colorTrc = frame.colorTrc;
       this.codecContext.colorSpace = frame.colorSpace;
-      this.codecContext.chromaLocation = frame.chromaLocation;
+
+      // Only set chroma location if unspecified
+      if (this.codecContext.chromaLocation === AVCHROMA_LOC_UNSPECIFIED) {
+        this.codecContext.chromaLocation = frame.chromaLocation;
+      }
     } else {
       this.codecContext.sampleRate = frame.sampleRate;
       this.codecContext.sampleFormat = frame.format as AVSampleFormat;
       this.codecContext.channelLayout = frame.channelLayout;
     }
 
-    this.codecContext.hwDeviceCtx = frame.hwFramesCtx?.deviceRef ?? null;
-    this.codecContext.hwFramesCtx = frame.hwFramesCtx;
+    // Setup hardware acceleration with validation
+    this.setupHardwareAcceleration(frame);
+
+    // AV_CODEC_FLAG_COPY_OPAQUE: Copy opaque data from frames to packets if supported
+    if (this.codec.hasCapabilities(AV_CODEC_CAP_ENCODER_REORDERED_OPAQUE)) {
+      this.codecContext.setFlags(AV_CODEC_FLAG_COPY_OPAQUE);
+    }
+
+    // AV_CODEC_FLAG_FRAME_DURATION: Signal that frame duration matters for timestamps
+    this.codecContext.setFlags(AV_CODEC_FLAG_FRAME_DURATION);
 
     // Open codec
     const openRet = await this.codecContext.open2(this.codec, this.opts);
@@ -1421,6 +1658,27 @@ export class Encoder implements Disposable {
    * @see {@link initialize} For async version
    */
   private initializeSync(frame: Frame): void {
+    // FFmpeg CLI sets time_base from first frame
+    // This ensures encoder timeBase matches the actual frame timeBase from filter/decoder
+    this.codecContext.timeBase = frame.timeBase;
+
+    // Get bits_per_raw_sample from decoder if available
+    if (this.options.decoder) {
+      const decoderCtx = this.options.decoder.getCodecContext();
+      if (decoderCtx && decoderCtx.bitsPerRawSample > 0) {
+        this.codecContext.bitsPerRawSample = decoderCtx.bitsPerRawSample;
+      }
+    }
+
+    // Get framerate from filter if available
+    // This matches FFmpeg CLI behavior where encoder gets frame_rate_filter from FrameData
+    if (this.options.filter && frame.isVideo()) {
+      const filterFrameRate = this.options.filter.frameRate;
+      if (filterFrameRate) {
+        this.codecContext.framerate = new Rational(filterFrameRate.num, filterFrameRate.den);
+      }
+    }
+
     if (frame.isVideo()) {
       this.codecContext.width = frame.width;
       this.codecContext.height = frame.height;
@@ -1430,15 +1688,28 @@ export class Encoder implements Disposable {
       this.codecContext.colorPrimaries = frame.colorPrimaries;
       this.codecContext.colorTrc = frame.colorTrc;
       this.codecContext.colorSpace = frame.colorSpace;
-      this.codecContext.chromaLocation = frame.chromaLocation;
+
+      // Only set chroma location if unspecified
+      if (this.codecContext.chromaLocation === AVCHROMA_LOC_UNSPECIFIED) {
+        this.codecContext.chromaLocation = frame.chromaLocation;
+      }
     } else {
       this.codecContext.sampleRate = frame.sampleRate;
       this.codecContext.sampleFormat = frame.format as AVSampleFormat;
       this.codecContext.channelLayout = frame.channelLayout;
     }
 
-    this.codecContext.hwDeviceCtx = frame.hwFramesCtx?.deviceRef ?? null;
-    this.codecContext.hwFramesCtx = frame.hwFramesCtx;
+    // Setup hardware acceleration with validation
+    this.setupHardwareAcceleration(frame);
+
+    // Set codec flags
+    // AV_CODEC_FLAG_COPY_OPAQUE: Copy opaque data from frames to packets if supported
+    if (this.codec.hasCapabilities(AV_CODEC_CAP_ENCODER_REORDERED_OPAQUE)) {
+      this.codecContext.setFlags(AV_CODEC_FLAG_COPY_OPAQUE);
+    }
+
+    // AV_CODEC_FLAG_FRAME_DURATION: Signal that frame duration matters for timestamps
+    this.codecContext.setFlags(AV_CODEC_FLAG_FRAME_DURATION);
 
     // Open codec
     const openRet = this.codecContext.open2Sync(this.codec, this.opts);
@@ -1463,76 +1734,114 @@ export class Encoder implements Disposable {
   }
 
   /**
-   * Get encoder codec.
+   * Setup hardware acceleration for encoder.
    *
-   * Returns the codec used by this encoder.
-   * Useful for checking codec capabilities and properties.
+   * Implements FFmpeg's hw_device_setup_for_encode logic.
+   * Validates hardware frames context format and codec support.
+   * Falls back to device context if frames context is incompatible.
    *
-   * @returns Codec instance
+   * @param frame - Frame to get hardware context from
    *
    * @internal
-   *
-   * @see {@link Codec} For codec details
    */
-  getCodec(): Codec {
-    return this.codec;
+  private setupHardwareAcceleration(frame: Frame): void {
+    if (!frame.hwFramesCtx) {
+      // Software encoding
+      return;
+    }
+
+    const hwFramesCtx = frame.hwFramesCtx;
+    const framesFormat = hwFramesCtx.format;
+    const encoderFormat = this.codecContext.pixelFormat;
+
+    // Check 1: Format validation
+    if (framesFormat !== encoderFormat) {
+      this.codecContext.hwDeviceCtx = hwFramesCtx.deviceRef;
+      this.codecContext.hwFramesCtx = null;
+      return;
+    }
+
+    // Check 2: Codec supports HW_FRAMES_CTX?
+    let supportsFramesCtx = false;
+    for (let i = 0; ; i++) {
+      const config = this.codec.getHwConfig(i);
+      if (!config) break;
+
+      // Check if codec supports HW_FRAMES_CTX method
+      if (config.methods & AV_CODEC_HW_CONFIG_METHOD_HW_FRAMES_CTX) {
+        // Check if pixel format matches or is unspecified
+        if (config.pixFmt === AV_PIX_FMT_NONE || config.pixFmt === encoderFormat) {
+          supportsFramesCtx = true;
+          break;
+        }
+      }
+    }
+
+    if (supportsFramesCtx) {
+      // Use hw_frames_ctx (best performance - zero copy)
+      this.codecContext.hwFramesCtx = hwFramesCtx;
+      this.codecContext.hwDeviceCtx = hwFramesCtx.deviceRef;
+    } else {
+      // Fallback to hw_device_ctx (still uses HW, but may copy)
+      // Check if codec supports HW_DEVICE_CTX as fallback
+      let supportsDeviceCtx = false;
+      for (let i = 0; ; i++) {
+        const config = this.codec.getHwConfig(i);
+        if (!config) break;
+
+        if (config.methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX) {
+          supportsDeviceCtx = true;
+          break;
+        }
+      }
+
+      if (supportsDeviceCtx) {
+        this.codecContext.hwDeviceCtx = hwFramesCtx.deviceRef;
+        this.codecContext.hwFramesCtx = null;
+      } else {
+        // No hardware support at all - software encoding
+        this.codecContext.hwDeviceCtx = null;
+        this.codecContext.hwFramesCtx = null;
+      }
+    }
   }
 
   /**
-   * Get underlying codec context.
+   * Prepare frame for encoding.
    *
-   * Returns the codec context for advanced operations.
-   * Useful for accessing low-level codec properties and settings.
-   * Returns null if encoder is closed or not initialized.
+   * Implements FFmpeg's frame_encode() pre-encoding logic:
+   * 1. Video: Sets frame.quality from encoder's globalQuality (like -qscale)
+   * 2. Audio: Validates channel count consistency for encoders without PARAM_CHANGE capability
    *
-   * @returns Codec context or null if closed/not initialized
+   * This matches FFmpeg CLI behavior where these properties are automatically managed.
+   *
+   * @param frame - Frame to prepare for encoding
+   *
+   * @throws {Error} If audio channel count changed and encoder doesn't support parameter changes
    *
    * @internal
-   *
-   * @see {@link CodecContext} For context details
    */
-  getCodecContext(): CodecContext | null {
-    return !this.isClosed && this.initialized ? this.codecContext : null;
-  }
+  private prepareFrameForEncoding(frame: Frame): void {
+    if (this.codecContext.codecType === AVMEDIA_TYPE_VIDEO) {
+      // Video: Set frame quality from encoder's global quality (FFmpeg's -qscale option)
+      // Only set if encoder has globalQuality configured and frame doesn't already have quality set
+      if (this.codecContext.globalQuality > 0 && frame.quality <= 0) {
+        frame.quality = this.codecContext.globalQuality;
+      }
+    } else if (this.codecContext.codecType === AVMEDIA_TYPE_AUDIO) {
+      // Audio: Validate channel count consistency
+      // If encoder doesn't support AV_CODEC_CAP_PARAM_CHANGE, channel count must remain constant
+      const supportsParamChange = this.codec.hasCapabilities(AV_CODEC_CAP_PARAM_CHANGE);
 
-  /**
-   * Get codec flags even before encoder initialization.
-   *
-   * Unlike getCodecContext(), this works before initialization.
-   *
-   * @returns Current codec flags
-   *
-   * @throws {Error} If encoder is closed
-   *
-   * @internal
-   */
-  getCodecFlags(): AVCodecFlag {
-    if (this.isClosed) {
-      throw new Error('Cannot get flags on closed encoder');
-    }
-    return this.codecContext.flags;
-  }
+      if (!supportsParamChange) {
+        const encoderChannels = this.codecContext.channelLayout.nbChannels;
+        const frameChannels = frame.channelLayout?.nbChannels ?? 0;
 
-  /**
-   * Set codec flags before encoder initialization.
-   *
-   * This allows setting flags on the codec context before the encoder is opened,
-   * which is necessary for flags that affect initialization behavior (like GLOBAL_HEADER).
-   *
-   * @param flags - The flags to set
-   *
-   * @throws {Error} If encoder is already initialized or closed
-   *
-   * @internal
-   */
-  setCodecFlags(flags: AVCodecFlag): void {
-    if (this.isClosed) {
-      throw new Error('Cannot set flags on closed encoder');
+        if (encoderChannels !== frameChannels) {
+          throw new Error(`Audio channel count changed (${encoderChannels} -> ${frameChannels}) and encoder '${this.codec.name}' does not support parameter changes`);
+        }
+      }
     }
-    if (this.initialized) {
-      throw new Error('Cannot set flags on already initialized encoder');
-    }
-    this.codecContext.flags = flags;
   }
 
   /**
