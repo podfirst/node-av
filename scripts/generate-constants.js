@@ -157,6 +157,60 @@ const parseEnums = (headerPath) => {
     }
   }
 
+  // ADDITIONAL: Parse unnamed enums (like AV_BUFFERSRC_FLAG_* in buffersrc.h)
+  // Pattern: enum { AV_SOMETHING = value, ... };
+  const unnamedEnumPattern = /enum\s*{\s*([^}]+)}\s*;/gs;
+  while ((match = unnamedEnumPattern.exec(content)) !== null) {
+    const enumContent = match[1];
+
+    // Split enum content into lines
+    const lines = enumContent.split(/[,\n]/);
+    let currentValue = 0;
+
+    for (const line of lines) {
+      const cleanLine = line.trim();
+      if (!cleanLine) continue;
+
+      // Match enum values starting with AV_
+      const valueMatch = cleanLine.match(
+        /^\s*(AV_[A-Z0-9_]+)\s*(?:=\s*(.+?))?$/,
+      );
+
+      if (valueMatch) {
+        const name = valueMatch[1];
+
+        if (valueMatch[2]) {
+          // Has explicit value
+          const explicitValue = valueMatch[2].trim();
+
+          if (/^-?\d+$/.test(explicitValue)) {
+            currentValue = parseInt(explicitValue);
+          } else if (/^0x[0-9a-fA-F]+$/.test(explicitValue)) {
+            currentValue = parseInt(explicitValue, 16);
+          }
+        }
+
+        // Find a matching enum name based on the constant prefix
+        // e.g., AV_BUFFERSRC_FLAG_* -> AVBuffersrcFlag
+        let enumName = null;
+
+        if (name.startsWith('AV_BUFFERSRC_FLAG_')) {
+          enumName = 'AVBuffersrcFlag';
+        }
+        // Add more patterns here if needed
+
+        if (enumName) {
+          if (!enums[enumName]) {
+            enums[enumName] = [];
+          }
+          enums[enumName].push({ name, value: currentValue, type: 'number' });
+        }
+
+        currentValue++;
+      }
+    }
+  }
+
   return enums;
 };
 

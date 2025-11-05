@@ -1570,6 +1570,13 @@ export type AVVideoHintType = number & { readonly [__ffmpeg_brand]: 'AVVideoHint
 export const AV_VIDEO_HINT_TYPE_CONSTANT = 0 as AVVideoHintType;
 export const AV_VIDEO_HINT_TYPE_CHANGED = 1 as AVVideoHintType;
 
+// libavfilter/buffersrc.h
+export type AVBuffersrcFlag = number & { readonly [__ffmpeg_brand]: 'AVBuffersrcFlag' };
+
+export const AV_BUFFERSRC_FLAG_NO_CHECK_FORMAT = 1 as AVBuffersrcFlag;
+export const AV_BUFFERSRC_FLAG_PUSH = 4 as AVBuffersrcFlag;
+export const AV_BUFFERSRC_FLAG_KEEP_REF = 8 as AVBuffersrcFlag;
+
 // libswscale/ops.h
 export type SwsPixelType = number & { readonly [__ffmpeg_brand]: 'SwsPixelType' };
 
