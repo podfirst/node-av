@@ -18,8 +18,8 @@ import type { MediaOutput } from '../media-output.js';
  * import { StreamingUtils, MediaOutput } from 'node-av/api';
  *
  * // Create RTP outputs
- * const videoOutput = await MediaOutput.create('rtp://127.0.0.1:5004');
- * const audioOutput = await MediaOutput.create('rtp://127.0.0.1:5006');
+ * const videoOutput = await MediaOutput.open('rtp://127.0.0.1:5004');
+ * const audioOutput = await MediaOutput.open('rtp://127.0.0.1:5006');
  *
  * // Generate SDP for streaming
  * const sdp = StreamingUtils.createSdp([videoOutput, audioOutput]);
@@ -44,11 +44,11 @@ export class StreamingUtils {
    * @example
    * ```typescript
    * // Set up RTP outputs with streams
-   * const output1 = await MediaOutput.create('rtp://239.0.0.1:5004');
-   * await output1.addVideoStream(encoder1);
+   * const output1 = await MediaOutput.open('rtp://239.0.0.1:5004');
+   * await output1.addStream(encoder1);
    *
-   * const output2 = await MediaOutput.create('rtp://239.0.0.1:5006');
-   * await output2.addAudioStream(encoder2);
+   * const output2 = await MediaOutput.open('rtp://239.0.0.1:5006');
+   * await output2.addStream(encoder2);
    *
    * // Generate SDP for multicast streaming
    * const sdp = StreamingUtils.createSdp([output1.getFormatContext(), output2.getFormatContext()]);
@@ -232,7 +232,7 @@ export class StreamingUtils {
    *
    * @example
    * ```typescript
-   * const output = await MediaOutput.create('rtp://127.0.0.1:5004');
+   * const output = await MediaOutput.open('rtp://127.0.0.1:5004');
    * if (StreamingUtils.isRtpOutput(output)) {
    *   const sdp = StreamingUtils.createSdpForOutput(output);
    * }

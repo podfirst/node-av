@@ -62,6 +62,7 @@ import type { RTSPStreamInfo } from './types.js';
  * @see {@link Stream} For stream management
  */
 export class FormatContext extends OptionMember<NativeFormatContext> implements AsyncDisposable, NativeWrapper<NativeFormatContext> {
+  private _metadata?: Dictionary; // Cache for metadata wrapper
   private _ioContext: IOContext | null = null;
 
   constructor() {
@@ -200,15 +201,28 @@ export class FormatContext extends OptionMember<NativeFormatContext> implements 
    * Direct mapping to AVFormatContext->metadata.
    */
   get metadata(): Dictionary | null {
-    const nativeDict = this.native.metadata;
-    if (!nativeDict) {
+    const native = this.native.metadata;
+    if (!native) {
+      // Clear cache if native is null
+      this._metadata = undefined;
       return null;
     }
-    return Dictionary.fromNative(nativeDict);
+
+    // Return cached wrapper if available and still valid
+    if (this._metadata && (this._metadata as any).native === native) {
+      return this._metadata;
+    }
+
+    // Create and cache new wrapper
+    const device = Object.create(Dictionary.prototype) as Dictionary;
+    (device as any).native = native;
+    this._metadata = device;
+    return device;
   }
 
   set metadata(value: Dictionary | null) {
     this.native.metadata = value?.getNative() ?? null;
+    this._metadata = undefined;
   }
 
   /**
@@ -277,10 +291,10 @@ export class FormatContext extends OptionMember<NativeFormatContext> implements 
    *
    * Direct mapping to AVFormatContext->streams.
    */
-  get streams(): Stream[] | null {
+  get streams(): Stream[] {
     const nativeStreams = this.native.streams;
     if (!nativeStreams) {
-      return null;
+      return [];
     }
     return nativeStreams.map((nativeStream) => new Stream(nativeStream));
   }
