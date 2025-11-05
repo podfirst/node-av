@@ -50,6 +50,7 @@ import type { Packet } from './packet.js';
  */
 export class Stream implements NativeWrapper<NativeStream> {
   private native: NativeStream;
+  private _metadata?: Dictionary; // Cache for metadata wrapper
   private _codecpar?: CodecParameters; // Cache the wrapped codecpar
   private _parser?: CodecParser; // Cache the wrapped parser
 
@@ -300,15 +301,28 @@ export class Stream implements NativeWrapper<NativeStream> {
    * Direct mapping to AVStream->metadata.
    */
   get metadata(): Dictionary | null {
-    const nativeDict = this.native.metadata;
-    if (!nativeDict) {
+    const native = this.native.metadata;
+    if (!native) {
+      // Clear cache if native is null
+      this._metadata = undefined;
       return null;
     }
-    return Dictionary.fromNative(nativeDict);
+
+    // Return cached wrapper if available and still valid
+    if (this._metadata && (this._metadata as any).native === native) {
+      return this._metadata;
+    }
+
+    // Create and cache new wrapper
+    const device = Object.create(Dictionary.prototype) as Dictionary;
+    (device as any).native = native;
+    this._metadata = device;
+    return device;
   }
 
   set metadata(value: Dictionary | null) {
     this.native.metadata = value?.getNative() ?? null;
+    this._metadata = undefined;
   }
 
   /**
@@ -458,6 +472,89 @@ export class Stream implements NativeWrapper<NativeStream> {
   hasEventFlags(...flags: AVStreamEventFlag[]): boolean {
     for (const flag of flags) {
       if ((this.native.eventFlags & flag) !== flag) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Set stream disposition flags.
+   *
+   * Sets one or more disposition flags using bitwise OR. Allows setting multiple flags
+   * without manually performing bitwise operations.
+   *
+   * @param flags - One or more disposition flag values to set
+   *
+   * @example
+   * ```typescript
+   * import { AV_DISPOSITION_DEFAULT, AV_DISPOSITION_FORCED } from 'node-av/constants';
+   *
+   * // Set multiple disposition flags at once
+   * stream.setDisposition(AV_DISPOSITION_DEFAULT, AV_DISPOSITION_FORCED);
+   * ```
+   *
+   * @see {@link clearDisposition} To unset disposition flags
+   * @see {@link hasDisposition} To check disposition flags
+   * @see {@link disposition} For direct disposition flag access
+   */
+  setDisposition(...flags: AVDisposition[]): void {
+    for (const flag of flags) {
+      this.native.disposition = (this.native.disposition | flag) as AVDisposition;
+    }
+  }
+
+  /**
+   * Clear stream disposition flags.
+   *
+   * Clears one or more disposition flags using bitwise AND NOT. Allows clearing multiple
+   * flags without manually performing bitwise operations.
+   *
+   * @param flags - One or more disposition flag values to clear
+   *
+   * @example
+   * ```typescript
+   * import { AV_DISPOSITION_FORCED } from 'node-av/constants';
+   *
+   * // Clear specific disposition flag
+   * stream.clearDisposition(AV_DISPOSITION_FORCED);
+   * ```
+   *
+   * @see {@link setDisposition} To set disposition flags
+   * @see {@link hasDisposition} To check disposition flags
+   * @see {@link disposition} For direct disposition flag access
+   */
+  clearDisposition(...flags: AVDisposition[]): void {
+    for (const flag of flags) {
+      this.native.disposition = (this.native.disposition & ~flag) as AVDisposition;
+    }
+  }
+
+  /**
+   * Check if stream has specific disposition flags.
+   *
+   * Tests whether all specified disposition flags are set using bitwise AND.
+   *
+   * @param flags - One or more disposition flag values to check
+   *
+   * @returns true if all specified disposition flags are set, false otherwise
+   *
+   * @example
+   * ```typescript
+   * import { AV_DISPOSITION_DEFAULT } from 'node-av/constants';
+   *
+   * if (stream.hasDisposition(AV_DISPOSITION_DEFAULT)) {
+   *   console.log('Stream is marked as default');
+   * }
+   * ```
+   *
+   * @see {@link setDisposition} To set disposition flags
+   * @see {@link clearDisposition} To unset disposition flags
+   * @see {@link disposition} For direct disposition flag access
+   */
+  hasDisposition(...flags: AVDisposition[]): boolean {
+    for (const flag of flags) {
+      if ((this.native.disposition & flag) !== flag) {
         return false;
       }
     }
