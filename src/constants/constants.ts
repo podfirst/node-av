@@ -1571,11 +1571,12 @@ export const AV_VIDEO_HINT_TYPE_CONSTANT = 0 as AVVideoHintType;
 export const AV_VIDEO_HINT_TYPE_CHANGED = 1 as AVVideoHintType;
 
 // libavfilter/buffersrc.h
-export type AVBuffersrcFlag = number & { readonly [__ffmpeg_brand]: 'AVBuffersrcFlag' };
+export type AVBufferSrcFlag = number & { readonly [__ffmpeg_brand]: 'AVBufferSrcFlag' };
 
-export const AV_BUFFERSRC_FLAG_NO_CHECK_FORMAT = 1 as AVBuffersrcFlag;
-export const AV_BUFFERSRC_FLAG_PUSH = 4 as AVBuffersrcFlag;
-export const AV_BUFFERSRC_FLAG_KEEP_REF = 8 as AVBuffersrcFlag;
+export const AV_BUFFERSRC_FLAG_NONE = 0 as AVBufferSrcFlag;
+export const AV_BUFFERSRC_FLAG_NO_CHECK_FORMAT = 1 as AVBufferSrcFlag;
+export const AV_BUFFERSRC_FLAG_PUSH = 4 as AVBufferSrcFlag;
+export const AV_BUFFERSRC_FLAG_KEEP_REF = 8 as AVBufferSrcFlag;
 
 // libswscale/ops.h
 export type SwsPixelType = number & { readonly [__ffmpeg_brand]: 'SwsPixelType' };

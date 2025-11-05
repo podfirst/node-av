@@ -191,11 +191,11 @@ const parseEnums = (headerPath) => {
         }
 
         // Find a matching enum name based on the constant prefix
-        // e.g., AV_BUFFERSRC_FLAG_* -> AVBuffersrcFlag
+        // e.g., AV_BUFFERSRC_FLAG_* -> AVBufferSrcFlag
         let enumName = null;
 
         if (name.startsWith('AV_BUFFERSRC_FLAG_')) {
-          enumName = 'AVBuffersrcFlag';
+          enumName = 'AVBufferSrcFlag';
         }
         // Add more patterns here if needed
 
@@ -208,6 +208,15 @@ const parseEnums = (headerPath) => {
 
         currentValue++;
       }
+    }
+  }
+
+  // Manually add AV_BUFFERSRC_FLAG_NONE (doesn't exist in FFmpeg, but we want it as default = 0)
+  if (enums['AVBufferSrcFlag']) {
+    // Check if NONE doesn't already exist
+    const hasNone = enums['AVBufferSrcFlag'].some((v) => v.name === 'AV_BUFFERSRC_FLAG_NONE');
+    if (!hasNone) {
+      enums['AVBufferSrcFlag'].unshift({ name: 'AV_BUFFERSRC_FLAG_NONE', value: 0, type: 'number' });
     }
   }
 
