@@ -163,10 +163,18 @@ export class InputFormat implements NativeWrapper<NativeInputFormat> {
    * @see {@link probe} For buffer probing
    */
   static async probeBuffer(ioContext: NativeWrapper<NativeIOContext>, maxProbeSize?: number): Promise<InputFormat | null> {
-    const native = await bindings.InputFormat.probeBuffer(ioContext.getNative(), maxProbeSize);
+    let native: NativeInputFormat | null = null;
+
+    try {
+      native = await bindings.InputFormat.probeBuffer(ioContext.getNative(), maxProbeSize);
+    } catch {
+      //
+    }
+
     if (!native) {
       return null;
     }
+
     return new InputFormat(native);
   }
 
@@ -205,7 +213,14 @@ export class InputFormat implements NativeWrapper<NativeInputFormat> {
    * @see {@link probeBuffer} For async version
    */
   static probeBufferSync(ioContext: NativeWrapper<NativeIOContext>, maxProbeSize?: number): InputFormat | null {
-    const native = bindings.InputFormat.probeBufferSync(ioContext.getNative(), maxProbeSize);
+    let native: NativeInputFormat | null = null;
+
+    try {
+      native = bindings.InputFormat.probeBufferSync(ioContext.getNative(), maxProbeSize);
+    } catch {
+      //
+    }
+
     if (!native) {
       return null;
     }
