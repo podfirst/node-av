@@ -637,6 +637,29 @@ export class CodecContext extends OptionMember<NativeCodecContext> implements Di
   }
 
   /**
+   * Global quality for constant quality mode.
+   *
+   * Used by encoders that support constant quality mode (e.g., -qscale in FFmpeg CLI).
+   * Set this value to enable constant quality encoding instead of constant bitrate.
+   * Valid range depends on the codec (e.g., 0-69 for MPEG-4, FF_LAMBDA_SCALE for others).
+   *
+   * Direct mapping to AVCodecContext->global_quality.
+   *
+   * @example
+   * ```typescript
+   * // MPEG-4 constant quality (lower = better quality)
+   * codecContext.globalQuality = 5 * FF_QP2LAMBDA;
+   * ```
+   */
+  get globalQuality(): number {
+    return this.native.globalQuality;
+  }
+
+  set globalQuality(value: number) {
+    this.native.globalQuality = value;
+  }
+
+  /**
    * Rate control buffer size.
    *
    * Decoder bitstream buffer size.

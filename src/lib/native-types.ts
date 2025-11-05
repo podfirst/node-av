@@ -111,6 +111,7 @@ export interface NativeFrame extends Disposable {
   timeBase: IRational;
   keyFrame: number;
   pictType: AVPictureType;
+  quality: number;
   sampleAspectRatio: IRational;
   sampleRate: number;
   channelLayout: ChannelLayout;
@@ -230,6 +231,7 @@ export interface NativeCodecContext extends Disposable {
   channelLayout: ChannelLayout;
   qMin: number;
   qMax: number;
+  globalQuality: number;
   rcBufferSize: number;
   rcMaxRate: bigint;
   rcMinRate: bigint;

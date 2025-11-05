@@ -215,6 +215,23 @@ export class Frame implements Disposable, NativeWrapper<NativeFrame> {
   }
 
   /**
+   * Quality (between 1 (good) and FF_LAMBDA_MAX (bad)).
+   *
+   * Set by libavcodec for some coded frames.
+   * Can be set before encoding to specify desired quality for encoders that support it.
+   * Used by FFmpeg CLI's frame_encode() to propagate encoder's global_quality setting.
+   *
+   * Direct mapping to AVFrame->quality.
+   */
+  get quality(): number {
+    return this.native.quality;
+  }
+
+  set quality(value: number) {
+    this.native.quality = value;
+  }
+
+  /**
    * Sample aspect ratio.
    *
    * Pixel width/height ratio. 0/1 if unknown.
