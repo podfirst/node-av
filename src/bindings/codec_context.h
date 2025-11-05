@@ -165,6 +165,9 @@ private:
   Napi::Value GetQMax(const Napi::CallbackInfo& info);
   void SetQMax(const Napi::CallbackInfo& info, const Napi::Value& value);
 
+  Napi::Value GetGlobalQuality(const Napi::CallbackInfo& info);
+  void SetGlobalQuality(const Napi::CallbackInfo& info, const Napi::Value& value);
+
   Napi::Value GetRcBufferSize(const Napi::CallbackInfo& info);
   void SetRcBufferSize(const Napi::CallbackInfo& info, const Napi::Value& value);
 

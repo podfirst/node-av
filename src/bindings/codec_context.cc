@@ -75,6 +75,7 @@ Napi::Object CodecContext::Init(Napi::Env env, Napi::Object exports) {
     InstanceAccessor<&CodecContext::GetChannelLayout, &CodecContext::SetChannelLayout>("channelLayout"),
     InstanceAccessor<&CodecContext::GetQMin, &CodecContext::SetQMin>("qMin"),
     InstanceAccessor<&CodecContext::GetQMax, &CodecContext::SetQMax>("qMax"),
+    InstanceAccessor<&CodecContext::GetGlobalQuality, &CodecContext::SetGlobalQuality>("globalQuality"),
     InstanceAccessor<&CodecContext::GetRcBufferSize, &CodecContext::SetRcBufferSize>("rcBufferSize"),
     InstanceAccessor<&CodecContext::GetRcMaxRate, &CodecContext::SetRcMaxRate>("rcMaxRate"),
     InstanceAccessor<&CodecContext::GetRcMinRate, &CodecContext::SetRcMinRate>("rcMinRate"),
@@ -777,6 +778,20 @@ Napi::Value CodecContext::GetQMax(const Napi::CallbackInfo& info) {
 void CodecContext::SetQMax(const Napi::CallbackInfo& info, const Napi::Value& value) {
   if (context_) {
     context_->qmax = value.As<Napi::Number>().Int32Value();
+  }
+}
+
+Napi::Value CodecContext::GetGlobalQuality(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (!context_) {
+    return Napi::Number::New(env, 0);
+  }
+  return Napi::Number::New(env, context_->global_quality);
+}
+
+void CodecContext::SetGlobalQuality(const Napi::CallbackInfo& info, const Napi::Value& value) {
+  if (context_) {
+    context_->global_quality = value.As<Napi::Number>().Int32Value();
   }
 }
 
