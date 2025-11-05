@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Major Focus: FFmpeg CLI Compatibility
+
+This release brings the High-Level API closer to FFmpeg CLI behavior, making it more intuitive and robust for production use.
+
+### Breaking Changes
+
+**High-Level API Refactoring**: All High-Level API classes (`MediaInput`, `MediaOutput`, `Decoder`, `Encoder`, `FilterAPI`) have been refactored with improved type definitions and option handling to match FFmpeg CLI's intelligent behavior - automatic parameter propagation, metadata preservation, robust error handling, and better defaults. This makes the API more intuitive and production-ready while reducing boilerplate code.
+
+**Migration**: Review your High-Level API usage - some option property names/types may have changed. The Low-Level API remains stable.
+
 ## [3.1.2] - 2025-10-27
 
 ### Added
