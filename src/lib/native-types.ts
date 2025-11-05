@@ -292,6 +292,7 @@ export interface NativeCodecParameters extends Disposable {
 
   readonly codecTagString: string | null;
   readonly extradataSize: number;
+  readonly nbCodedSideData: number;
   codecType: AVMediaType;
   codecId: AVCodecID;
   codecTag: number;
@@ -323,6 +324,9 @@ export interface NativeCodecParameters extends Disposable {
   copy(dst: NativeCodecParameters): number;
   fromContext(codecContext: NativeCodecContext): number;
   toContext(codecContext: NativeCodecContext): number;
+  getCodedSideData(type: AVPacketSideDataType): Buffer | null;
+  addCodedSideData(type: AVPacketSideDataType, data: Buffer): number;
+  getAllCodedSideData(): { type: AVPacketSideDataType; data: Buffer }[];
   toJSON(): Record<string, any>;
 
   // Symbol.dispose for cleanup

@@ -10,6 +10,7 @@ import type {
   AVColorSpace,
   AVColorTransferCharacteristic,
   AVMediaType,
+  AVPacketSideDataType,
   AVPixelFormat,
   AVProfile,
   AVSampleFormat,
@@ -476,6 +477,22 @@ export class CodecParameters implements NativeWrapper<NativeCodecParameters> {
   }
 
   /**
+   * Number of coded side data entries.
+   *
+   * Returns the count of coded side data attached to codec parameters.
+   *
+   * @returns Number of side data entries
+   *
+   * @example
+   * ```typescript
+   * console.log(`Codec has ${params.nbCodedSideData} side data entries`);
+   * ```
+   */
+  get nbCodedSideData(): number {
+    return this.native.nbCodedSideData;
+  }
+
+  /**
    * Allocate codec parameters.
    *
    * Allocates memory for the parameters structure.
@@ -615,6 +632,97 @@ export class CodecParameters implements NativeWrapper<NativeCodecParameters> {
    */
   toJSON(): Record<string, any> {
     return this.native.toJSON();
+  }
+
+  /**
+   * Get coded side data.
+   *
+   * Retrieves additional data associated with the codec parameters
+   * (e.g., HDR metadata, Dolby Vision configuration, mastering display).
+   *
+   * Direct mapping to accessing AVCodecParameters.coded_side_data.
+   *
+   * @param type - Type of side data to retrieve
+   *
+   * @returns Side data buffer, or null if not present
+   *
+   * @example
+   * ```typescript
+   * import { AV_PKT_DATA_MASTERING_DISPLAY_METADATA } from 'node-av/constants';
+   *
+   * // Get HDR mastering display metadata
+   * const hdrData = params.getCodedSideData(AV_PKT_DATA_MASTERING_DISPLAY_METADATA);
+   * if (hdrData) {
+   *   console.log(`HDR metadata: ${hdrData.length} bytes`);
+   * }
+   * ```
+   *
+   * @see {@link addCodedSideData} To add side data
+   * @see {@link nbCodedSideData} For count of side data entries
+   */
+  getCodedSideData(type: AVPacketSideDataType): Buffer | null {
+    return this.native.getCodedSideData(type);
+  }
+
+  /**
+   * Get all coded side data entries.
+   *
+   * Returns all side data attached to the codec parameters.
+   * Each entry contains the type and data buffer.
+   * This allows iteration over all side data like FFmpeg CLI does.
+   *
+   * Direct mapping to accessing AVCodecParameters.coded_side_data array.
+   *
+   * @returns Array of side data entries with type and data
+   *
+   * @example
+   * ```typescript
+   * // Iterate all side data like FFmpeg does (ffmpeg_mux_init.c)
+   * const allSideData = params.getAllCodedSideData();
+   * for (const sd of allSideData) {
+   *   console.log(`Type: ${sd.type}, Size: ${sd.data.length}`);
+   *   // Copy to output stream
+   *   outParams.addCodedSideData(sd.type, sd.data);
+   * }
+   * ```
+   *
+   * @see {@link getCodedSideData} To get specific side data by type
+   * @see {@link addCodedSideData} To add side data
+   * @see {@link nbCodedSideData} For count of side data entries
+   */
+  getAllCodedSideData(): { type: AVPacketSideDataType; data: Buffer }[] {
+    return this.native.getAllCodedSideData();
+  }
+
+  /**
+   * Add coded side data to codec parameters.
+   *
+   * Attaches additional data to the codec parameters. The data is copied.
+   * Commonly used for HDR metadata, Dolby Vision configuration, etc.
+   *
+   * Direct mapping to av_packet_side_data_add() for coded_side_data.
+   *
+   * @param type - Type of side data
+   *
+   * @param data - Side data buffer
+   *
+   * @returns 0 on success, negative AVERROR on error
+   *
+   * @example
+   * ```typescript
+   * import { FFmpegError } from 'node-av';
+   * import { AV_PKT_DATA_DOVI_CONF } from 'node-av/constants';
+   *
+   * // Add Dolby Vision configuration
+   * const doviConf = Buffer.from([...]); // Dolby Vision config data
+   * const ret = params.addCodedSideData(AV_PKT_DATA_DOVI_CONF, doviConf);
+   * FFmpegError.throwIfError(ret, 'addCodedSideData');
+   * ```
+   *
+   * @see {@link getCodedSideData} To retrieve side data
+   */
+  addCodedSideData(type: AVPacketSideDataType, data: Buffer): number {
+    return this.native.addCodedSideData(type, data);
   }
 
   /**

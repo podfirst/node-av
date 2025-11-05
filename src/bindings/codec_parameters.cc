@@ -17,6 +17,9 @@ Napi::Object CodecParameters::Init(Napi::Env env, Napi::Object exports) {
     InstanceMethod<&CodecParameters::FromContext>("fromContext"),
     InstanceMethod<&CodecParameters::ToContext>("toContext"),
     InstanceMethod<&CodecParameters::ToJSON>("toJSON"),
+    InstanceMethod<&CodecParameters::GetCodedSideData>("getCodedSideData"),
+    InstanceMethod<&CodecParameters::AddCodedSideData>("addCodedSideData"),
+    InstanceMethod<&CodecParameters::GetAllCodedSideData>("getAllCodedSideData"),
     InstanceMethod<&CodecParameters::Dispose>(Napi::Symbol::WellKnown(env, "dispose")),
 
     InstanceAccessor<&CodecParameters::GetCodecType, &CodecParameters::SetCodecType>("codecType"),
@@ -46,6 +49,7 @@ Napi::Object CodecParameters::Init(Napi::Env env, Napi::Object exports) {
     InstanceAccessor<&CodecParameters::GetFrameSize, &CodecParameters::SetFrameSize>("frameSize"),
     InstanceAccessor<&CodecParameters::GetInitialPadding, &CodecParameters::SetInitialPadding>("initialPadding"),
     InstanceAccessor<&CodecParameters::GetVideoDelay, &CodecParameters::SetVideoDelay>("videoDelay"),
+    InstanceAccessor<&CodecParameters::GetNbCodedSideData>("nbCodedSideData"),
   });
   
   constructor = Napi::Persistent(func);
@@ -682,6 +686,98 @@ void CodecParameters::SetVideoDelay(const Napi::CallbackInfo& info, const Napi::
   if (params_) {
     params_->video_delay = value.As<Napi::Number>().Int32Value();
   }
+}
+
+Napi::Value CodecParameters::GetCodedSideData(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+
+  if (!params_) {
+    Napi::TypeError::New(env, "Invalid codec parameters").ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+
+  if (info.Length() < 1 || !info[0].IsNumber()) {
+    Napi::TypeError::New(env, "Expected side data type as number").ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+
+  enum AVPacketSideDataType type = static_cast<AVPacketSideDataType>(info[0].As<Napi::Number>().Int32Value());
+
+  // Search for side data of this type
+  for (int i = 0; i < params_->nb_coded_side_data; i++) {
+    if (params_->coded_side_data[i].type == type) {
+      const AVPacketSideData* sd = &params_->coded_side_data[i];
+      return Napi::Buffer<uint8_t>::Copy(env, sd->data, sd->size);
+    }
+  }
+
+  return env.Null();
+}
+
+Napi::Value CodecParameters::AddCodedSideData(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+
+  if (!params_) {
+    Napi::TypeError::New(env, "Invalid codec parameters").ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+
+  if (info.Length() < 2 || !info[0].IsNumber() || !info[1].IsBuffer()) {
+    Napi::TypeError::New(env, "Expected (type: number, data: Buffer)").ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+
+  enum AVPacketSideDataType type = static_cast<AVPacketSideDataType>(info[0].As<Napi::Number>().Int32Value());
+  Napi::Buffer<uint8_t> buffer = info[1].As<Napi::Buffer<uint8_t>>();
+
+  // Use av_packet_side_data_add to add the side data
+  AVPacketSideData* sd = av_packet_side_data_add(
+    &params_->coded_side_data,
+    &params_->nb_coded_side_data,
+    type,
+    buffer.Data(),
+    buffer.Length(),
+    0  // flags - 0 means copy the data
+  );
+
+  if (!sd) {
+    Napi::Error::New(env, "Failed to add coded side data (ENOMEM)").ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+
+  return Napi::Number::New(env, 0);
+}
+
+Napi::Value CodecParameters::GetNbCodedSideData(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+
+  if (!params_) {
+    return Napi::Number::New(env, 0);
+  }
+
+  return Napi::Number::New(env, params_->nb_coded_side_data);
+}
+
+Napi::Value CodecParameters::GetAllCodedSideData(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+
+  if (!params_) {
+    return Napi::Array::New(env, 0);
+  }
+
+  Napi::Array result = Napi::Array::New(env, params_->nb_coded_side_data);
+
+  for (int i = 0; i < params_->nb_coded_side_data; i++) {
+    const AVPacketSideData* sd = &params_->coded_side_data[i];
+
+    Napi::Object entry = Napi::Object::New(env);
+    entry.Set("type", Napi::Number::New(env, sd->type));
+    entry.Set("data", Napi::Buffer<uint8_t>::Copy(env, sd->data, sd->size));
+
+    result[i] = entry;
+  }
+
+  return result;
 }
 
 Napi::Value CodecParameters::Dispose(const Napi::CallbackInfo& info) {

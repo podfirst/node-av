@@ -46,6 +46,8 @@ private:
   Napi::Value FromContext(const Napi::CallbackInfo& info);
   Napi::Value ToContext(const Napi::CallbackInfo& info);
   Napi::Value ToJSON(const Napi::CallbackInfo& info);
+  Napi::Value GetCodedSideData(const Napi::CallbackInfo& info);
+  Napi::Value AddCodedSideData(const Napi::CallbackInfo& info);
   Napi::Value Dispose(const Napi::CallbackInfo& info);
 
   Napi::Value GetCodecType(const Napi::CallbackInfo& info);
@@ -125,6 +127,9 @@ private:
 
   Napi::Value GetVideoDelay(const Napi::CallbackInfo& info);
   void SetVideoDelay(const Napi::CallbackInfo& info, const Napi::Value& value);
+
+  Napi::Value GetNbCodedSideData(const Napi::CallbackInfo& info);
+  Napi::Value GetAllCodedSideData(const Napi::CallbackInfo& info);
 };
 
 } // namespace ffmpeg
