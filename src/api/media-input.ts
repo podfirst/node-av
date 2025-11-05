@@ -5,22 +5,50 @@ import { resolve } from 'path';
 import { RtpPacket } from 'werift';
 
 import {
+  AV_NOPTS_VALUE,
+  AV_ROUND_NEAR_INF,
+  AV_ROUND_PASS_MINMAX,
+  AV_TIME_BASE,
+  AV_TIME_BASE_Q,
   AVFLAG_NONE,
   AVFMT_FLAG_CUSTOM_IO,
   AVFMT_FLAG_NONBLOCK,
+  AVFMT_TS_DISCONT,
   AVMEDIA_TYPE_AUDIO,
   AVMEDIA_TYPE_VIDEO,
   AVSEEK_CUR,
   AVSEEK_END,
   AVSEEK_SET,
 } from '../constants/constants.js';
-import { avGetPixFmtName, avGetSampleFmtName, Dictionary, FFmpegError, FormatContext, InputFormat, IOContext, Packet, Rational } from '../lib/index.js';
+import { Dictionary } from '../lib/dictionary.js';
+import { FFmpegError } from '../lib/error.js';
+import { FormatContext } from '../lib/format-context.js';
+import { InputFormat } from '../lib/input-format.js';
+import { IOContext } from '../lib/io-context.js';
+import { Packet } from '../lib/packet.js';
+import { Rational } from '../lib/rational.js';
+import { avGetPixFmtName, avGetSampleFmtName, avInvQ, avMulQ, avRescaleQ, avRescaleQRnd } from '../lib/utilities.js';
 import { IOStream } from './io-stream.js';
 import { StreamingUtils } from './utilities/streaming.js';
 
-import type { AVMediaType, AVSeekFlag, AVSeekWhence } from '../constants/constants.js';
-import type { Stream } from '../lib/index.js';
+import type { AVMediaType, AVSeekFlag, AVSeekWhence } from '../constants/index.js';
+import type { Stream } from '../lib/stream.js';
 import type { IOInputCallbacks, MediaInputOptions, RawData, RTPMediaInput } from './types.js';
+
+/**
+ * Per-stream timestamp processing state.
+ * Tracks timestamp correction and prediction for each stream.
+ */
+interface StreamState {
+  // PTS wrap-around correction
+  wrapCorrectionDone: boolean;
+
+  // DTS prediction and tracking
+  sawFirstTs: boolean;
+  firstDts: bigint;
+  nextDts: bigint;
+  dts: bigint;
+}
 
 /**
  * High-level media input for reading and demuxing media files.
@@ -66,22 +94,38 @@ export class MediaInput implements AsyncDisposable, Disposable {
   private _streams: Stream[] = [];
   private ioContext?: IOContext;
   private isClosed = false;
-  private startWithKeyframe: boolean;
+  private options: Required<MediaInputOptions>;
+
+  // Timestamp processing state (per-stream)
+  private streamStates = new Map<number, StreamState>();
+
+  // Timestamp discontinuity tracking (global)
+  private tsOffsetDiscont = 0n;
+  private lastTs = AV_NOPTS_VALUE;
+
+  // Demux manager for handling multiple parallel packet generators
+  private activeGenerators = 0;
+  private demuxThread: Promise<void> | null = null;
+  private packetQueues = new Map<number | 'all', Packet[]>(); // streamIndex or 'all' -> queue
+  private queueResolvers = new Map<number | 'all', () => void>(); // Promise resolvers for waiting consumers
+  private demuxThreadActive = false;
+  private demuxEof = false;
+  private readonly MAX_QUEUE_SIZE = 100;
 
   /**
    * @param formatContext - Opened format context
    *
-   * @param ioContext - Optional IO context for custom I/O (e.g., from Buffer)
+   * @param options - Media input options
    *
-   * @param startWithKeyframe - Whether to skip packets until first keyframe
+   * @param ioContext - Optional IO context for custom I/O (e.g., from Buffer)
    *
    * @internal
    */
-  private constructor(formatContext: FormatContext, ioContext?: IOContext, startWithKeyframe = false) {
+  private constructor(formatContext: FormatContext, options: Required<MediaInputOptions>, ioContext?: IOContext) {
     this.formatContext = formatContext;
-    this.startWithKeyframe = startWithKeyframe;
     this.ioContext = ioContext;
     this._streams = formatContext.streams ?? [];
+    this.options = options;
   }
 
   /**
@@ -342,7 +386,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
    * @see {@link IOInputCallbacks} For custom I/O interface
    */
   static async open(input: string | Buffer, options?: MediaInputOptions): Promise<MediaInput>;
-  static async open(input: IOInputCallbacks, options: MediaInputOptions & { format: string }): Promise<MediaInput>;
+  static async open(input: IOInputCallbacks, options: (MediaInputOptions | undefined) & { format: string }): Promise<MediaInput>;
   static async open(rawData: RawData, options?: MediaInputOptions): Promise<MediaInput>;
   static async open(input: string | Buffer | RawData | IOInputCallbacks, options: MediaInputOptions = {}): Promise<MediaInput> {
     // Check if input is raw data
@@ -429,7 +473,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
         ioContext = new IOContext();
         ioContext.allocContextWithCallbacks(options.bufferSize ?? 8192, 0, input.read, null, input.seek);
         formatContext.pb = ioContext;
-        formatContext.flags = AVFMT_FLAG_CUSTOM_IO;
+        formatContext.setFlags(AVFMT_FLAG_CUSTOM_IO);
 
         const ret = await formatContext.openInput('', inputFormat, optionsDict);
         FFmpegError.throwIfError(ret, 'Failed to open input from custom I/O');
@@ -443,7 +487,19 @@ export class MediaInput implements AsyncDisposable, Disposable {
         FFmpegError.throwIfError(ret, 'Failed to find stream info');
       }
 
-      const mediaInput = new MediaInput(formatContext, ioContext, options.startWithKeyframe);
+      // Apply defaults to options
+      const fullOptions: Required<MediaInputOptions> = {
+        bufferSize: options.bufferSize ?? 8192,
+        format: options.format ?? '',
+        skipStreamInfo: options.skipStreamInfo ?? false,
+        startWithKeyframe: options.startWithKeyframe ?? false,
+        dtsDeltaThreshold: options.dtsDeltaThreshold ?? 10,
+        dtsErrorThreshold: options.dtsErrorThreshold ?? 108000,
+        copyTs: options.copyTs ?? false,
+        options: options.options ?? {},
+      };
+
+      const mediaInput = new MediaInput(formatContext, fullOptions, ioContext);
 
       return mediaInput;
     } catch (error) {
@@ -534,7 +590,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
    * @see {@link IOInputCallbacks} For custom I/O interface
    */
   static openSync(input: string | Buffer, options?: MediaInputOptions): MediaInput;
-  static openSync(input: IOInputCallbacks, options: MediaInputOptions & { format: string }): MediaInput;
+  static openSync(input: IOInputCallbacks, options: (MediaInputOptions | undefined) & { format: string }): MediaInput;
   static openSync(rawData: RawData, options?: MediaInputOptions): MediaInput;
   static openSync(input: string | Buffer | RawData | IOInputCallbacks, options: MediaInputOptions = {}): MediaInput {
     // Check if input is raw data
@@ -621,7 +677,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
         ioContext = new IOContext();
         ioContext.allocContextWithCallbacks(options.bufferSize ?? 8192, 0, input.read, null, input.seek);
         formatContext.pb = ioContext;
-        formatContext.flags = AVFMT_FLAG_CUSTOM_IO;
+        formatContext.setFlags(AVFMT_FLAG_CUSTOM_IO);
 
         const ret = formatContext.openInputSync('', inputFormat, optionsDict);
         FFmpegError.throwIfError(ret, 'Failed to open input from custom I/O');
@@ -635,7 +691,19 @@ export class MediaInput implements AsyncDisposable, Disposable {
         FFmpegError.throwIfError(ret, 'Failed to find stream info');
       }
 
-      const mediaInput = new MediaInput(formatContext, ioContext, options.startWithKeyframe);
+      // Apply defaults to options
+      const fullOptions: Required<MediaInputOptions> = {
+        bufferSize: options.bufferSize ?? 8192,
+        format: options.format ?? '',
+        skipStreamInfo: options.skipStreamInfo ?? false,
+        startWithKeyframe: options.startWithKeyframe ?? false,
+        dtsDeltaThreshold: options.dtsDeltaThreshold ?? 10,
+        dtsErrorThreshold: options.dtsErrorThreshold ?? 108000,
+        copyTs: options.copyTs ?? false,
+        options: options.options ?? {},
+      };
+
+      const mediaInput = new MediaInput(formatContext, fullOptions, ioContext);
 
       return mediaInput;
     } catch (error) {
@@ -1210,6 +1278,10 @@ export class MediaInput implements AsyncDisposable, Disposable {
    * Automatically handles packet memory management.
    * Optionally filters packets by stream index.
    *
+   * **Supports parallel generators**: Multiple `packets()` iterators can run concurrently.
+   * When multiple generators are active, an internal demux thread automatically handles
+   * packet distribution to avoid race conditions.
+   *
    * Direct mapping to av_read_frame().
    *
    * @param index - Optional stream index to filter
@@ -1237,55 +1309,101 @@ export class MediaInput implements AsyncDisposable, Disposable {
    * }
    * ```
    *
+   * @example
+   * ```typescript
+   * // Parallel processing of video and audio streams
+   * const videoGen = input.packets(videoStream.index);
+   * const audioGen = input.packets(audioStream.index);
+   *
+   * await Promise.all([
+   *   (async () => {
+   *     for await (const packet of videoGen) {
+   *       // Process video
+   *       packet.free();
+   *     }
+   *   })(),
+   *   (async () => {
+   *     for await (const packet of audioGen) {
+   *       // Process audio
+   *       packet.free();
+   *     }
+   *   })()
+   * ]);
+   * ```
+   *
    * @see {@link Decoder.frames} For decoding packets
    */
   async *packets(index?: number): AsyncGenerator<Packet> {
-    const packet = new Packet();
-    packet.alloc();
-    let hasSeenKeyframe = !this.startWithKeyframe;
+    // Register this generator
+    this.activeGenerators++;
+    const queueKey = index ?? 'all';
+
+    // Initialize queue for this generator
+    if (!this.packetQueues.has(queueKey)) {
+      this.packetQueues.set(queueKey, []);
+    }
+
+    // Always start demux thread (handles single and multiple generators)
+    this.startDemuxThread();
 
     try {
+      let hasSeenKeyframe = !this.options.startWithKeyframe;
+
+      // Read from queue (demux thread is handling av_read_frame)
+      const queue = this.packetQueues.get(queueKey)!;
+
       while (!this.isClosed) {
-        const ret = await this.formatContext.readFrame(packet);
-        if (ret < 0) {
-          break;
-        }
+        // Try to get packet from queue
+        let packet = queue.shift();
 
-        if (index === undefined || packet.streamIndex === index) {
-          // If startWithKeyframe is enabled, skip packets until we see a keyframe
-          // Only apply to video streams - audio packets should always pass through
-          if (!hasSeenKeyframe) {
-            const stream = this._streams[packet.streamIndex];
-            const isVideoStream = stream?.codecpar.codecType === AVMEDIA_TYPE_VIDEO;
-
-            if (isVideoStream && packet.isKeyframe) {
-              hasSeenKeyframe = true;
-            } else if (isVideoStream && !packet.isKeyframe) {
-              // Skip video P-frames until first keyframe
-              packet.unref();
-              continue;
-            }
-            // Non-video streams (audio, etc.) always pass through
+        // If queue is empty, wait for next packet
+        if (!packet) {
+          // Check for EOF first
+          if (this.demuxEof) {
+            break; // End of stream
           }
 
-          // Clone the packet for the user
-          // This creates a new Packet object that shares the same data buffer
-          // through reference counting. The data won't be freed until both
-          // the original and the clone are unreferenced.
-          const cloned = packet.clone();
-          if (!cloned) {
-            throw new Error('Failed to clone packet (out of memory)');
+          // Create promise and register resolver
+          const { promise, resolve } = Promise.withResolvers<void>();
+          this.queueResolvers.set(queueKey, resolve);
+
+          // Wait for demux thread to add packet
+          await promise;
+
+          // Check again after wakeup
+          if (this.demuxEof) {
+            break;
           }
-          yield cloned;
+
+          packet = queue.shift();
+          if (!packet) {
+            continue;
+          }
         }
 
-        // Unreference the original packet's data buffer
-        // This allows us to reuse the packet object for the next readFrame()
-        // The data itself is still alive because the clone has a reference
-        packet.unref();
+        // Apply keyframe filtering if needed
+        if (!hasSeenKeyframe) {
+          const stream = this._streams[packet.streamIndex];
+          const isVideoStream = stream?.codecpar.codecType === AVMEDIA_TYPE_VIDEO;
+
+          if (isVideoStream && packet.isKeyframe) {
+            hasSeenKeyframe = true;
+          } else if (isVideoStream && !packet.isKeyframe) {
+            packet.free();
+            continue;
+          }
+        }
+
+        yield packet;
       }
     } finally {
-      packet.free();
+      // Unregister this generator
+      this.activeGenerators--;
+
+      // Stop demux thread if no more generators
+      if (this.activeGenerators === 0) {
+        await this.stopDemuxThread();
+      }
     }
   }
 
@@ -1327,52 +1445,64 @@ export class MediaInput implements AsyncDisposable, Disposable {
    * @see {@link packets} For async version
    */
   *packetsSync(index?: number): Generator<Packet> {
-    const packet = new Packet();
+    using packet = new Packet();
     packet.alloc();
-    let hasSeenKeyframe = !this.startWithKeyframe;
+    let hasSeenKeyframe = !this.options.startWithKeyframe;
 
-    try {
-      while (!this.isClosed) {
-        const ret = this.formatContext.readFrameSync(packet);
-        if (ret < 0) {
-          break;
-        }
-
-        if (index === undefined || packet.streamIndex === index) {
-          // If startWithKeyframe is enabled, skip packets until we see a keyframe
-          // Only apply to video streams - audio packets should always pass through
-          if (!hasSeenKeyframe) {
-            const stream = this._streams[packet.streamIndex];
-            const isVideoStream = stream?.codecpar.codecType === AVMEDIA_TYPE_VIDEO;
-
-            if (isVideoStream && packet.isKeyframe) {
-              hasSeenKeyframe = true;
-            } else if (isVideoStream && !packet.isKeyframe) {
-              // Skip video P-frames until first keyframe
-              packet.unref();
-              continue;
-            }
-            // Non-video streams (audio, etc.) always pass through
-          }
-
-          // Clone the packet for the user
-          // This creates a new Packet object that shares the same data buffer
-          // through reference counting. The data won't be freed until both
-          // the original and the clone are unreferenced.
-          const cloned = packet.clone();
-          if (!cloned) {
-            throw new Error('Failed to clone packet (out of memory)');
-          }
-          yield cloned;
-        }
-
-        // Unreference the original packet's data buffer
-        // This allows us to reuse the packet object for the next readFrame()
-        // The data itself is still alive because the clone has a reference
-        packet.unref();
+    while (!this.isClosed) {
+      const ret = this.formatContext.readFrameSync(packet);
+      if (ret < 0) {
+        break;
       }
-    } finally {
-      packet.free();
+
+      // Get stream for timestamp processing
+      const stream = this._streams[packet.streamIndex];
+      if (stream) {
+        // Set packet timebase to stream timebase
+        // This must be done BEFORE any timestamp processing
+        packet.timeBase = stream.timeBase;
+
+        // Apply timestamp processing
+        // 1. PTS wrap-around correction
+        this.ptsWrapAroundCorrection(packet, stream);
+        // 2. Timestamp discontinuity processing
+        this.timestampDiscontinuityProcess(packet, stream);
+        // 3. DTS prediction/update
+        this.dtsPredict(packet, stream);
+      }
+
+      if (index === undefined || packet.streamIndex === index) {
+        // If startWithKeyframe is enabled, skip packets until we see a keyframe
+        // Only apply to video streams - audio packets should always pass through
+        if (!hasSeenKeyframe) {
+          const stream = this._streams[packet.streamIndex];
+          const isVideoStream = stream?.codecpar.codecType === AVMEDIA_TYPE_VIDEO;
+
+          if (isVideoStream && packet.isKeyframe) {
+            hasSeenKeyframe = true;
+          } else if (isVideoStream && !packet.isKeyframe) {
+            // Skip video P-frames until first keyframe
+            packet.unref();
+            continue;
+          }
+          // Non-video streams (audio, etc.) always pass through
+        }
+
+        // Clone the packet for the user
+        // This creates a new Packet object that shares the same data buffer
+        // through reference counting. The data won't be freed until both
+        // the original and the clone are unreferenced.
+        const cloned = packet.clone();
+        if (!cloned) {
+          throw new Error('Failed to clone packet (out of memory)');
+        }
+        yield cloned;
+      }
+
+      // Unreference the original packet's data buffer
+      // This allows us to reuse the packet object for the next readFrame()
+      // The data itself is still alive because the clone has a reference
+      packet.unref();
     }
   }
 
@@ -1465,6 +1595,463 @@ export class MediaInput implements AsyncDisposable, Disposable {
     // Convert seconds to AV_TIME_BASE
     const ts = BigInt(Math.floor(timestamp * 1000000));
     return this.formatContext.seekFrameSync(streamIndex, ts, flags);
+  }
+
+  /**
+   * Start the internal demux thread for handling multiple parallel packet generators.
+   * This thread reads packets from the format context and distributes them to queues.
+   *
+   * @internal
+   */
+  private startDemuxThread(): void {
+    if (this.demuxThreadActive || this.demuxThread) {
+      return; // Already running
+    }
+
+    this.demuxThreadActive = true;
+    this.demuxThread = (async () => {
+      using packet = new Packet();
+      packet.alloc();
+
+      while (this.demuxThreadActive && !this.isClosed) {
+        // Check if all queues are full - if so, wait a bit
+        let allQueuesFull = true;
+        for (const queue of this.packetQueues.values()) {
+          if (queue.length < this.MAX_QUEUE_SIZE) {
+            allQueuesFull = false;
+            break;
+          }
+        }
+
+        if (allQueuesFull) {
+          await new Promise(setImmediate);
+          continue;
+        }
+
+        // Read next packet
+        const ret = await this.formatContext.readFrame(packet);
+        if (ret < 0) {
+          // End of stream - notify all waiting consumers
+          this.demuxEof = true;
+          for (const resolve of this.queueResolvers.values()) {
+            resolve();
+          }
+          this.queueResolvers.clear();
+          break;
+        }
+
+        // Get stream for timestamp processing
+        const stream = this._streams[packet.streamIndex];
+        if (stream) {
+          packet.timeBase = stream.timeBase;
+          this.ptsWrapAroundCorrection(packet, stream);
+          this.timestampDiscontinuityProcess(packet, stream);
+          this.dtsPredict(packet, stream);
+        }
+
+        // Find which queues need this packet
+        const allQueue = this.packetQueues.get('all');
+        const streamQueue = this.packetQueues.get(packet.streamIndex);
+
+        const targetQueues: { queue: Packet[]; event: string }[] = [];
+
+        if (allQueue && allQueue.length < this.MAX_QUEUE_SIZE) {
+          targetQueues.push({ queue: allQueue, event: 'packet-all' });
+        }
+
+        // Only add stream queue if it's different from 'all' queue
+        if (streamQueue && streamQueue !== allQueue && streamQueue.length < this.MAX_QUEUE_SIZE) {
+          targetQueues.push({ queue: streamQueue, event: `packet-${packet.streamIndex}` });
+        }
+
+        if (targetQueues.length === 0) {
+          // No queue needs this packet, skip it
+          packet.unref();
+          continue;
+        }
+
+        // Clone once, then share reference for additional queues
+        const firstClone = packet.clone();
+        if (!firstClone) {
+          throw new Error('Failed to clone packet in demux thread (out of memory)');
+        }
+
+        // Add to first queue and resolve waiting promise
+        const firstKey = targetQueues[0].event.replace('packet-', '') === 'all' ? 'all' : packet.streamIndex;
+        targetQueues[0].queue.push(firstClone);
+        const firstResolver = this.queueResolvers.get(firstKey);
+        if (firstResolver) {
+          firstResolver();
+          this.queueResolvers.delete(firstKey);
+        }
+
+        // Additional queues get clones (shares data buffer via reference counting)
+        for (let i = 1; i < targetQueues.length; i++) {
+          const additionalClone = firstClone.clone();
+          if (!additionalClone) {
+            throw new Error('Failed to clone packet for additional queue (out of memory)');
+          }
+          const queueKey = targetQueues[i].event.replace('packet-', '') === 'all' ? 'all' : packet.streamIndex;
+          targetQueues[i].queue.push(additionalClone);
+          const resolver = this.queueResolvers.get(queueKey);
+          if (resolver) {
+            resolver();
+            this.queueResolvers.delete(queueKey);
+          }
+        }
+
+        packet.unref();
+      }
+
+      this.demuxThreadActive = false;
+    })();
+  }
+
+  /**
+   * Stop the internal demux thread.
+   *
+   * @internal
+   */
+  private async stopDemuxThread(): Promise<void> {
+    if (!this.demuxThreadActive) {
+      return;
+    }
+
+    this.demuxThreadActive = false;
+    if (this.demuxThread) {
+      await this.demuxThread;
+      this.demuxThread = null;
+    }
+
+    // Clear all queues and resolvers
+    for (const queue of this.packetQueues.values()) {
+      for (const packet of queue) {
+        packet.free();
+      }
+      queue.length = 0;
+    }
+    this.packetQueues.clear();
+    this.queueResolvers.clear();
+    this.demuxEof = false;
+  }
+
+  /**
+   * Get or create stream state for timestamp processing.
+   *
+   * @param streamIndex - Stream index
+   *
+   * @returns Stream state
+   *
+   * @internal
+   */
+  private getStreamState(streamIndex: number): StreamState {
+    let state = this.streamStates.get(streamIndex);
+    if (!state) {
+      state = {
+        wrapCorrectionDone: false,
+        sawFirstTs: false,
+        firstDts: AV_NOPTS_VALUE,
+        nextDts: AV_NOPTS_VALUE,
+        dts: AV_NOPTS_VALUE,
+      };
+      this.streamStates.set(streamIndex, state);
+    }
+    return state;
+  }
+
+  /**
+   * PTS Wrap-Around Correction.
+   *
+   * Based on FFmpeg's ts_fixup().
+   *
+   * Corrects timestamp wrap-around for streams with limited timestamp bits.
+   * DVB streams typically use 31-bit timestamps that wrap around.
+   * Without correction, timestamps become negative causing playback errors.
+   *
+   * Handles:
+   * - Detects wrap-around based on pts_wrap_bits from stream
+   * - Applies correction once per stream
+   * - Corrects both PTS and DTS
+   *
+   * @param packet - Packet to correct
+   *
+   * @param stream - Stream metadata
+   *
+   * @internal
+   */
+  private ptsWrapAroundCorrection(packet: Packet, stream: Stream): void {
+    const state = this.getStreamState(packet.streamIndex);
+
+    // Already corrected or no wrap bits configured
+    if (state.wrapCorrectionDone || stream.ptsWrapBits >= 64) {
+      return;
+    }
+
+    const startTime = this.formatContext.startTime;
+    if (startTime === AV_NOPTS_VALUE) {
+      return;
+    }
+
+    const ptsWrapBits = stream.ptsWrapBits;
+
+    // Rescale start_time to packet's timebase
+    // Note: packet.timeBase was set to stream.timeBase in packets() generator
+    const stime = avRescaleQ(startTime, AV_TIME_BASE_Q, packet.timeBase);
+    const stime2 = stime + (1n << BigInt(ptsWrapBits));
+
+    state.wrapCorrectionDone = true;
+
+    const wrapThreshold = stime + (1n << BigInt(ptsWrapBits - 1));
+
+    // Check DTS for wrap-around
+    if (stime2 > stime && packet.dts !== AV_NOPTS_VALUE && packet.dts > wrapThreshold) {
+      packet.dts -= 1n << BigInt(ptsWrapBits);
+      state.wrapCorrectionDone = false; // May wrap again
+    }
+
+    // Check PTS for wrap-around
+    if (stime2 > stime && packet.pts !== AV_NOPTS_VALUE && packet.pts > wrapThreshold) {
+      packet.pts -= 1n << BigInt(ptsWrapBits);
+      state.wrapCorrectionDone = false; // May wrap again
+    }
+  }
+
+  /**
+   * DTS Prediction and Update.
+   *
+   * Based on FFmpeg's ist_dts_update().
+   *
+   * Predicts next expected DTS for frame ordering validation and discontinuity detection.
+   * Uses codec-specific logic:
+   * - Audio: Based on sample_rate and frame_size
+   * - Video: Based on framerate or duration
+   *
+   * Handles:
+   * - First timestamp initialization
+   * - Codec-specific duration calculation
+   * - DTS sequence tracking
+   *
+   * @param packet - Packet to process
+   *
+   * @param stream - Stream metadata
+   *
+   * @internal
+   */
+  private dtsPredict(packet: Packet, stream: Stream): void {
+    const state = this.getStreamState(packet.streamIndex);
+    const par = stream.codecpar;
+
+    // First timestamp seen
+    if (!state.sawFirstTs) {
+      // For video with avg_frame_rate, account for video_delay
+      const avgFrameRate = stream.avgFrameRate;
+      if (avgFrameRate && avgFrameRate.num > 0) {
+        const frameRateD = Number(avgFrameRate.num) / Number(avgFrameRate.den);
+        state.firstDts = state.dts = BigInt(Math.floor((-par.videoDelay * Number(AV_TIME_BASE)) / frameRateD));
+      } else {
+        state.firstDts = state.dts = 0n;
+      }
+
+      if (packet.pts !== AV_NOPTS_VALUE) {
+        const ptsDts = avRescaleQ(packet.pts, packet.timeBase, AV_TIME_BASE_Q);
+        state.firstDts += ptsDts;
+        state.dts += ptsDts;
+      }
+      state.sawFirstTs = true;
+    }
+
+    // Initialize next_dts if not set
+    if (state.nextDts === AV_NOPTS_VALUE) {
+      state.nextDts = state.dts;
+    }
+
+    // Update from packet DTS if available
+    if (packet.dts !== AV_NOPTS_VALUE) {
+      state.nextDts = state.dts = avRescaleQ(packet.dts, packet.timeBase, AV_TIME_BASE_Q);
+    }
+
+    state.dts = state.nextDts;
+
+    // Predict next DTS based on codec type
+    switch (par.codecType) {
+      case AVMEDIA_TYPE_AUDIO:
+        // Audio: duration from sample_rate or packet duration
+        if (par.sampleRate > 0 && par.frameSize > 0) {
+          state.nextDts += (BigInt(AV_TIME_BASE) * BigInt(par.frameSize)) / BigInt(par.sampleRate);
+        } else {
+          state.nextDts += avRescaleQ(packet.duration, packet.timeBase, AV_TIME_BASE_Q);
+        }
+        break;
+
+      case AVMEDIA_TYPE_VIDEO: {
+        // Video: various methods depending on available metadata
+        // Note: FFmpeg has ist->framerate (forced with -r), but we don't support that option
+        if (packet.duration > 0n) {
+          // Use packet duration
+          state.nextDts += avRescaleQ(packet.duration, packet.timeBase, AV_TIME_BASE_Q);
+        } else if (par.frameRate && par.frameRate.num > 0) {
+          // Use codec framerate with field handling
+          const fieldRate = avMulQ(par.frameRate, { num: 2, den: 1 });
+          let fields = 2; // Default: 2 fields (progressive or standard interlaced)
+
+          // Check if parser is available for accurate field count
+          const parser = stream.parser;
+          if (parser) {
+            // Get repeat_pict from parser for accurate field count
+            fields = 1 + parser.repeatPict;
+          }
+
+          const invFieldRate = avInvQ(fieldRate);
+          state.nextDts += avRescaleQ(BigInt(fields), invFieldRate, AV_TIME_BASE_Q);
+        }
+        break;
+      }
+    }
+  }
+
+  /**
+   * Timestamp Discontinuity Detection.
+   *
+   * Based on FFmpeg's ts_discontinuity_detect().
+   *
+   * Detects and corrects timestamp discontinuities in streams.
+   * Handles two cases:
+   * - Discontinuous formats (MPEG-TS): Apply offset correction
+   * - Continuous formats (MP4): Mark timestamps as invalid
+   *
+   * Handles:
+   * - Format-specific discontinuity handling (AVFMT_TS_DISCONT flag)
+   * - PTS wrap-around detection for streams with limited timestamp bits
+   * - Intra-stream discontinuity detection
+   * - Inter-stream discontinuity detection
+   * - Offset accumulation and application
+   * - copyTs mode with selective correction
+   *
+   * @param packet - Packet to check for discontinuities
+   *
+   * @param stream - Stream metadata
+   *
+   * @internal
+   */
+  private timestampDiscontinuityDetect(packet: Packet, stream: Stream): void {
+    const state = this.getStreamState(packet.streamIndex);
+    const inputFormat = this.formatContext.iformat;
+
+    // Check if format declares timestamp discontinuities
+    const fmtIsDiscont = !!(inputFormat && inputFormat.flags & AVFMT_TS_DISCONT);
+
+    // Disable correction when copyTs is enabled
+    let disableDiscontinuityCorrection = this.options.copyTs;
+
+    // Rescale packet DTS to AV_TIME_BASE for comparison
+    const pktDts = avRescaleQRnd(packet.dts, packet.timeBase, AV_TIME_BASE_Q, (AV_ROUND_NEAR_INF | AV_ROUND_PASS_MINMAX) as any);
+
+    // PTS wrap-around detection
+    // Only applies when copyTs is enabled and stream has limited timestamp bits
+    if (this.options.copyTs && state.nextDts !== AV_NOPTS_VALUE && fmtIsDiscont && stream.ptsWrapBits < 60) {
+      // Calculate wrapped DTS by adding 2^pts_wrap_bits to packet DTS
+      const wrapDts = avRescaleQRnd(packet.dts + (1n << BigInt(stream.ptsWrapBits)), packet.timeBase, AV_TIME_BASE_Q, (AV_ROUND_NEAR_INF | AV_ROUND_PASS_MINMAX) as any);
+
+      // If wrapped DTS is closer to predicted nextDts, enable correction
+      const wrapDelta = wrapDts > state.nextDts ? wrapDts - state.nextDts : state.nextDts - wrapDts;
+      const normalDelta = pktDts > state.nextDts ? pktDts - state.nextDts : state.nextDts - pktDts;
+
+      if (wrapDelta < normalDelta / 10n) {
+        disableDiscontinuityCorrection = false;
+      }
+    }
+
+    // Intra-stream discontinuity detection
+    if (state.nextDts !== AV_NOPTS_VALUE && !disableDiscontinuityCorrection) {
+      const delta = pktDts - state.nextDts;
+
+      if (fmtIsDiscont) {
+        // Discontinuous format (e.g., MPEG-TS) - apply offset correction
+        const threshold = BigInt(this.options.dtsDeltaThreshold) * BigInt(AV_TIME_BASE);
+
+        if (delta > threshold || delta < -threshold || pktDts + BigInt(AV_TIME_BASE) / 10n < state.dts) {
+          this.tsOffsetDiscont -= delta;
+
+          // Apply correction to packet
+          const deltaInPktTb = avRescaleQ(delta, AV_TIME_BASE_Q, packet.timeBase);
+          packet.dts -= deltaInPktTb;
+          if (packet.pts !== AV_NOPTS_VALUE) {
+            packet.pts -= deltaInPktTb;
+          }
+        }
+      } else {
+        // Continuous format (e.g., MP4) - mark invalid timestamps
+        const threshold = BigInt(this.options.dtsErrorThreshold) * BigInt(AV_TIME_BASE);
+
+        // Check DTS
+        if (delta > threshold || delta < -threshold) {
+          packet.dts = AV_NOPTS_VALUE;
+        }
+
+        // Check PTS
+        if (packet.pts !== AV_NOPTS_VALUE) {
+          const pktPts = avRescaleQ(packet.pts, packet.timeBase, AV_TIME_BASE_Q);
+          const ptsDelta = pktPts - state.nextDts;
+          if (ptsDelta > threshold || ptsDelta < -threshold) {
+            packet.pts = AV_NOPTS_VALUE;
+          }
+        }
+      }
+    } else if (state.nextDts === AV_NOPTS_VALUE && !this.options.copyTs && fmtIsDiscont && this.lastTs !== AV_NOPTS_VALUE) {
+      // Inter-stream discontinuity detection
+      const delta = pktDts - this.lastTs;
+      const threshold = BigInt(this.options.dtsDeltaThreshold) * BigInt(AV_TIME_BASE);
+
+      if (delta > threshold || delta < -threshold) {
+        this.tsOffsetDiscont -= delta;
+
+        // Apply correction to packet
+        const deltaInPktTb = avRescaleQ(delta, AV_TIME_BASE_Q, packet.timeBase);
+        packet.dts -= deltaInPktTb;
+        if (packet.pts !== AV_NOPTS_VALUE) {
+          packet.pts -= deltaInPktTb;
+        }
+      }
+    }
+
+    // Update last timestamp
+    this.lastTs = avRescaleQ(packet.dts, packet.timeBase, AV_TIME_BASE_Q);
+  }
+
+  /**
+   * Timestamp Discontinuity Processing - main entry point.
+   *
+   * Based on FFmpeg's ts_discontinuity_process().
+   *
+   * Applies accumulated discontinuity offset and detects new discontinuities.
+   * Must be called for every packet before other timestamp processing.
+   *
+   * Handles:
+   * - Applying previously-detected offset to all streams
+   * - Detecting new discontinuities for audio/video streams
+   *
+   * @param packet - Packet to process
+   *
+   * @param stream - Stream metadata
+   *
+   * @internal
+   */
+  private timestampDiscontinuityProcess(packet: Packet, stream: Stream): void {
+    // Apply previously-detected discontinuity offset
+    // This applies to ALL streams, not just audio/video
+    const offset = avRescaleQ(this.tsOffsetDiscont, AV_TIME_BASE_Q, packet.timeBase);
+    if (packet.dts !== AV_NOPTS_VALUE) {
+      packet.dts += offset;
+    }
+    if (packet.pts !== AV_NOPTS_VALUE) {
+      packet.pts += offset;
+    }
+
+    // Detect new timestamp discontinuities for audio/video
+    const par = stream.codecpar;
+    if ((par.codecType === AVMEDIA_TYPE_VIDEO || par.codecType === AVMEDIA_TYPE_AUDIO) && packet.dts !== AV_NOPTS_VALUE) {
+      this.timestampDiscontinuityDetect(packet, stream);
+    }
   }
 
   /**
