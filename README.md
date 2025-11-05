@@ -176,8 +176,8 @@ const decoderGenerator = decoder.frames(inputGenerator);
 const encoderGenerator = encoder.packets(decoderGenerator);
 
 // Process packets
-for await (using packet of inputGenerator) {
-  await output.writePacket(encoded, outputIndex);
+for await (using packet of encoderGenerator) {
+  await output.writePacket(packet, outputIndex);
 }
 
 // Done
