@@ -1,8 +1,25 @@
 import type { RtpPacket } from 'werift';
-import type { AVPixelFormat, AVSampleFormat, AVSeekWhence } from '../constants/constants.js';
+import type { AVPixelFormat, AVSampleFormat, AVSeekWhence } from '../constants/index.js';
 import type { IRational } from '../lib/index.js';
+import type { Decoder } from './decoder.js';
+import type { FilterAPI } from './filter.js';
 import type { HardwareContext } from './hardware.js';
 import type { MediaInput } from './media-input.js';
+
+/**
+ * Base codec names supported across different hardware types.
+ */
+export type BaseCodecName =
+  | 'av1' // AV1 codec (amf, mediacodec, nvenc, qsv, vaapi)
+  | 'h264' // H.264/AVC (amf, mediacodec, nvenc, qsv, vaapi, v4l2m2m, mf, omx, rkmpp, videotoolbox, vulkan)
+  | 'hevc' // H.265/HEVC (amf, mediacodec, nvenc, qsv, vaapi, v4l2m2m, mf, rkmpp, videotoolbox, d3d12va, vulkan)
+  | 'h263' // H.263 (v4l2m2m)
+  | 'mpeg2' // MPEG-2 (qsv, vaapi)
+  | 'mpeg4' // MPEG-4 Part 2 (mediacodec, v4l2m2m, omx)
+  | 'vp8' // VP8 (mediacodec, vaapi, v4l2m2m)
+  | 'vp9' // VP9 (mediacodec, qsv, vaapi)
+  | 'mjpeg' // Motion JPEG (qsv, vaapi, rkmpp, videotoolbox)
+  | 'prores'; // ProRes (videotoolbox only)
 
 /**
  * Raw video data configuration.
@@ -10,22 +27,46 @@ import type { MediaInput } from './media-input.js';
  * Specifies parameters for opening raw video files like YUV.
  */
 export interface VideoRawData {
-  /** Type discriminator for TypeScript */
+  /**
+   * Type discriminator for TypeScript.
+   *
+   * Must be set to 'video' to identify this as video raw data.
+   */
   type: 'video';
 
-  /** Raw audio input source (file path, Buffer, or callbacks) */
+  /**
+   * Raw video input source.
+   *
+   * Can be a file path, Buffer containing raw video data, or custom I/O callbacks.
+   */
   input: string | Buffer | IOInputCallbacks;
 
-  /** Video width */
+  /**
+   * Video frame width in pixels.
+   *
+   * Must match the actual width of the raw video data.
+   */
   width: number;
 
-  /** Video height */
+  /**
+   * Video frame height in pixels.
+   *
+   * Must match the actual height of the raw video data.
+   */
   height: number;
 
-  /** Pixel format (e.g., AV_PIX_FMT_YUV420P, AV_PIX_FMT_NV12, AV_PIX_FMT_RGB24) */
+  /**
+   * Pixel format of the raw video data.
+   *
+   * Specifies how pixel data is stored (e.g., YUV420P, NV12, RGB24).
+   */
   pixelFormat: AVPixelFormat;
 
-  /** Frame rate as a rational */
+  /**
+   * Frame rate of the raw video.
+   *
+   * Specified as a rational number (numerator/denominator).
+   */
   frameRate: IRational;
 }
 
@@ -35,19 +76,39 @@ export interface VideoRawData {
  * Specifies parameters for opening raw audio files like PCM.
  */
 export interface AudioRawData {
-  /** Type discriminator for TypeScript */
+  /**
+   * Type discriminator for TypeScript.
+   *
+   * Must be set to 'audio' to identify this as audio raw data.
+   */
   type: 'audio';
 
-  /** Raw audio input source (file path, Buffer, or callbacks) */
+  /**
+   * Raw audio input source.
+   *
+   * Can be a file path, Buffer containing raw audio data, or custom I/O callbacks.
+   */
   input: string | Buffer | IOInputCallbacks;
 
-  /** Sample rate in Hz (e.g., 44100, 48000) */
+  /**
+   * Sample rate in Hz.
+   *
+   * Number of audio samples per second (e.g., 44100, 48000).
+   */
   sampleRate: number;
 
-  /** Number of audio channels */
+  /**
+   * Number of audio channels.
+   *
+   * Typical values: 1 (mono), 2 (stereo), 6 (5.1 surround).
+   */
   channels: number;
 
-  /** Sample format (e.g., AV_SAMPLE_FMT_S16, AV_SAMPLE_FMT_FLT, AV_SAMPLE_FMT_S32) */
+  /**
+   * Sample format of the raw audio data.
+   *
+   * Specifies how audio samples are stored (e.g., S16, FLT, S32).
+   */
   sampleFormat: AVSampleFormat;
 }
 
@@ -93,14 +154,56 @@ export interface MediaInputOptions {
 
   /**
    * Start reading packets from the first keyframe.
-   * If true, all packets before the first keyframe will be skipped.
+   *
+   * When enabled, all packets before the first keyframe will be skipped.
+   * Useful for seeking and trimming operations.
    *
    * @default false
    */
   startWithKeyframe?: boolean;
 
   /**
+   * DTS delta threshold in seconds.
+   *
+   * Timestamp discontinuity detection threshold for formats with AVFMT_TS_DISCONT flag.
+   * When DTS delta exceeds this value, it's considered a discontinuity.
+   *
+   * Matches FFmpeg CLI's -dts_delta_threshold option.
+   *
+   * @default 10
+   */
+  dtsDeltaThreshold?: number;
+
+  /**
+   * DTS error threshold in seconds.
+   *
+   * Timestamp discontinuity detection threshold for continuous formats (without AVFMT_TS_DISCONT).
+   * When DTS delta exceeds this value, it's considered a timestamp error.
+   *
+   * Matches FFmpeg CLI's -dts_error_threshold option.
+   *
+   * @default 108000 (30 hours)
+   */
+  dtsErrorThreshold?: number;
+
+  /**
+   * Copy timestamps from input to output.
+   *
+   * When enabled, timestamps are passed through without modification.
+   * This disables most timestamp discontinuity corrections except for
+   * PTS wrap-around detection in discontinuous formats.
+   *
+   * Matches FFmpeg CLI's -copyts option.
+   *
+   * @default false
+   */
+  copyTs?: boolean;
+
+  /**
    * FFmpeg format options passed directly to the input.
+   *
+   * Key-value pairs of FFmpeg AVFormatContext options.
+   * These are passed directly to avformat_open_input().
    */
   options?: Record<string, string | number | boolean | undefined | null>;
 }
@@ -112,11 +215,25 @@ export interface MediaInputOptions {
  */
 export interface MediaOutputOptions {
   /**
+   * Input media for automatic metadata and property copying.
+   *
+   * When provided, MediaOutput will automatically copy:
+   * - Container-level metadata (title, artist, etc.)
+   * - Stream-level metadata
+   * - Disposition flags (DEFAULT, FORCED, etc.)
+   * - Duration hints for encoding
+   *
+   * This matches FFmpeg CLI behavior which copies metadata by default.
+   */
+  input?: MediaInput;
+
+  /**
    * Preferred output format.
    *
    * If not specified, format is guessed from file extension.
    * Use this to override automatic format detection.
    *
+   * Matches FFmpeg CLI's -f option.
    */
   format?: string;
 
@@ -132,11 +249,91 @@ export interface MediaOutputOptions {
    */
   bufferSize?: number;
 
-  /** Exit immediately on first write error (default: true) */
+  /**
+   * Exit immediately on first write error.
+   *
+   * When enabled, the muxer will terminate on the first write error.
+   * When disabled, errors are logged but processing continues.
+   *
+   * @default true
+   */
   exitOnError?: boolean;
 
   /**
+   * Maximum number of packets to buffer per stream in the sync queue.
+   *
+   * Matches FFmpeg CLI's -max_muxing_queue_size option.
+   * Limits memory usage when encoders are still initializing.
+   * Takes effect after muxingQueueDataThreshold is reached.
+   * If exceeded, an error is thrown.
+   *
+   * @default 128 (same as FFmpeg CLI)
+   */
+  maxMuxingQueueSize?: number;
+
+  /**
+   * Threshold in bytes after which maxMuxingQueueSize takes effect.
+   *
+   * Matches FFmpeg CLI's -muxing_queue_data_threshold option.
+   * Once this threshold is reached, maxMuxingQueueSize limit applies.
+   * This is an intelligent system: small streams (audio) can buffer many packets,
+   * large streams (video) are limited by packet count.
+   *
+   * @default 52428800 (50 MB, same as FFmpeg CLI)
+   */
+  muxingQueueDataThreshold?: number;
+
+  /**
+   * Maximum buffering duration in seconds for sync queue interleaving.
+   *
+   * Matches FFmpeg CLI's -shortest_buf_duration option.
+   * Controls how much buffering is allowed in the native sync queue
+   * for packet interleaving across multiple streams.
+   *
+   * @default 10 (same as FFmpeg CLI)
+   */
+  syncQueueBufferDuration?: number;
+
+  /**
+   * Start time offset in seconds for output timestamps.
+   *
+   * Matches FFmpeg CLI's -ss (output) option.
+   * Subtracts this offset from all packet timestamps.
+   * Use for trimming from start of stream.
+   *
+   * @default AV_NOPTS_VALUE (no offset)
+   */
+  startTime?: number;
+
+  /**
+   * Whether to copy initial non-keyframe packets in streamcopy mode.
+   *
+   * Matches FFmpeg CLI's -copyinkf option.
+   * If false (default), packets before first keyframe are skipped.
+   * If true, all packets from start are copied.
+   *
+   * @default false
+   */
+  copyInitialNonkeyframes?: boolean;
+
+  /**
+   * Copy or discard frames before start time.
+   *
+   * Matches FFmpeg CLI's -copypriorss option.
+   * Controls whether packets before the start time are copied:
+   * - -1 (default): Use FFmpeg's internal ts_copy_start calculation
+   * - 0: Discard packets before start time
+   * - 1: Copy all packets regardless of start time
+   *
+   * @default -1
+   */
+  copyPriorStart?: number;
+
+  /**
    * FFmpeg format options passed directly to the output.
+   *
+   * Key-value pairs of FFmpeg AVFormatContext options.
+   * These are passed directly to avformat_write_header().
    */
   options?: Record<string, string | number | boolean | bigint | undefined | null>;
 }
@@ -148,21 +345,74 @@ export interface MediaOutputOptions {
  * Supports hardware acceleration and threading configuration.
  */
 export interface DecoderOptions {
-  /** Number of threads to use (0 for auto) */
-  threads?: number;
-
-  /** Exit immediately on first decode error (default: true) */
+  /**
+   * Exit immediately on first decode error.
+   *
+   * When enabled, the decoder will terminate on the first decode error.
+   * When disabled, errors are logged but decoding continues with next packet.
+   *
+   * @default true
+   */
   exitOnError?: boolean;
 
-  /** Hardware acceleration: Pass a HardwareContext instance */
+  /**
+   * Hardware acceleration context.
+   *
+   * Pass a HardwareContext instance to enable hardware-accelerated decoding.
+   * Set to null to disable hardware acceleration.
+   */
   hardware?: HardwareContext | null;
 
   /**
-   * Number of extra hardware frames to allocate. Useful for hardware decoders requiring frame buffering.
+   * Number of extra hardware frames to allocate.
+   *
+   * Useful for hardware decoders requiring additional frame buffering.
+   * Some hardware decoders need extra frames for reference or look-ahead.
    */
   extraHWFrames?: number;
 
-  /** Additional codec-specific options */
+  /**
+   * Hardware frame output format.
+   *
+   * When set, hardware frames will be automatically transferred to this software pixel format.
+   * Useful when you need software frames for further processing but want to use hardware decoding.
+   */
+  hwaccelOutputFormat?: AVPixelFormat;
+
+  /**
+   * Force constant framerate mode.
+   *
+   * When set, ignores all timestamps and generates frames at a constant rate.
+   * Sets frame PTS to AV_NOPTS_VALUE, duration to 1, and time_base to 1/framerate.
+   * Matches FFmpeg CLI's DECODER_FLAG_FRAMERATE_FORCED behavior.
+   */
+  forcedFramerate?: IRational;
+
+  /**
+   * Override sample aspect ratio.
+   *
+   * When set, overrides the frame's sample_aspect_ratio with this value.
+   * Useful for fixing incorrect SAR in source material.
+   */
+  sarOverride?: IRational;
+
+  /**
+   * Apply cropping from frame metadata.
+   *
+   * When true, automatically crops frames based on their crop metadata.
+   * Uses av_frame_apply_cropping() with AV_FRAME_CROP_UNALIGNED flag.
+   * Useful for streams with letterboxing/pillarboxing metadata.
+   *
+   * @default false
+   */
+  applyCropping?: boolean;
+
+  /**
+   * Additional codec-specific options.
+   *
+   * Key-value pairs of FFmpeg AVCodecContext options.
+   * These are passed directly to the decoder.
+   */
   options?: Record<string, string | number | boolean | undefined | null>;
 }
 
@@ -173,34 +423,78 @@ export interface DecoderOptions {
  * Stream parameters (width, height, format, etc.) are taken from the provided stream.
  */
 export interface EncoderOptions {
-  /** Target bitrate (number, bigint, or string like '5M', default: 128k for audio, 1M for video) */
+  /**
+   * Target bitrate.
+   *
+   * Can be specified as number, bigint, or string with suffix (e.g., '5M', '128k').
+   * Used for rate control in video and audio encoding.
+   *
+   * @default 128k for audio, 1M for video
+   */
   bitrate?: number | bigint | string;
 
-  /** Minimum bitrate (number, bigint, or string like '5M') */
+  /**
+   * Minimum bitrate for rate control.
+   *
+   * Can be specified as number, bigint, or string with suffix (e.g., '5M', '128k').
+   * Used with variable bitrate encoding to enforce quality floor.
+   */
   minRate?: number | bigint | string;
 
-  /** Maximum bitrate (number, bigint, or string like '5M') */
+  /**
+   * Maximum bitrate for rate control.
+   *
+   * Can be specified as number, bigint, or string with suffix (e.g., '5M', '128k').
+   * Used with variable bitrate encoding to enforce bitrate ceiling.
+   */
   maxRate?: number | bigint | string;
 
-  /** Buffer size (number, bigint, or string like '5M') */
+  /**
+   * Rate control buffer size.
+   *
+   * Can be specified as number, bigint, or string with suffix (e.g., '5M', '128k').
+   * Determines the decoder buffer model size for rate control.
+   */
   bufSize?: number | bigint | string;
 
-  /** Group of Pictures size */
+  /**
+   * Group of Pictures (GOP) size.
+   *
+   * Number of frames between keyframes.
+   * Larger GOP improves compression but reduces seekability.
+   */
   gopSize?: number;
 
-  /** Max B-frames between non-B-frames */
+  /**
+   * Maximum number of consecutive B-frames.
+   *
+   * B-frames improve compression but increase encoding complexity.
+   * Maximum B-frames allowed between I or P frames.
+   */
   maxBFrames?: number;
 
-  /** Number of threads (0 for auto) */
-  threads?: number;
+  /**
+   * Optional decoder reference for metadata extraction.
+   *
+   * Used to extract bits_per_raw_sample and other decoder-specific properties.
+   * Helps maintain quality during transcoding.
+   */
+  decoder?: Decoder;
 
-  /** Timebase (rational {num, den}) */
-  timeBase: IRational;
+  /**
+   * Optional filter reference for metadata extraction.
+   *
+   * Used to extract filter output parameters.
+   * Ensures encoder matches filter output characteristics.
+   */
+  filter?: FilterAPI;
 
-  /** Frame rate (rational {num, den}) */
-  frameRate?: IRational;
-
-  /** Additional codec-specific options */
+  /**
+   * Additional codec-specific options.
+   *
+   * Key-value pairs of FFmpeg AVCodecContext options.
+   * These are passed directly to the encoder.
+   */
   options?: Record<string, string | number | boolean | undefined | null>;
 }
 
@@ -210,29 +504,94 @@ export interface EncoderOptions {
 export interface FilterOptions {
   /**
    * Number of threads for parallel processing.
-   * 0 = auto-detect based on CPU cores.
+   *
+   * Controls the number of threads used for filter processing.
+   * Set to 0 to auto-detect based on CPU cores.
+   *
+   * @default 0 (auto-detect)
    */
   threads?: number;
 
   /**
-   * Software scaler options (for video filters).
-   * Example: "flags=bicubic"
+   * Software scaler options for video filters.
+   *
+   * Options passed to libswscale when scaling video within filters.
+   * Maps to AVFilterGraph->scale_sws_opts.
    */
   scaleSwsOpts?: string;
 
-  /** Timebase (rational {num, den}) */
-  timeBase: IRational;
+  /**
+   * Audio resampler options for audio filters.
+   *
+   * Options passed to libswresample when resampling audio within filters.
+   * Maps to AVFilterGraph->aresample_swr_opts.
+   */
+  audioResampleOpts?: string;
 
-  /** Frame rate (rational {num, den}) */
-  frameRate?: IRational;
-
-  /** Hardware acceleration: Pass a HardwareContext instance */
+  /**
+   * Hardware acceleration context.
+   *
+   * Pass a HardwareContext instance to enable hardware-accelerated filtering.
+   * Set to null to disable hardware acceleration.
+   */
   hardware?: HardwareContext | null;
 
   /**
    * Number of extra hardware frames to allocate.
+   *
+   * Useful for hardware filters requiring additional frame buffering.
+   * Some hardware filters need extra frames for look-ahead or reference.
    */
   extraHWFrames?: number;
+
+  /**
+   * Force constant framerate mode (CFR).
+   *
+   * When true, timeBase is automatically set to 1/framerate (like FFmpeg CLI -fps_mode cfr).
+   * When false (default), timeBase is taken from frame.timeBase (VFR mode).
+   *
+   * Maps to FFmpeg's IFILTER_FLAG_CFR.
+   * Requires `framerate` to be set when enabled.
+   *
+   * @default false (VFR mode)
+   */
+  cfr?: boolean;
+
+  /**
+   * Framerate for CFR mode or as hint for buffer source.
+   *
+   * Required when `cfr=true` to calculate timeBase = 1/framerate.
+   * Also passed to AVBufferSrcParameters->frame_rate.
+   *
+   * Maps to FFmpeg's InputFilterOptions->framerate.
+   */
+  framerate?: IRational;
+
+  /**
+   * Drop frames on format/parameter changes instead of reinitializing filtergraph.
+   *
+   * When true, frames with changed properties (resolution, format, etc.) are dropped
+   * instead of triggering filtergraph reinitialization. Useful for live streams
+   * with unstable properties.
+   *
+   * Maps to FFmpeg's IFILTER_FLAG_DROPCHANGED.
+   *
+   * @default false
+   */
+  dropOnChange?: boolean;
+
+  /**
+   * Allow filtergraph reinitialization when frame parameters change.
+   *
+   * When false, parameter changes (resolution, format) will cause errors
+   * instead of reinitializing the filtergraph.
+   * When true (default), filtergraph is reinitialized on parameter changes.
+   *
+   * Maps to FFmpeg's IFILTER_FLAG_REINIT.
+   *
+   * @default true
+   */
+  allowReinit?: boolean;
 }
 
 /**
@@ -321,31 +680,34 @@ export interface IOOutputCallbacks {
   read?: (size: number) => Buffer | null | number;
 }
 
-/**
- * Base codec names supported across different hardware types.
- */
-export type BaseCodecName =
-  | 'av1' // AV1 codec (amf, mediacodec, nvenc, qsv, vaapi)
-  | 'h264' // H.264/AVC (amf, mediacodec, nvenc, qsv, vaapi, v4l2m2m, mf, omx, rkmpp, videotoolbox, vulkan)
-  | 'hevc' // H.265/HEVC (amf, mediacodec, nvenc, qsv, vaapi, v4l2m2m, mf, rkmpp, videotoolbox, d3d12va, vulkan)
-  | 'h263' // H.263 (v4l2m2m)
-  | 'mpeg2' // MPEG-2 (qsv, vaapi)
-  | 'mpeg4' // MPEG-4 Part 2 (mediacodec, v4l2m2m, omx)
-  | 'vp8' // VP8 (mediacodec, vaapi, v4l2m2m)
-  | 'vp9' // VP9 (mediacodec, qsv, vaapi)
-  | 'mjpeg' // Motion JPEG (qsv, vaapi, rkmpp, videotoolbox)
-  | 'prores'; // ProRes (videotoolbox only)
-
 export interface RTPMediaInput {
-  /** MediaInput configured for RTP/SRTP reception via localhost UDP. */
+  /**
+   * MediaInput configured for RTP/SRTP reception.
+   *
+   * Receives RTP packets via localhost UDP and feeds them to FFmpeg for decoding.
+   */
   input: MediaInput;
 
-  /** Send RTP packet to FFmpeg for decoding. */
+  /**
+   * Send RTP packet to FFmpeg for decoding.
+   *
+   * @param rtpPacket - RTP packet as Buffer or RtpPacket object
+   *
+   * @param streamIndex - Optional stream index for multiplexed RTP
+   */
   sendPacket: (rtpPacket: Buffer | RtpPacket, streamIndex?: number) => void;
 
-  /** Cleanup function - closes input and UDP socket. */
+  /**
+   * Cleanup function.
+   *
+   * Closes the media input and UDP socket asynchronously.
+   */
   close: () => Promise<void>;
 
-  /** Synchronous cleanup function - closes input and UDP socket. */
+  /**
+   * Synchronous cleanup function.
+   *
+   * Closes the media input and UDP socket synchronously.
+   */
   closeSync: () => void;
 }
