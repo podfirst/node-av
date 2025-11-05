@@ -79,7 +79,10 @@ private:
   
   Napi::Value GetPictType(const Napi::CallbackInfo& info);
   void SetPictType(const Napi::CallbackInfo& info, const Napi::Value& value);
-  
+
+  Napi::Value GetQuality(const Napi::CallbackInfo& info);
+  void SetQuality(const Napi::CallbackInfo& info, const Napi::Value& value);
+
   Napi::Value GetSampleAspectRatio(const Napi::CallbackInfo& info);
   void SetSampleAspectRatio(const Napi::CallbackInfo& info, const Napi::Value& value);
   

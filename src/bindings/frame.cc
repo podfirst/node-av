@@ -39,6 +39,7 @@ Napi::Object Frame::Init(Napi::Env env, Napi::Object exports) {
     InstanceAccessor<&Frame::GetTimeBase, &Frame::SetTimeBase>("timeBase"),
     InstanceAccessor<&Frame::GetKeyFrame, &Frame::SetKeyFrame>("keyFrame"),
     InstanceAccessor<&Frame::GetPictType, &Frame::SetPictType>("pictType"),
+    InstanceAccessor<&Frame::GetQuality, &Frame::SetQuality>("quality"),
     InstanceAccessor<&Frame::GetSampleAspectRatio, &Frame::SetSampleAspectRatio>("sampleAspectRatio"),
     InstanceAccessor<&Frame::GetSampleRate, &Frame::SetSampleRate>("sampleRate"),
     InstanceAccessor<&Frame::GetChannelLayout, &Frame::SetChannelLayout>("channelLayout"),
@@ -603,6 +604,20 @@ Napi::Value Frame::GetPictType(const Napi::CallbackInfo& info) {
 void Frame::SetPictType(const Napi::CallbackInfo& info, const Napi::Value& value) {
   if (frame_) {
     frame_->pict_type = static_cast<AVPictureType>(value.As<Napi::Number>().Int32Value());
+  }
+}
+
+Napi::Value Frame::GetQuality(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (!frame_) {
+    return Napi::Number::New(env, 0);
+  }
+  return Napi::Number::New(env, frame_->quality);
+}
+
+void Frame::SetQuality(const Napi::CallbackInfo& info, const Napi::Value& value) {
+  if (frame_) {
+    frame_->quality = value.As<Napi::Number>().Int32Value();
   }
 }
 
