@@ -33,17 +33,23 @@ public:
   }
 
   void Execute() override {
+    // Null checks to prevent use-after-free crashes
+    if (!parent_) {
+      result_ = AVERROR(EINVAL);
+      return;
+    }
+
     // If we already have a context (e.g., for custom I/O), use it
     AVFormatContext* ctx = parent_->ctx_;
-    
+
     // For custom I/O, pass NULL as URL
     const char* url = nullptr;
     if (!url_.empty() && url_ != "dummy") {
       url = url_.c_str();
     }
-    
+
     result_ = avformat_open_input(&ctx, url, fmt_, options_ ? &options_ : nullptr);
-    
+
     if (result_ >= 0) {
       parent_->ctx_ = ctx;
       parent_->is_output_ = false;

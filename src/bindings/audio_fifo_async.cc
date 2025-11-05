@@ -31,6 +31,12 @@ public:
   }
   
   void Execute() override {
+    // Null checks to prevent use-after-free crashes
+    if (!fifo_) {
+      result_ = AVERROR(EINVAL);
+      return;
+    }
+
     result_ = av_audio_fifo_write(fifo_, data_, nb_samples_);
   }
   
@@ -75,6 +81,12 @@ public:
   }
   
   void Execute() override {
+    // Null checks to prevent use-after-free crashes
+    if (!fifo_) {
+      result_ = AVERROR(EINVAL);
+      return;
+    }
+
     result_ = av_audio_fifo_read(fifo_, data_, nb_samples_);
   }
   
@@ -119,6 +131,12 @@ public:
   }
   
   void Execute() override {
+    // Null checks to prevent use-after-free crashes
+    if (!fifo_) {
+      result_ = AVERROR(EINVAL);
+      return;
+    }
+
     result_ = av_audio_fifo_peek(fifo_, data_, nb_samples_);
   }
   

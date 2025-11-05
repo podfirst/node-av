@@ -16,6 +16,12 @@ public:
       deferred_(Napi::Promise::Deferred::New(env)) {}
 
   void Execute() override {
+    // Null checks to prevent use-after-free crashes
+    if (!graph_ || !graph_->Get()) {
+      ret_ = AVERROR(EINVAL);
+      return;
+    }
+
     ret_ = avfilter_graph_config(graph_->Get(), nullptr);
   }
 
@@ -46,6 +52,12 @@ public:
       deferred_(Napi::Promise::Deferred::New(env)) {}
 
   void Execute() override {
+    // Null checks to prevent use-after-free crashes
+    if (!graph_ || !graph_->Get()) {
+      ret_ = AVERROR(EINVAL);
+      return;
+    }
+
     ret_ = avfilter_graph_request_oldest(graph_->Get());
   }
 

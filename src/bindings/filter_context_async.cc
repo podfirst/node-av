@@ -23,6 +23,12 @@ public:
       deferred_(Napi::Promise::Deferred::New(env)) {}
 
   void Execute() override {
+    // Null checks to prevent use-after-free crashes
+    if (!ctx_ || !ctx_->Get()) {
+      ret_ = AVERROR(EINVAL);
+      return;
+    }
+
     ret_ = av_buffersrc_add_frame_flags(ctx_->Get(), frame_ ? frame_->Get() : nullptr, flags_);
   }
 
@@ -56,6 +62,17 @@ public:
       deferred_(Napi::Promise::Deferred::New(env)) {}
 
   void Execute() override {
+    // Null checks to prevent use-after-free crashes
+    if (!ctx_ || !ctx_->Get()) {
+      ret_ = AVERROR(EINVAL);
+      return;
+    }
+
+    if (!frame_ || !frame_->Get()) {
+      ret_ = AVERROR(EINVAL);
+      return;
+    }
+
     ret_ = av_buffersink_get_frame(ctx_->Get(), frame_->Get());
   }
 

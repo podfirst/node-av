@@ -10,26 +10,34 @@ namespace ffmpeg {
 class InputFormatProbeBufferWorker : public Napi::AsyncWorker {
 public:
   InputFormatProbeBufferWorker(
-    Napi::Function& callback,
+    Napi::Env env,
     IOContext* ioContext,
     int maxProbeSize
-  ) : AsyncWorker(callback),
+  ) : AsyncWorker(env),
       io_context_(ioContext),
       max_probe_size_(maxProbeSize),
-      result_format_(nullptr) {}
+      result_format_(nullptr),
+      ret_(0),
+      deferred_(Napi::Promise::Deferred::New(env)) {}
 
   ~InputFormatProbeBufferWorker() = default;
 
   void Execute() override {
+    // Null checks to prevent use-after-free crashes
+    if (!io_context_) {
+      ret_ = AVERROR(EINVAL);
+      return;
+    }
+
     AVIOContext* avio = io_context_->Get();
     if (!avio) {
-      SetError("Invalid IO context");
+      ret_ = AVERROR(EINVAL);
       return;
     }
 
     // av_probe_input_buffer2 will probe the format from the IO context
     const AVInputFormat* fmt = nullptr;
-    int ret = av_probe_input_buffer2(
+    ret_ = av_probe_input_buffer2(
       avio,
       &fmt,
       nullptr,  // filename (optional)
@@ -38,21 +46,24 @@ public:
       max_probe_size_
     );
 
-    if (ret < 0) {
-      char errbuf[AV_ERROR_MAX_STRING_SIZE];
-      av_strerror(ret, errbuf, sizeof(errbuf));
-      SetError(std::string("Failed to probe input format: ") + errbuf);
-      return;
+    if (ret_ >= 0) {
+      result_format_ = fmt;
     }
-
-    result_format_ = fmt;
   }
 
   void OnOK() override {
     Napi::Env env = Env();
-    
+
+    if (ret_ < 0) {
+      // Error case
+      char errbuf[AV_ERROR_MAX_STRING_SIZE];
+      av_strerror(ret_, errbuf, sizeof(errbuf));
+      deferred_.Reject(Napi::Error::New(env, std::string("Failed to probe input format: ") + errbuf).Value());
+      return;
+    }
+
     if (!result_format_) {
-      Callback().Call({env.Null()});
+      deferred_.Resolve(env.Null());
       return;
     }
 
@@ -61,17 +72,23 @@ public:
     InputFormat* wrapper = Napi::ObjectWrap<InputFormat>::Unwrap(formatObj);
     wrapper->Set(result_format_);
 
-    Callback().Call({formatObj});
+    deferred_.Resolve(formatObj);
   }
 
   void OnError(const Napi::Error& e) override {
-    Callback().Call({e.Value()});
+    deferred_.Reject(e.Value());
+  }
+
+  Napi::Promise GetPromise() {
+    return deferred_.Promise();
   }
 
 private:
   IOContext* io_context_;
   int max_probe_size_;
   const AVInputFormat* result_format_;
+  int ret_;
+  Napi::Promise::Deferred deferred_;
 };
 
 Napi::Value InputFormat::ProbeBufferAsync(const Napi::CallbackInfo& info) {
@@ -91,7 +108,7 @@ Napi::Value InputFormat::ProbeBufferAsync(const Napi::CallbackInfo& info) {
       ioContext = Napi::ObjectWrap<IOContext>::Unwrap(obj);
     }
   }
-  
+
   if (!ioContext) {
     Napi::TypeError::New(env, "Invalid IOContext").ThrowAsJavaScriptException();
     return env.Undefined();
@@ -103,32 +120,11 @@ Napi::Value InputFormat::ProbeBufferAsync(const Napi::CallbackInfo& info) {
     maxProbeSize = info[1].As<Napi::Number>().Int32Value();
   }
 
-  // Create promise
-  auto deferred = Napi::Promise::Deferred::New(env);
-  
-  // Create the callback function separately
-  Napi::Function callback = Napi::Function::New(env, [deferred](const Napi::CallbackInfo& info) {
-    Napi::Env env = info.Env();
-    if (info.Length() > 0 && info[0].IsObject()) {
-      // Success - resolve with the format
-      deferred.Resolve(info[0]);
-    } else if (info.Length() > 0) {
-      // Error - reject
-      deferred.Reject(info[0]);
-    } else {
-      // No format found
-      deferred.Resolve(env.Null());
-    }
-  });
-  
-  auto* worker = new InputFormatProbeBufferWorker(
-    callback,
-    ioContext,
-    maxProbeSize
-  );
-
+  auto* worker = new InputFormatProbeBufferWorker(env, ioContext, maxProbeSize);
+  auto promise = worker->GetPromise();
   worker->Queue();
-  return deferred.Promise();
+
+  return promise;
 }
 
 } // namespace ffmpeg

@@ -37,10 +37,16 @@ public:
   }
 
   void Execute() override {
-    ret_ = swr_convert(ctx_->Get(), 
-                       out_refs_.IsEmpty() ? nullptr : out_ptrs_, 
-                       out_count_, 
-                       in_refs_.IsEmpty() ? nullptr : const_cast<const uint8_t**>(in_ptrs_), 
+    // Null checks to prevent use-after-free crashes
+    if (!ctx_ || !ctx_->Get()) {
+      ret_ = AVERROR(EINVAL);
+      return;
+    }
+
+    ret_ = swr_convert(ctx_->Get(),
+                       out_refs_.IsEmpty() ? nullptr : out_ptrs_,
+                       out_count_,
+                       in_refs_.IsEmpty() ? nullptr : const_cast<const uint8_t**>(in_ptrs_),
                        in_count_);
   }
 

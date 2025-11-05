@@ -19,6 +19,17 @@ public:
       deferred_(Napi::Promise::Deferred::New(env)) {}
 
   void Execute() override {
+    // Null checks to prevent use-after-free crashes
+    if (!ctx_ || !ctx_->Get()) {
+      ret_ = AVERROR(EINVAL);
+      return;
+    }
+
+    if (!dst_ || !dst_->Get() || !src_ || !src_->Get()) {
+      ret_ = AVERROR(EINVAL);
+      return;
+    }
+
     ret_ = sws_scale_frame(ctx_->Get(), dst_->Get(), src_->Get());
   }
 
@@ -65,6 +76,12 @@ public:
   }
 
   void Execute() override {
+    // Null checks to prevent use-after-free crashes
+    if (!ctx_ || !ctx_->Get()) {
+      ret_ = AVERROR(EINVAL);
+      return;
+    }
+
     ret_ = sws_scale(ctx_->Get(), srcSlice_, srcStride_, srcSliceY_, srcSliceH_, dst_, dstStride_);
   }
 

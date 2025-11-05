@@ -20,6 +20,12 @@ public:
       deferred_(Napi::Promise::Deferred::New(env)) {}
 
   void Execute() override {
+    // Null checks to prevent use-after-free crashes
+    if (!dst_ || !dst_->Get() || !src_ || !src_->Get()) {
+      ret_ = AVERROR(EINVAL);
+      return;
+    }
+
     ret_ = av_hwframe_transfer_data(dst_->Get(), src_->Get(), flags_);
   }
 

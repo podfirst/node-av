@@ -16,6 +16,12 @@ public:
       deferred_(Napi::Promise::Deferred::New(env)) {}
 
   void Execute() override {
+    // Null checks to prevent use-after-free crashes
+    if (!ctx_) {
+      ret_ = AVERROR(EINVAL);
+      return;
+    }
+
     AVIOContext* avio_ctx = nullptr;
     ret_ = avio_open2(&avio_ctx, url_.c_str(), flags_, nullptr, nullptr);
     if (ret_ >= 0) {
@@ -103,12 +109,18 @@ public:
   }
 
   void Execute() override {
-    AVIOContext* ctx = ctx_->Get();
-    if (!ctx) {
-      SetError("IOContext not initialized");
+    // Null checks to prevent use-after-free crashes
+    if (!ctx_) {
+      bytes_read_ = AVERROR(EINVAL);
       return;
     }
-    
+
+    AVIOContext* ctx = ctx_->Get();
+    if (!ctx) {
+      bytes_read_ = AVERROR(EINVAL);
+      return;
+    }
+
     bytes_read_ = avio_read(ctx, buffer_.data(), size_);
   }
 
@@ -152,12 +164,16 @@ public:
   }
 
   void Execute() override {
-    AVIOContext* ctx = ctx_->Get();
-    if (!ctx) {
-      SetError("IOContext not initialized");
+    // Null checks to prevent use-after-free crashes
+    if (!ctx_) {
       return;
     }
-    
+
+    AVIOContext* ctx = ctx_->Get();
+    if (!ctx) {
+      return;
+    }
+
     avio_write(ctx, buffer_.data(), buffer_.size());
   }
 
@@ -191,12 +207,18 @@ public:
       deferred_(Napi::Promise::Deferred::New(env)) {}
 
   void Execute() override {
-    AVIOContext* ctx = ctx_->Get();
-    if (!ctx) {
-      SetError("IOContext not initialized");
+    // Null checks to prevent use-after-free crashes
+    if (!ctx_) {
+      new_pos_ = AVERROR(EINVAL);
       return;
     }
-    
+
+    AVIOContext* ctx = ctx_->Get();
+    if (!ctx) {
+      new_pos_ = AVERROR(EINVAL);
+      return;
+    }
+
     new_pos_ = avio_seek(ctx, offset_, whence_);
   }
 
@@ -229,12 +251,18 @@ public:
       deferred_(Napi::Promise::Deferred::New(env)) {}
 
   void Execute() override {
-    AVIOContext* ctx = ctx_->Get();
-    if (!ctx) {
-      SetError("IOContext not initialized");
+    // Null checks to prevent use-after-free crashes
+    if (!ctx_) {
+      size_ = AVERROR(EINVAL);
       return;
     }
-    
+
+    AVIOContext* ctx = ctx_->Get();
+    if (!ctx) {
+      size_ = AVERROR(EINVAL);
+      return;
+    }
+
     size_ = avio_size(ctx);
   }
 
@@ -264,12 +292,16 @@ public:
       deferred_(Napi::Promise::Deferred::New(env)) {}
 
   void Execute() override {
-    AVIOContext* ctx = ctx_->Get();
-    if (!ctx) {
-      SetError("IOContext not initialized");
+    // Null checks to prevent use-after-free crashes
+    if (!ctx_) {
       return;
     }
-    
+
+    AVIOContext* ctx = ctx_->Get();
+    if (!ctx) {
+      return;
+    }
+
     avio_flush(ctx);
   }
 
@@ -300,12 +332,18 @@ public:
       deferred_(Napi::Promise::Deferred::New(env)) {}
 
   void Execute() override {
-    AVIOContext* ctx = ctx_->Get();
-    if (!ctx) {
-      SetError("IOContext not initialized");
+    // Null checks to prevent use-after-free crashes
+    if (!ctx_) {
+      new_pos_ = AVERROR(EINVAL);
       return;
     }
-    
+
+    AVIOContext* ctx = ctx_->Get();
+    if (!ctx) {
+      new_pos_ = AVERROR(EINVAL);
+      return;
+    }
+
     new_pos_ = avio_skip(ctx, offset_);
   }
 

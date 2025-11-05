@@ -19,6 +19,12 @@ public:
       deferred_(Napi::Promise::Deferred::New(env)) {}
 
   void Execute() override {
+    // Null checks to prevent use-after-free crashes
+    if (!context_ || !context_->Get()) {
+      ret_ = AVERROR(EINVAL);
+      return;
+    }
+
     ret_ = av_bsf_send_packet(context_->Get(), packet_);
   }
 
@@ -51,6 +57,17 @@ public:
       deferred_(Napi::Promise::Deferred::New(env)) {}
 
   void Execute() override {
+    // Null checks to prevent use-after-free crashes
+    if (!context_ || !context_->Get()) {
+      ret_ = AVERROR(EINVAL);
+      return;
+    }
+
+    if (!packet_) {
+      ret_ = AVERROR(EINVAL);
+      return;
+    }
+
     ret_ = av_bsf_receive_packet(context_->Get(), packet_);
   }
 
