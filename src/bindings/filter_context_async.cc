@@ -14,17 +14,16 @@ namespace ffmpeg {
 
 class FCBuffersrcAddFrameWorker : public Napi::AsyncWorker {
 public:
-  FCBuffersrcAddFrameWorker(Napi::Env env, FilterContext* ctx, Frame* frame)
-    : Napi::AsyncWorker(env), 
-      ctx_(ctx), 
-      frame_(frame), 
+  FCBuffersrcAddFrameWorker(Napi::Env env, FilterContext* ctx, Frame* frame, int flags)
+    : Napi::AsyncWorker(env),
+      ctx_(ctx),
+      frame_(frame),
+      flags_(flags),
       ret_(0),
       deferred_(Napi::Promise::Deferred::New(env)) {}
 
   void Execute() override {
-    // Use av_buffersrc_add_frame_flags with PUSH flag (matches FFmpeg CLI behavior)
-    // The PUSH flag causes the filter to process frames immediately
-    ret_ = av_buffersrc_add_frame_flags(ctx_->Get(), frame_ ? frame_->Get() : nullptr, AV_BUFFERSRC_FLAG_PUSH);
+    ret_ = av_buffersrc_add_frame_flags(ctx_->Get(), frame_ ? frame_->Get() : nullptr, flags_);
   }
 
   void OnOK() override {
@@ -42,6 +41,7 @@ public:
 private:
   FilterContext* ctx_;
   Frame* frame_;
+  int flags_;
   int ret_;
   Napi::Promise::Deferred deferred_;
 };
@@ -80,13 +80,19 @@ private:
 
 Napi::Value FilterContext::BuffersrcAddFrameAsync(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
+
   Frame* frame = nullptr;
   if (!info[0].IsNull() && !info[0].IsUndefined()) {
     frame = UnwrapNativeObject<Frame>(env, info[0], "Frame");
   }
-  
-  auto* worker = new FCBuffersrcAddFrameWorker(env, this, frame);
+
+  // Optional flags parameter (defaults to 0 = AV_BUFFERSRC_FLAG_NONE)
+  int flags = 0;
+  if (info.Length() >= 2 && info[1].IsNumber()) {
+    flags = info[1].As<Napi::Number>().Int32Value();
+  }
+
+  auto* worker = new FCBuffersrcAddFrameWorker(env, this, frame, flags);
   worker->Queue();
   return worker->GetPromise();
 }

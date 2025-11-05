@@ -25,6 +25,7 @@ import type {
   AVSeekWhence,
 } from '../constants/constants.js';
 import type {
+  AVBufferSrcFlag,
   AVChromaLocation,
   AVCodecCap,
   AVCodecFlag,
@@ -709,8 +710,8 @@ export interface NativeFilterContext extends Disposable {
   initStr(args?: string | null): number;
   link(srcPad: number, dst: NativeFilterContext, dstPad: number): number;
   unlink(pad: number): void;
-  buffersrcAddFrame(frame: NativeFrame | null): Promise<number>;
-  buffersrcAddFrameSync(frame: NativeFrame | null): number;
+  buffersrcAddFrame(frame: NativeFrame | null, flags?: AVBufferSrcFlag): Promise<number>;
+  buffersrcAddFrameSync(frame: NativeFrame | null, flags?: AVBufferSrcFlag): number;
   buffersrcParametersSet(params: {
     width?: number;
     height?: number;

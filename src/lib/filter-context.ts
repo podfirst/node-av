@@ -3,7 +3,7 @@ import { HardwareDeviceContext } from './hardware-device-context.js';
 import { OptionMember } from './option.js';
 import { Rational } from './rational.js';
 
-import type { AVColorRange, AVColorSpace, AVPixelFormat, AVSampleFormat } from '../constants/constants.js';
+import type { AVBufferSrcFlag, AVColorRange, AVColorSpace, AVPixelFormat, AVSampleFormat } from '../constants/constants.js';
 import type { Frame } from './frame.js';
 import type { HardwareFramesContext } from './hardware-frames-context.js';
 import type { NativeDictionary, NativeFilterContext, NativeFilterGraph, NativeWrapper } from './native-types.js';
@@ -295,9 +295,11 @@ export class FilterContext extends OptionMember<NativeFilterContext> implements 
    * Sends a frame into the filter graph through a buffer source.
    * Only valid for buffer source filters. Send null to signal EOF.
    *
-   * Direct mapping to av_buffersrc_add_frame().
+   * Direct mapping to av_buffersrc_add_frame_flags().
    *
    * @param frame - Frame to send, or null for EOF
+   *
+   * @param flags - Optional buffersrc flags (defaults to AV_BUFFERSRC_FLAG_NONE = 0)
    *
    * @returns 0 on success, negative AVERROR on error:
    *   - AVERROR_EAGAIN: Filter needs more output consumption
@@ -308,10 +310,10 @@ export class FilterContext extends OptionMember<NativeFilterContext> implements 
    * @example
    * ```typescript
    * import { FFmpegError } from 'node-av';
-   * import { AVERROR_EAGAIN } from 'node-av/constants';
+   * import { AVERROR_EAGAIN, AV_BUFFERSRC_FLAG_PUSH } from 'node-av/constants';
    *
-   * // Send frame to filter graph
-   * const ret = await bufferSrc.buffersrcAddFrame(frame);
+   * // Send frame to filter graph with PUSH flag (immediate processing)
+   * const ret = await bufferSrc.buffersrcAddFrame(frame, AV_BUFFERSRC_FLAG_PUSH);
    * if (ret === AVERROR_EAGAIN) {
    *   // Need to consume output first
    * } else {
@@ -324,8 +326,8 @@ export class FilterContext extends OptionMember<NativeFilterContext> implements 
    *
    * @see {@link buffersinkGetFrame} To retrieve filtered frames
    */
-  async buffersrcAddFrame(frame: Frame | null): Promise<number> {
-    return await this.native.buffersrcAddFrame(frame ? frame.getNative() : null);
+  async buffersrcAddFrame(frame: Frame | null, flags?: AVBufferSrcFlag): Promise<number> {
+    return await this.native.buffersrcAddFrame(frame ? frame.getNative() : null, flags);
   }
 
   /**
@@ -335,9 +337,11 @@ export class FilterContext extends OptionMember<NativeFilterContext> implements 
    * Sends a frame to a buffer source filter for processing.
    * Only valid for buffer source filters (buffer, abuffer).
    *
-   * Direct mapping to av_buffersrc_add_frame().
+   * Direct mapping to av_buffersrc_add_frame_flags().
    *
    * @param frame - Frame to send (null to mark EOF)
+   *
+   * @param flags - Optional buffersrc flags (defaults to AV_BUFFERSRC_FLAG_NONE = 0)
    *
    * @returns 0 on success, negative AVERROR on error:
    *   - AVERROR_EAGAIN: Need to retrieve output first
@@ -348,10 +352,10 @@ export class FilterContext extends OptionMember<NativeFilterContext> implements 
    * @example
    * ```typescript
    * import { FFmpegError } from 'node-av';
-   * import { AVERROR_EAGAIN } from 'node-av/constants';
+   * import { AVERROR_EAGAIN, AV_BUFFERSRC_FLAG_PUSH } from 'node-av/constants';
    *
-   * // Send frame to filter
-   * const ret = bufferSrc.buffersrcAddFrameSync(frame);
+   * // Send frame to filter with PUSH flag (immediate processing)
+   * const ret = bufferSrc.buffersrcAddFrameSync(frame, AV_BUFFERSRC_FLAG_PUSH);
    * if (ret === AVERROR_EAGAIN) {
    *   // Need to get output frames first
    *   const filtered = new Frame();
@@ -366,8 +370,8 @@ export class FilterContext extends OptionMember<NativeFilterContext> implements 
    *
    * @see {@link buffersrcAddFrame} For async version
    */
-  buffersrcAddFrameSync(frame: Frame | null): number {
-    return this.native.buffersrcAddFrameSync(frame ? frame.getNative() : null);
+  buffersrcAddFrameSync(frame: Frame | null, flags?: AVBufferSrcFlag): number {
+    return this.native.buffersrcAddFrameSync(frame ? frame.getNative() : null, flags);
   }
 
   /**
