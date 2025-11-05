@@ -4,28 +4,57 @@ import { dirname, resolve } from 'path';
 
 import {
   AV_CODEC_FLAG_GLOBAL_HEADER,
+  AV_DISPOSITION_ATTACHED_PIC,
+  AV_DISPOSITION_DEFAULT,
+  AV_NOPTS_VALUE,
+  AV_TIME_BASE_Q,
+  AVERROR_EAGAIN,
+  AVERROR_EOF,
   AVFMT_FLAG_CUSTOM_IO,
   AVFMT_GLOBALHEADER,
+  AVFMT_NODIMENSIONS,
   AVFMT_NOFILE,
   AVIO_FLAG_WRITE,
   AVMEDIA_TYPE_AUDIO,
   AVMEDIA_TYPE_VIDEO,
 } from '../constants/constants.js';
-import { FFmpegError, FormatContext, IOContext, Rational } from '../lib/index.js';
+import { Dictionary } from '../lib/dictionary.js';
+import { FFmpegError } from '../lib/error.js';
+import { FormatContext } from '../lib/format-context.js';
+import { IOContext } from '../lib/io-context.js';
+import { Packet } from '../lib/packet.js';
+import { Rational } from '../lib/rational.js';
+import { SyncQueue, SyncQueueType } from '../lib/sync-queue.js';
+import { avGetAudioFrameDuration2, avRescaleDelta, avRescaleQ } from '../lib/utilities.js';
 import { Encoder } from './encoder.js';
 
-import type { AVCodecFlag } from '../constants/constants.js';
-import type { IRational, OutputFormat, Packet, Stream } from '../lib/index.js';
+import type { IRational, OutputFormat, Stream } from '../lib/index.js';
 import type { IOOutputCallbacks, MediaOutputOptions } from './types.js';
 
-export interface StreamDescription {
+export interface AddStreamOptionsWithEncoder {
+  encoder?: Encoder;
+  timeBase?: IRational;
+}
+
+export interface AddStreamOptionsWithInputStream {
+  inputStream?: Stream;
+  timeBase?: IRational;
+}
+
+interface StreamDescription {
   initialized: boolean;
   stream: Stream;
-  source: Encoder | Stream;
+  inputStream?: Stream; // Source stream for metadata/properties (optional in encoder-only mode)
+  encoder?: Encoder;
   timeBase?: IRational;
   sourceTimeBase?: IRational;
   isStreamCopy: boolean;
-  bufferedPackets: Packet[];
+  sqIdxMux: number; // Index in sync queue (like FFmpeg's ms->sq_idx_mux), -1 if not using sync queue
+  bufferedPackets: Packet[]; // Used only during initialization phase before header is written
+  bufferedDataSize: number;
+  lastMuxDts: bigint;
+  tsRescaleDeltaLast: { value: bigint }; // For av_rescale_delta (audio streamcopy)
+  streamcopyStarted: boolean; // Track if streamcopy has started for this stream
 }
 
 /**
@@ -82,9 +111,12 @@ export class MediaOutput implements AsyncDisposable, Disposable {
   private _streams = new Map<number, StreamDescription>();
   private ioContext?: IOContext;
   private headerWritten = false;
+  private headerWritePromise?: Promise<void>;
   private trailerWritten = false;
   private isClosed = false;
-  private headerWritePromise?: Promise<void>;
+  private syncQueue?: SyncQueue; // FFmpeg's native sync queue for packet interleaving
+  private sqPacket?: Packet; // Reusable packet for sync queue receive
+  private containerMetadataCopied = false; // Track if container metadata has been copied
 
   /**
    * @param options - Media output options
@@ -185,7 +217,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
 
         // Check if we need to open IO
         const oformat = output.formatContext.oformat;
-        if (resolvedTarget && oformat && !(oformat.flags & AVFMT_NOFILE)) {
+        if (resolvedTarget && oformat && !oformat.hasFlags(AVFMT_NOFILE)) {
           // For file-based formats, we need to open the file using avio_open2
           // FFmpeg will manage the AVIOContext internally
           output.ioContext = new IOContext();
@@ -214,7 +246,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
         output.ioContext.allocContextWithCallbacks(options.bufferSize ?? 4096, 1, target.read, target.write, target.seek);
         output.ioContext.maxPacketSize = options.bufferSize ?? 4096;
         output.formatContext.pb = output.ioContext;
-        output.formatContext.flags = AVFMT_FLAG_CUSTOM_IO;
+        output.formatContext.setFlags(AVFMT_FLAG_CUSTOM_IO);
       }
 
       return output;
@@ -222,7 +254,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
       // Cleanup on error
       if (output.ioContext) {
         try {
-          const isCustomIO = (output.formatContext.flags & AVFMT_FLAG_CUSTOM_IO) !== 0;
+          const isCustomIO = output.formatContext.hasFlags(AVFMT_FLAG_CUSTOM_IO);
           if (isCustomIO) {
             // Clear the pb reference first
             output.formatContext.pb = null;
@@ -313,7 +345,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
 
         // Check if we need to open IO
         const oformat = output.formatContext.oformat;
-        if (resolvedTarget && oformat && !(oformat.flags & AVFMT_NOFILE)) {
+        if (resolvedTarget && oformat && !oformat.hasFlags(AVFMT_NOFILE)) {
           // For file-based formats, we need to open the file using avio_open2
           // FFmpeg will manage the AVIOContext internally
           output.ioContext = new IOContext();
@@ -342,7 +374,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
         output.ioContext.allocContextWithCallbacks(options.bufferSize ?? 4096, 1, target.read, target.write, target.seek);
         output.ioContext.maxPacketSize = options.bufferSize ?? 4096;
         output.formatContext.pb = output.ioContext;
-        output.formatContext.flags = AVFMT_FLAG_CUSTOM_IO;
+        output.formatContext.setFlags(AVFMT_FLAG_CUSTOM_IO);
       }
 
       return output;
@@ -350,7 +382,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
       // Cleanup on error
       if (output.ioContext) {
         try {
-          const isCustomIO = (output.formatContext.flags & AVFMT_FLAG_CUSTOM_IO) !== 0;
+          const isCustomIO = output.formatContext.hasFlags(AVFMT_FLAG_CUSTOM_IO);
           if (isCustomIO) {
             // Clear the pb reference first
             output.formatContext.pb = null;
@@ -424,7 +456,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
    * }
    * ```
    */
-  get streams(): Stream[] | null {
+  get streams(): Stream[] {
     return this.formatContext.streams;
   }
 
@@ -490,21 +522,16 @@ export class MediaOutput implements AsyncDisposable, Disposable {
   }
 
   /**
-   * Add a stream to the output.
+   * Add a stream to the output (encoder-only mode).
    *
-   * Configures output stream from encoder or input stream.
-   * Must be called before writing any packets.
-   * Returns stream index for packet writing.
+   * Configures output stream from encoder. Stream is initialized lazily from first encoded frame.
+   * Use this when generating frames programmatically without an input stream.
    *
-   * Streams are initialized lazily - codec parameters are configured
-   * automatically when the first packet is written. This allows encoders
-   * to be initialized from frame properties.
-   *
-   * Direct mapping to avformat_new_stream().
-   *
-   * @param source - Encoder or stream to add
+   * @param encoder - Encoder for encoding frames to packets
    *
    * @param options - Stream configuration options
+   *
+   * @param options.inputStream - Optional input stream for metadata/properties
    *
    * @param options.timeBase - Optional custom timebase for the stream
    *
@@ -514,9 +541,68 @@ export class MediaOutput implements AsyncDisposable, Disposable {
    *
    * @example
    * ```typescript
-   * // Add stream from encoder (lazy initialization)
-   * const videoIdx = output.addStream(videoEncoder);
-   * const audioIdx = output.addStream(audioEncoder);
+   * // Encoder-only (e.g., frame generator)
+   * const encoder = await Encoder.create(FF_ENCODER_LIBX264);
+   * const streamIdx = output.addStream(encoder);
+   * ```
+   *
+   * @example
+   * ```typescript
+   * // Encoder with input stream for metadata
+   * const streamIdx = output.addStream(encoder, {
+   *   inputStream: input.video()
+   * });
+   * ```
+   */
+  addStream(encoder: Encoder, options?: AddStreamOptionsWithInputStream): number;
+
+  /**
+   * Add a stream to the output (stream copy or transcoding mode).
+   *
+   * Configures output stream from input stream and optional encoder.
+   * Must be called before writing any packets.
+   * Returns stream index for packet writing.
+   *
+   * Automatically copies from input stream:
+   * - Codec parameters (stream copy mode)
+   * - Metadata
+   * - Disposition flags
+   * - Frame rates and aspect ratios
+   * - Duration hints
+   * - HDR/Dolby Vision side data (coded_side_data)
+   *
+   * When encoder is provided:
+   * - Stream is initialized lazily from first encoded frame
+   * - Metadata and disposition copied from input stream
+   * - Duration hint used for muxer
+   *
+   * Direct mapping to avformat_new_stream() and FFmpeg's ffmpeg_mux_init.c logic.
+   *
+   * @param stream - Input stream (source for properties/metadata)
+   *
+   * @param options - Stream configuration options
+   *
+   * @param options.encoder - Optional encoder for transcoding
+   *
+   * @param options.timeBase - Optional custom timebase for the stream
+   *
+   * @returns Stream index for packet writing
+   *
+   * @throws {Error} If called after packets have been written or output closed
+   *
+   * @example
+   * ```typescript
+   * // Stream copy
+   * const videoIdx = output.addStream(input.video());
+   * const audioIdx = output.addStream(input.audio());
+   * ```
+   *
+   * @example
+   * ```typescript
+   * // With encoding
+   * const videoIdx = output.addStream(input.video(), {
+   *   encoder: videoEncoder
+   * });
    * ```
    *
    * @example
@@ -530,12 +616,9 @@ export class MediaOutput implements AsyncDisposable, Disposable {
    * @see {@link writePacket} For writing packets to streams
    * @see {@link Encoder} For transcoding source
    */
-  addStream(
-    source: Encoder | Stream,
-    options?: {
-      timeBase?: IRational;
-    },
-  ): number {
+  addStream(stream: Stream, options?: AddStreamOptionsWithEncoder): number;
+
+  addStream(streamOrEncoder: Stream | Encoder, options?: AddStreamOptionsWithEncoder | AddStreamOptionsWithInputStream): number {
     if (this.isClosed) {
       throw new Error('MediaOutput is closed');
     }
@@ -544,60 +627,127 @@ export class MediaOutput implements AsyncDisposable, Disposable {
       throw new Error('Cannot add streams after packets have been written');
     }
 
-    const stream = this.formatContext.newStream(null);
-    if (!stream) {
+    const outStream = this.formatContext.newStream(null);
+    if (!outStream) {
       throw new Error('Failed to create new stream');
     }
 
-    const isStreamCopy = !(source instanceof Encoder);
+    // Determine if first parameter is Encoder or Stream
+    const isEncoderFirst = streamOrEncoder instanceof Encoder;
+
+    let stream: Stream | undefined;
+    let encoder: Encoder | undefined;
+
+    if (isEncoderFirst) {
+      // First parameter is Encoder
+      encoder = streamOrEncoder;
+      stream = (options as AddStreamOptionsWithInputStream | undefined)?.inputStream;
+    } else {
+      // First parameter is Stream
+      stream = streamOrEncoder;
+      encoder = (options as AddStreamOptionsWithEncoder | undefined)?.encoder;
+    }
+
+    const isStreamCopy = !encoder;
 
     // Auto-set GLOBAL_HEADER flag if format requires it
-    if (!isStreamCopy) {
-      const encoder = source;
+    if (encoder) {
       const oformat = this.formatContext.oformat;
-      if (oformat && oformat.flags & AVFMT_GLOBALHEADER) {
-        // Get current flags and add GLOBAL_HEADER flag
-        const currentFlags = encoder.getCodecFlags();
-        const newFlags = (currentFlags | AV_CODEC_FLAG_GLOBAL_HEADER) as AVCodecFlag;
-        encoder.setCodecFlags(newFlags);
+      if (oformat?.hasFlags(AVFMT_GLOBALHEADER)) {
+        encoder.setCodecFlags(AV_CODEC_FLAG_GLOBAL_HEADER);
       }
     }
 
     // For stream copy, initialize immediately since we have all the info
     if (isStreamCopy) {
-      const inputStream = source;
-      const ret = inputStream.codecpar.copy(stream.codecpar);
+      if (!stream) {
+        throw new Error('Stream copy mode requires an input stream');
+      }
+
+      const ret = stream.codecpar.copy(outStream.codecpar);
       FFmpegError.throwIfError(ret, 'Failed to copy codec parameters');
 
       // Set the timebases
-      const sourceTimeBase = inputStream.timeBase;
+      const sourceTimeBase = stream.timeBase;
 
       if (options?.timeBase) {
-        stream.timeBase = new Rational(options.timeBase.num, options.timeBase.den);
+        outStream.timeBase = new Rational(options.timeBase.num, options.timeBase.den);
       }
 
-      this._streams.set(stream.index, {
+      // Copy frame rates and aspect ratios
+      outStream.avgFrameRate = stream.avgFrameRate;
+      if (stream.sampleAspectRatio.num > 0) {
+        outStream.sampleAspectRatio = stream.sampleAspectRatio;
+      }
+      outStream.rFrameRate = stream.rFrameRate;
+
+      // Copy duration
+      if (stream.duration > 0n) {
+        outStream.duration = stream.duration;
+      }
+
+      // Copy metadata
+      const metadata = stream.metadata;
+      if (metadata) {
+        outStream.metadata = metadata;
+      }
+
+      // Copy disposition
+      outStream.disposition = stream.disposition;
+
+      // Copy coded_side_data (HDR/Dolby Vision)
+      // Iterate over all side_data entries and copy them
+      const allSideData = stream.codecpar.getAllCodedSideData();
+      for (const sd of allSideData) {
+        outStream.codecpar.addCodedSideData(sd.type, sd.data);
+      }
+
+      this._streams.set(outStream.index, {
         initialized: true,
-        stream,
-        source,
+        stream: outStream,
+        inputStream: stream,
+        encoder: undefined,
         timeBase: options?.timeBase,
         sourceTimeBase,
         isStreamCopy: true,
+        sqIdxMux: -1, // Will be set if sync queue is needed
         bufferedPackets: [],
+        bufferedDataSize: 0,
+        lastMuxDts: AV_NOPTS_VALUE,
+        tsRescaleDeltaLast: { value: AV_NOPTS_VALUE },
+        streamcopyStarted: false,
       });
     } else {
-      this._streams.set(stream.index, {
+      // Encoding path - lazy initialization
+      // stream is optional here - if provided, we copy metadata/disposition
+      // If not provided (encoder-only mode), stream will be initialized from first encoded frame
+      this._streams.set(outStream.index, {
         initialized: false,
-        stream,
-        source,
+        stream: outStream,
+        inputStream: stream,
+        encoder,
         timeBase: options?.timeBase,
         sourceTimeBase: undefined, // Will be set on initialization
         isStreamCopy: false,
+        sqIdxMux: -1, // Will be set if sync queue is needed
         bufferedPackets: [],
+        bufferedDataSize: 0,
+        lastMuxDts: AV_NOPTS_VALUE,
+        tsRescaleDeltaLast: { value: AV_NOPTS_VALUE },
+        streamcopyStarted: false,
       });
     }
 
-    return stream.index;
+    // Setup sync queues
+    this.setupSyncQueues();
+
+    // Auto-set DEFAULT disposition
+    this.updateDefaultDisposition();
+
+    // Copy container metadata on first stream
+    this.copyContainerMetadata();
+
+    return outStream.index;
   }
 
   /**
@@ -730,9 +880,13 @@ export class MediaOutput implements AsyncDisposable, Disposable {
    * - Codec parameter configuration from encoder or input stream
    * - Header writing on first packet
    * - Timestamp rescaling between source and output timebases
+   * - Sync queue for proper interleaving
    *
    * For encoder sources, the encoder must have processed at least one frame
    * before packets can be written (encoder must be initialized).
+   *
+   * Uses FFmpeg CLI's sync queue pattern: buffers packets per stream and writes
+   * them in DTS order using av_compare_ts for timebase-aware comparison.
    *
    * Direct mapping to avformat_write_header() (on first packet) and av_interleaved_write_frame().
    *
@@ -780,10 +934,12 @@ export class MediaOutput implements AsyncDisposable, Disposable {
       throw new Error(`Invalid stream index: ${streamIndex}`);
     }
 
+    // console.log(`[MediaOutput] writePacket called for Stream ${streamIndex}: PTS=${packet.pts}, DTS=${packet.dts}, Duration=${packet.duration}, size=${packet.size}`);
+
     // Initialize any encoder streams that are ready
     for (const streamInfo of this._streams.values()) {
-      if (!streamInfo.initialized && streamInfo.source instanceof Encoder) {
-        const encoder = streamInfo.source;
+      if (!streamInfo.initialized && streamInfo.encoder) {
+        const encoder = streamInfo.encoder;
         const codecContext = encoder.getCodecContext();
 
         // Skip if encoder not ready yet
@@ -792,25 +948,51 @@ export class MediaOutput implements AsyncDisposable, Disposable {
         }
 
         // This encoder is ready, initialize it now
-        const ret = streamInfo.stream.codecpar.fromContext(codecContext);
-        FFmpegError.throwIfError(ret, 'Failed to copy codec parameters from encoder');
+        // Read codecType from codecContext, not from stream (which is still uninitialized)
+        const codecType = codecContext.codecType;
 
-        // Update the timebase from the encoder
-        streamInfo.sourceTimeBase = codecContext.timeBase;
-
-        // Set frame rate from encoder
-        const fr = codecContext.framerate;
-        streamInfo.stream.avgFrameRate = new Rational(fr.num, fr.den);
-
-        // Set output stream timebase
+        // 1. Set stream timebase
+        // Use encoder's timebase unless user specified custom timebase
         if (streamInfo.timeBase) {
           // User specified custom timebase
           streamInfo.stream.timeBase = new Rational(streamInfo.timeBase.num, streamInfo.timeBase.den);
         } else {
-          // Default: 1/framerate
-          const fps = codecContext.framerate.num / codecContext.framerate.den;
-          streamInfo.stream.timeBase = new Rational(1, Math.round(fps));
+          // Use encoder's timebase directly
+          // The encoder timebase is already set from the first frame in Encoder.initialize()
+          streamInfo.stream.timeBase = new Rational(codecContext.timeBase.num, codecContext.timeBase.den);
         }
+
+        // 2. Set stream avg_frame_rate and sample_aspect_ratio
+        if (codecType === AVMEDIA_TYPE_VIDEO) {
+          const fr = codecContext.framerate;
+          streamInfo.stream.avgFrameRate = new Rational(fr.num, fr.den);
+          streamInfo.stream.sampleAspectRatio = codecContext.sampleAspectRatio;
+        }
+
+        // 3. Copy codec parameters from encoder context
+        const ret = streamInfo.stream.codecpar.fromContext(codecContext);
+        FFmpegError.throwIfError(ret, 'Failed to copy codec parameters from encoder');
+
+        // 4. Copy metadata from input stream
+        if (streamInfo.inputStream) {
+          const metadata = streamInfo.inputStream.metadata;
+          if (metadata) {
+            streamInfo.stream.metadata = metadata;
+          }
+
+          // 5. Copy disposition from input stream
+          streamInfo.stream.disposition = streamInfo.inputStream.disposition;
+
+          // 6. Copy duration hint from input stream
+          if (streamInfo.inputStream.duration > 0n) {
+            const inputTb = streamInfo.inputStream.timeBase;
+            const outputTb = streamInfo.stream.timeBase;
+            streamInfo.stream.duration = avRescaleQ(streamInfo.inputStream.duration, inputTb, outputTb);
+          }
+        }
+
+        // Update the source timebase for timestamp rescaling
+        streamInfo.sourceTimeBase = codecContext.timeBase;
 
         // Mark as initialized
         streamInfo.initialized = true;
@@ -819,64 +1001,115 @@ export class MediaOutput implements AsyncDisposable, Disposable {
 
     const streamInfo = this._streams.get(streamIndex)!;
 
-    // Check if any streams are still uninitialized
+    // Check if any streams are still uninitialized or header is being written
     const uninitialized = Array.from(this._streams.values()).some((s) => !s.initialized);
-    if (uninitialized) {
+    const needMore = this.needMoreData();
+    // console.log(`[MediaOutput] writePacket check: uninitialized=${uninitialized}, headerWritePromise=${!!this.headerWritePromise}, needMoreData=${needMore}`);
+    if (uninitialized || this.headerWritePromise || needMore) {
       const clonedPacket = packet.clone();
-      packet.free();
       if (clonedPacket) {
+        // Check buffering limits
+        // max_packets only applies after data_threshold is reached
+        const maxPackets = this.options.maxMuxingQueueSize ?? 128; // FFmpeg default
+        const dataThreshold = this.options.muxingQueueDataThreshold ?? 50 * 1024 * 1024; // 50 MB - FFmpeg default
+
+        const currentPackets = streamInfo.bufferedPackets.length;
+        const currentBytes = streamInfo.bufferedDataSize;
+        const packetSize = clonedPacket.size;
+
+        const thresholdReached = currentBytes + packetSize > dataThreshold;
+        const effectiveMaxPackets = thresholdReached ? maxPackets : Number.MAX_SAFE_INTEGER;
+
+        // Check if we would exceed packet limit (only if threshold reached)
+        if (currentPackets >= effectiveMaxPackets) {
+          clonedPacket.free();
+          throw new Error(
+            `Too many packets buffered for output stream ${streamIndex} ` +
+              // eslint-disable-next-line @stylistic/indent-binary-ops
+              `(packets: ${currentPackets}, bytes: ${currentBytes}, threshold: ${dataThreshold}, max: ${maxPackets})`,
+          );
+        }
+
+        // console.log(
+        // eslint-disable-next-line @stylistic/max-len
+        //   `[MediaOutput] Buffering packet for Stream ${streamIndex}: PTS=${clonedPacket.pts}, DTS=${clonedPacket.dts}, Duration=${clonedPacket.duration}, size=${clonedPacket.size}`,
+        // );
+
+        // Buffer the packet
         streamInfo.bufferedPackets.push(clonedPacket);
+        streamInfo.bufferedDataSize += packetSize;
       }
       return;
     }
 
     // Automatically write header if not written yet
-    // Use a promise to ensure only one thread writes the header
     if (!this.headerWritten) {
       this.headerWritePromise ??= (async () => {
         const ret = await this.formatContext.writeHeader();
-        FFmpegError.throwIfError(ret, 'Failed to write header');
-        this.headerWritten = true;
+
+        if (this.options.exitOnError) {
+          FFmpegError.throwIfError(ret, 'Failed to write header');
+        }
+
+        if (!FFmpegError.isFFmpegError(ret)) {
+          this.headerWritten = true;
+        }
       })();
-      // All threads wait for the header to be written
+
       await this.headerWritePromise;
+
+      if (this.headerWritten) {
+        this.headerWritePromise = undefined;
+      }
     }
 
-    // Set stream index
-    packet.streamIndex = streamIndex;
+    // Check if we use sync queue
+    if (this.syncQueue && streamInfo.sqIdxMux >= 0) {
+      // Use SyncQueue for packet interleaving
+      // Set packet timeBase from stream
+      packet.timeBase = streamInfo.stream.timeBase;
 
-    const write = async (pkt: Packet) => {
-      // Rescale packet timestamps if source and output timebases differ
-      // Note: The stream's timebase may have been changed by writeHeader (e.g., MP4 uses 1/time_scale)
-      if (streamInfo.sourceTimeBase) {
-        const outputStream = this.formatContext.streams?.[streamIndex];
-        if (outputStream) {
-          // Only rescale if timebases actually differ
-          const srcTb = streamInfo.sourceTimeBase;
-          const dstTb = outputStream.timeBase;
-          if (srcTb.num !== dstTb.num || srcTb.den !== dstTb.den) {
-            pkt.rescaleTs(streamInfo.sourceTimeBase, outputStream.timeBase);
+      // Send packet to sync queue
+      const ret = this.syncQueue.send(streamInfo.sqIdxMux, packet);
+      if (ret < 0) {
+        if (this.options.exitOnError) {
+          FFmpegError.throwIfError(ret, 'Failed to send packet to sync queue');
+        }
+        return;
+      }
+
+      // Receive synchronized packets
+      while (true) {
+        const recvRet = this.syncQueue.receive(-1, this.sqPacket!);
+        if (recvRet === AVERROR_EAGAIN) {
+          break; // No more packets ready
+        }
+        if (recvRet === AVERROR_EOF) {
+          break; // All streams finished
+        }
+        if (recvRet >= 0) {
+          // recvRet is the stream index
+          const recvStreamInfo = this._streams.get(recvRet)!;
+
+          // Clone packet before writing (muxer takes ownership and will unref it)
+          // We need to keep sqPacket alive for the next receive() call
+          const pkt = this.sqPacket!.clone();
+          if (!pkt) {
+            throw new Error('Failed to clone packet from sync queue');
           }
+          pkt.streamIndex = recvRet;
+
+          // console.log(`[MediaOutput] SyncQueue write Stream ${recvRet}: PTS=${pkt.pts}, DTS=${pkt.dts}, Duration=${pkt.duration}`);
+
+          // Write packet (muxer takes ownership)
+          await this.write(pkt, recvStreamInfo, recvRet);
         }
       }
-
-      // Write the packet
-      const ret = await this.formatContext.interleavedWriteFrame(pkt);
-
-      if (this.options.exitOnError) {
-        FFmpegError.throwIfError(ret, 'Failed to write packet');
-      }
-    };
-
-    // Write any buffered packets first
-    for (const bufferedPacket of streamInfo.bufferedPackets) {
-      await write(bufferedPacket);
-      bufferedPacket.free();
+    } else {
+      // No sync queue needed - write directly (all streams are encoded)
+      packet.streamIndex = streamIndex;
+      await this.write(packet, streamInfo, streamIndex);
     }
-    streamInfo.bufferedPackets = [];
-
-    // Write the current packet
-    await write(packet);
   }
 
   /**
@@ -889,9 +1122,13 @@ export class MediaOutput implements AsyncDisposable, Disposable {
    * - Codec parameter configuration from encoder or input stream
    * - Header writing on first packet
    * - Timestamp rescaling between source and output timebases
+   * - Sync queue for proper interleaving
    *
    * For encoder sources, the encoder must have processed at least one frame
    * before packets can be written (encoder must be initialized).
+   *
+   * Uses FFmpeg CLI's sync queue pattern: buffers packets per stream and writes
+   * them in DTS order using av_compare_ts for timebase-aware comparison.
    *
    * Direct mapping to avformat_write_header() (on first packet) and av_interleaved_write_frame().
    *
@@ -941,8 +1178,8 @@ export class MediaOutput implements AsyncDisposable, Disposable {
 
     // Initialize any encoder streams that are ready
     for (const streamInfo of this._streams.values()) {
-      if (!streamInfo.initialized && streamInfo.source instanceof Encoder) {
-        const encoder = streamInfo.source;
+      if (!streamInfo.initialized && streamInfo.encoder) {
+        const encoder = streamInfo.encoder;
         const codecContext = encoder.getCodecContext();
 
         // Skip if encoder not ready yet
@@ -951,25 +1188,50 @@ export class MediaOutput implements AsyncDisposable, Disposable {
         }
 
         // This encoder is ready, initialize it now
-        const ret = streamInfo.stream.codecpar.fromContext(codecContext);
-        FFmpegError.throwIfError(ret, 'Failed to copy codec parameters from encoder');
+        const codecType = streamInfo.stream.codecpar.codecType;
 
-        // Update the timebase from the encoder
-        streamInfo.sourceTimeBase = codecContext.timeBase;
-
-        // Set frame rate from encoder
-        const fr = codecContext.framerate;
-        streamInfo.stream.avgFrameRate = new Rational(fr.num, fr.den);
-
-        // Set output stream timebase
+        // 1. Set stream timebase
+        // Use encoder's timebase unless user specified custom timebase
         if (streamInfo.timeBase) {
           // User specified custom timebase
           streamInfo.stream.timeBase = new Rational(streamInfo.timeBase.num, streamInfo.timeBase.den);
         } else {
-          // Default: 1/framerate (MP4/DASH muxer will multiply by 2 until >= 10000)
-          const fps = codecContext.framerate.num / codecContext.framerate.den;
-          streamInfo.stream.timeBase = new Rational(1, Math.round(fps));
+          // Use encoder's timebase directly
+          // The encoder timebase is already set from the first frame in Encoder.initialize()
+          streamInfo.stream.timeBase = new Rational(codecContext.timeBase.num, codecContext.timeBase.den);
         }
+
+        // 2. Set stream avg_frame_rate and sample_aspect_ratio
+        if (codecType === AVMEDIA_TYPE_VIDEO) {
+          const fr = codecContext.framerate;
+          streamInfo.stream.avgFrameRate = new Rational(fr.num, fr.den);
+          streamInfo.stream.sampleAspectRatio = codecContext.sampleAspectRatio;
+        }
+
+        // 3. Copy codec parameters from encoder context
+        const ret = streamInfo.stream.codecpar.fromContext(codecContext);
+        FFmpegError.throwIfError(ret, 'Failed to copy codec parameters from encoder');
+
+        // 4. Copy metadata from input stream
+        if (streamInfo.inputStream) {
+          const metadata = streamInfo.inputStream.metadata;
+          if (metadata) {
+            streamInfo.stream.metadata = metadata;
+          }
+
+          // 5. Copy disposition from input stream
+          streamInfo.stream.disposition = streamInfo.inputStream.disposition;
+
+          // 6. Copy duration hint from input stream
+          if (streamInfo.inputStream.duration > 0n) {
+            const inputTb = streamInfo.inputStream.timeBase;
+            const outputTb = streamInfo.stream.timeBase;
+            streamInfo.stream.duration = avRescaleQ(streamInfo.inputStream.duration, inputTb, outputTb);
+          }
+        }
+
+        // Update the source timebase for timestamp rescaling
+        streamInfo.sourceTimeBase = codecContext.timeBase;
 
         // Mark as initialized
         streamInfo.initialized = true;
@@ -980,11 +1242,41 @@ export class MediaOutput implements AsyncDisposable, Disposable {
 
     // Check if any streams are still uninitialized
     const uninitialized = Array.from(this._streams.values()).some((s) => !s.initialized);
-    if (uninitialized) {
+    const needMore = this.needMoreData();
+
+    if (uninitialized || needMore) {
       const clonedPacket = packet.clone();
-      packet.free();
       if (clonedPacket) {
+        // Check buffering limits
+        // max_packets only applies after data_threshold is reached
+        const maxPackets = this.options.maxMuxingQueueSize ?? 128; // FFmpeg default
+        const dataThreshold = this.options.muxingQueueDataThreshold ?? 50 * 1024 * 1024; // 50 MB - FFmpeg default
+
+        const currentPackets = streamInfo.bufferedPackets.length;
+        const currentBytes = streamInfo.bufferedDataSize;
+        const packetSize = clonedPacket.size;
+
+        const thresholdReached = currentBytes + packetSize > dataThreshold;
+        const effectiveMaxPackets = thresholdReached ? maxPackets : Number.MAX_SAFE_INTEGER;
+
+        // Check if we would exceed packet limit (only if threshold reached)
+        if (currentPackets >= effectiveMaxPackets) {
+          clonedPacket.free();
+          throw new Error(
+            `Too many packets buffered for output stream ${streamIndex} ` +
+              // eslint-disable-next-line @stylistic/indent-binary-ops
+              `(packets: ${currentPackets}, bytes: ${currentBytes}, threshold: ${dataThreshold}, max: ${maxPackets})`,
+          );
+        }
+
+        // console.log(
+        // eslint-disable-next-line @stylistic/max-len
+        //   `[MediaOutput] Buffering packet for Stream ${streamIndex}: PTS=${clonedPacket.pts}, DTS=${clonedPacket.dts}, Duration=${clonedPacket.duration}, size=${clonedPacket.size}`,
+        // );
+
+        // Buffer the packet
         streamInfo.bufferedPackets.push(clonedPacket);
+        streamInfo.bufferedDataSize += packetSize;
       }
       return;
     }
@@ -996,38 +1288,51 @@ export class MediaOutput implements AsyncDisposable, Disposable {
       this.headerWritten = true;
     }
 
-    // Set stream index
-    packet.streamIndex = streamIndex;
+    // Check if we use sync queue
+    if (this.syncQueue && streamInfo.sqIdxMux >= 0) {
+      // Use SyncQueue for packet interleaving
+      // Set packet timeBase from stream
+      packet.timeBase = streamInfo.stream.timeBase;
 
-    const write = (pkt: Packet) => {
-      // Rescale packet timestamps if source and output timebases differ
-      // Note: The stream's timebase may have been changed by writeHeader (e.g., MP4 uses 1/time_scale)
-      if (streamInfo.sourceTimeBase) {
-        const outputStream = this.formatContext.streams?.[streamIndex];
-        if (outputStream) {
-          // Only rescale if timebases actually differ
-          const srcTb = streamInfo.sourceTimeBase;
-          const dstTb = outputStream.timeBase;
-          if (srcTb.num !== dstTb.num || srcTb.den !== dstTb.den) {
-            pkt.rescaleTs(streamInfo.sourceTimeBase, outputStream.timeBase);
-          }
-        }
+      // Send packet to sync queue
+      const ret = this.syncQueue.send(streamInfo.sqIdxMux, packet);
+      if (ret < 0) {
+        FFmpegError.throwIfError(ret, 'Failed to send packet to sync queue');
+        return;
       }
 
-      // Write the packet
-      const ret = this.formatContext.interleavedWriteFrameSync(pkt);
-      FFmpegError.throwIfError(ret, 'Failed to write packet');
-    };
+      // Receive synchronized packets
+      while (true) {
+        const recvRet = this.syncQueue.receive(-1, this.sqPacket!);
+        if (recvRet === AVERROR_EAGAIN) {
+          break; // No more packets ready
+        }
+        if (recvRet === AVERROR_EOF) {
+          break; // All streams finished
+        }
+        if (recvRet >= 0) {
+          // recvRet is the stream index
+          const recvStreamInfo = this._streams.get(recvRet)!;
 
-    // Write any buffered packets first
-    for (const bufferedPacket of streamInfo.bufferedPackets) {
-      write(bufferedPacket);
-      bufferedPacket.free();
+          // Clone packet before writing (muxer takes ownership and will unref it)
+          // We need to keep sqPacket alive for the next receive() call
+          const pkt = this.sqPacket!.clone();
+          if (!pkt) {
+            throw new Error('Failed to clone packet from sync queue');
+          }
+          pkt.streamIndex = recvRet;
+
+          console.log(`[MediaOutput] SyncQueue write Stream ${recvRet}: PTS=${pkt.pts}, DTS=${pkt.dts}, Duration=${pkt.duration}`);
+
+          // Write packet (muxer takes ownership)
+          this.writeSync(pkt, recvStreamInfo, recvRet);
+        }
+      }
+    } else {
+      // No sync queue needed - write directly (all streams are encoded)
+      packet.streamIndex = streamIndex;
+      this.writeSync(packet, streamInfo, streamIndex);
     }
-    streamInfo.bufferedPackets = [];
-
-    // Write the current packet
-    write(packet);
   }
 
   /**
@@ -1066,6 +1371,16 @@ export class MediaOutput implements AsyncDisposable, Disposable {
       streamInfo.bufferedPackets = [];
     }
 
+    // Free sync queue resources
+    if (this.sqPacket) {
+      this.sqPacket.free();
+      this.sqPacket = undefined;
+    }
+    if (this.syncQueue) {
+      this.syncQueue.free();
+      this.syncQueue = undefined;
+    }
+
     // Try to write trailer if header was written but trailer wasn't
     try {
       if (this.headerWritten && !this.trailerWritten) {
@@ -1082,7 +1397,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
     }
 
     // Determine if this is custom IO before freeing format context
-    const isCustomIO = (this.formatContext.flags & AVFMT_FLAG_CUSTOM_IO) !== 0;
+    const isCustomIO = this.formatContext.hasFlags(AVFMT_FLAG_CUSTOM_IO);
 
     // For file-based IO, close the file handle via closep
     // For custom IO, the context will be freed below
@@ -1150,6 +1465,16 @@ export class MediaOutput implements AsyncDisposable, Disposable {
       streamInfo.bufferedPackets = [];
     }
 
+    // Free sync queue resources
+    if (this.sqPacket) {
+      this.sqPacket.free();
+      this.sqPacket = undefined;
+    }
+    if (this.syncQueue) {
+      this.syncQueue.free();
+      this.syncQueue = undefined;
+    }
+
     // Try to write trailer if header was written but trailer wasn't
     try {
       if (this.headerWritten && !this.trailerWritten) {
@@ -1166,7 +1491,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
     }
 
     // Determine if this is custom IO before freeing format context
-    const isCustomIO = (this.formatContext.flags & AVFMT_FLAG_CUSTOM_IO) !== 0;
+    const isCustomIO = this.formatContext.hasFlags(AVFMT_FLAG_CUSTOM_IO);
 
     // For file-based IO, close the file handle via closep
     // For custom IO, the context will be freed below
@@ -1208,6 +1533,413 @@ export class MediaOutput implements AsyncDisposable, Disposable {
    */
   getFormatContext(): FormatContext {
     return this.formatContext;
+  }
+
+  /**
+   * Setup sync queues based on stream configuration:
+   * - Muxing sync queue is created only if nb_interleaved > nb_av_enc
+   * - This means: sync queue is needed when there are streamcopy streams
+   *
+   * @internal
+   */
+  private setupSyncQueues(): void {
+    const nbInterleaved = this._streams.size; // All streams are interleaved (no attachments)
+    const nbAvEnc = Array.from(this._streams.values()).filter((s) => !s.isStreamCopy).length;
+
+    // FFmpeg's condition: if there are streamcopy streams (nb_interleaved > nb_av_enc),
+    // then ALL streams are synchronized before sending to muxer
+    const needsSyncQueue = nbInterleaved > nbAvEnc;
+
+    // console.log(`[MediaOutput] setupSyncQueues: nbInterleaved=${nbInterleaved}, nbAvEnc=${nbAvEnc}, needsSyncQueue=${needsSyncQueue}`);
+
+    if (needsSyncQueue && !this.syncQueue) {
+      // Create sync queue
+      const bufDurationSec = this.options.syncQueueBufferDuration ?? 10.0;
+      const bufSizeUs = bufDurationSec * 1000000; // Convert to microseconds
+      this.syncQueue = SyncQueue.create(SyncQueueType.PACKETS, bufSizeUs);
+      this.sqPacket = new Packet();
+      this.sqPacket.alloc();
+
+      // Add all streams to sync queue
+      for (const streamInfo of this._streams.values()) {
+        streamInfo.sqIdxMux = this.syncQueue.addStream(1); // 1 = limiting stream
+      }
+    } else if (!needsSyncQueue && this.syncQueue) {
+      // Free sync queue if we don't need it anymore
+      this.sqPacket?.free();
+      this.sqPacket = undefined;
+      this.syncQueue.free();
+      this.syncQueue = undefined;
+
+      // Reset all sqIdxMux to -1
+      for (const streamInfo of this._streams.values()) {
+        streamInfo.sqIdxMux = -1;
+      }
+    }
+  }
+
+  /**
+   * Write a packet to the output.
+   *
+   * @param pkt - Packet to write
+   *
+   * @param streamInfo - Stream description
+   *
+   * @param streamIndex - Stream index
+   *
+   * @internal
+   */
+  private async write(pkt: Packet, streamInfo: StreamDescription, streamIndex: number): Promise<void> {
+    // Apply streamcopy filtering and timestamp offset if this is a streamcopy stream
+    if (streamInfo.isStreamCopy) {
+      const shouldWrite = this.ofStreamcopy(pkt, streamInfo, streamIndex);
+      if (!shouldWrite) {
+        return; // Skip this packet (AVERROR(EAGAIN) in FFmpeg)
+      }
+    }
+
+    // Fix timestamps (rescale, DTS>PTS fix, monotonic DTS enforcement)
+    this.muxFixupTs(pkt, streamInfo, streamIndex);
+
+    // Write the packet
+    // console.log(`[MediaOutput] >>> WRITING TO MUXER <<< Stream ${streamIndex}: PTS=${pkt.pts}, DTS=${pkt.dts}, Duration=${pkt.duration}, Size=${pkt.size}`);
+    const ret = await this.formatContext.interleavedWriteFrame(pkt);
+
+    if (this.options.exitOnError) {
+      FFmpegError.throwIfError(ret, 'Failed to write packet');
+    }
+  }
+
+  /**
+   * Write a packet to the output synchronously.
+   * Synchronous version of write.
+   *
+   * @param pkt - Packet to write
+   *
+   * @param streamInfo - Stream description
+   *
+   * @param streamIndex - Stream index
+   *
+   * @internal
+   */
+  private writeSync(pkt: Packet, streamInfo: StreamDescription, streamIndex: number): void {
+    // Apply streamcopy filtering and timestamp offset if this is a streamcopy stream
+    if (streamInfo.isStreamCopy) {
+      const shouldWrite = this.ofStreamcopy(pkt, streamInfo, streamIndex);
+      if (!shouldWrite) {
+        return; // Skip this packet
+      }
+    }
+
+    // Fix timestamps (rescale, DTS>PTS fix, monotonic DTS enforcement)
+    this.muxFixupTs(pkt, streamInfo, streamIndex);
+
+    // Write the packet
+    const ret = this.formatContext.interleavedWriteFrameSync(pkt);
+    FFmpegError.throwIfError(ret, 'Failed to write packet');
+  }
+
+  /**
+   * Streamcopy packet filtering and timestamp offset.
+   *
+   * Applies streamcopy-specific logic before muxing:
+   * 1. Recording time limit check
+   * 2. Skip non-keyframe packets at start (unless copyInitialNonkeyframes)
+   * 3. Skip packets before ts_copy_start (unless copyPriorStart)
+   * 4. Skip packets before startTime
+   * 5. Apply start_time timestamp offset
+   *
+   * @param pkt - Packet to process
+   *
+   * @param streamInfo - Stream description
+   *
+   * @param streamIndex - Stream index
+   *
+   * @returns true if packet should be written, false if packet should be skipped
+   *
+   * @throws {Error} If recording time limit reached
+   *
+   * @internal
+   */
+  private ofStreamcopy(pkt: Packet, streamInfo: StreamDescription, streamIndex: number): boolean {
+    const outputStream = this.formatContext.streams[streamIndex];
+    if (!outputStream) {
+      return false;
+    }
+
+    // Get DTS in AV_TIME_BASE for comparison
+    // Use packet DTS directly (we don't have FrameData opaque_ref like FFmpeg)
+    const dts = pkt.dts !== AV_NOPTS_VALUE ? avRescaleQ(pkt.dts, pkt.timeBase, AV_TIME_BASE_Q) : AV_NOPTS_VALUE;
+    const startTimeUs = this.options.startTime !== undefined ? BigInt(Math.floor(this.options.startTime * 1000000)) : AV_NOPTS_VALUE;
+
+    // 1. Skip non-keyframes at start
+    const copyInitialNonkeyframes = this.options.copyInitialNonkeyframes ?? false;
+    if (!streamInfo.streamcopyStarted && !pkt.isKeyframe && !copyInitialNonkeyframes) {
+      // console.log(`[MediaOutput] Stream ${streamIndex}: Skipping non-keyframe before start (waiting for keyframe)`);
+      return false; // skip packet
+    }
+
+    // 2. Copy from specific start point
+    if (!streamInfo.streamcopyStarted) {
+      const copyPriorStart = this.options.copyPriorStart ?? -1;
+
+      // Calculate ts_copy_start
+      // Since we don't have input file timestamps, ts_copy_start is simply startTime or 0
+      const tsCopyStart = startTimeUs !== AV_NOPTS_VALUE ? startTimeUs : 0n;
+
+      // Only check ts_copy_start if copyPriorStart is not set (0 or -1)
+      if (copyPriorStart !== 1 && tsCopyStart > 0n) {
+        const pktTsUs = pkt.pts !== AV_NOPTS_VALUE ? avRescaleQ(pkt.pts, pkt.timeBase, AV_TIME_BASE_Q) : dts;
+
+        if (pktTsUs !== AV_NOPTS_VALUE && pktTsUs < tsCopyStart) {
+          // console.log(`[MediaOutput] Stream ${streamIndex}: Skipping packet before ts_copy_start: pts=${pktTsUs}, start=${tsCopyStart}`);
+          return false; // skip packet
+        }
+      }
+
+      // 3. Skip packets before startTime
+      if (startTimeUs !== AV_NOPTS_VALUE && dts !== AV_NOPTS_VALUE && dts < startTimeUs) {
+        // console.log(`[MediaOutput] Stream ${streamIndex}: Skipping packet before startTime: dts=${dts}, start=${startTimeUs}`);
+        return false; // skip packet
+      }
+    }
+
+    // 4. Apply start_time timestamp offset
+    // FFmpeg uses: start_time = (of->start_time == AV_NOPTS_VALUE) ? 0 : of->start_time
+    const startForOffset = startTimeUs !== AV_NOPTS_VALUE ? startTimeUs : 0n;
+    const tsOffset = avRescaleQ(startForOffset, AV_TIME_BASE_Q, pkt.timeBase);
+
+    if (pkt.pts !== AV_NOPTS_VALUE) {
+      pkt.pts -= tsOffset;
+    }
+
+    if (pkt.dts === AV_NOPTS_VALUE) {
+      // If DTS missing, use our estimated DTS
+      if (dts !== AV_NOPTS_VALUE) {
+        pkt.dts = avRescaleQ(dts, AV_TIME_BASE_Q, pkt.timeBase);
+      }
+    } else if (outputStream.codecpar.codecType === AVMEDIA_TYPE_AUDIO) {
+      // Audio: PTS = DTS - ts_offset
+      pkt.pts = pkt.dts - tsOffset;
+    }
+
+    if (pkt.dts !== AV_NOPTS_VALUE) {
+      pkt.dts -= tsOffset;
+    }
+
+    // Mark streamcopy as started
+    streamInfo.streamcopyStarted = true;
+
+    // console.log(
+    //   `[MediaOutput] Stream ${streamIndex} ofStreamcopy: PTS=${pkt.pts}, DTS=${pkt.dts}, ` +
+    //     // eslint-disable-next-line @stylistic/indent-binary-ops
+    //     `Duration=${pkt.duration}, isKeyframe=${pkt.isKeyframe}, streamcopyStarted=${streamInfo.streamcopyStarted}`,
+    // );
+
+    return true; // Packet should be written
+  }
+
+  /**
+   * Fix packet timestamps before muxing.
+   *
+   * Performs timestamp corrections:
+   * 1. Rescales timestamps to output timebase (av_rescale_delta for audio streamcopy)
+   * 2. Sets pkt.timeBase to output stream timebase
+   * 3. Fixes invalid DTS > PTS relationships
+   * 4. Enforces monotonic DTS (never decreasing)
+   *
+   * @param pkt - Packet to fix
+   *
+   * @param streamInfo - Stream description
+   *
+   * @param streamIndex - Stream index
+   *
+   * @internal
+   */
+  private muxFixupTs(pkt: Packet, streamInfo: StreamDescription, streamIndex: number): void {
+    const outputStream = this.formatContext.streams[streamIndex];
+    if (!outputStream) return;
+
+    const codecType = streamInfo.stream.codecpar.codecType;
+    const dstTb = outputStream.timeBase;
+    // const srcTb = streamInfo.sourceTimeBase!;
+
+    // console.log(
+    //   `[muxFixupTs] Stream ${streamIndex} BEFORE: PTS=${pkt.pts}, DTS=${pkt.dts}, Duration=${pkt.duration}, ` +
+    //     // eslint-disable-next-line @stylistic/indent-binary-ops
+    //     `srcTb=${srcTb.num}/${srcTb.den}, dstTb=${dstTb.num}/${dstTb.den}, ` +
+    //     `isStreamCopy=${streamInfo.isStreamCopy}, codecType=${codecType}`,
+    // );
+
+    // 1. Rescale timestamps to the stream timebase
+    if (codecType === AVMEDIA_TYPE_AUDIO && streamInfo.isStreamCopy) {
+      let duration = avGetAudioFrameDuration2(streamInfo.stream.codecpar, pkt.size);
+      if (!duration) {
+        duration = streamInfo.stream.codecpar.frameSize;
+      }
+
+      const srcTb = streamInfo.sourceTimeBase!;
+      const sampleRate = streamInfo.stream.codecpar.sampleRate;
+      const fsTb: IRational = { num: 1, den: sampleRate };
+
+      pkt.dts = avRescaleDelta(srcTb, pkt.dts, fsTb, duration, streamInfo.tsRescaleDeltaLast, dstTb);
+      pkt.pts = pkt.dts;
+
+      pkt.duration = avRescaleQ(pkt.duration, srcTb, dstTb);
+    } else {
+      // For video or encoded audio, use regular rescaling
+      const srcTb = streamInfo.sourceTimeBase!;
+      pkt.rescaleTs(srcTb, dstTb);
+    }
+
+    // 2. Set packet timeBase
+    // av_interleaved_write_frame uses this for sorting!
+    pkt.timeBase = dstTb;
+
+    // 3. Fix DTS > PTS (invalid relationship)
+    // FFmpeg formula: median of (pts, dts, last_mux_dts+1)
+    if (pkt.dts !== AV_NOPTS_VALUE && pkt.pts !== AV_NOPTS_VALUE && pkt.dts > pkt.pts) {
+      // console.log(`[MediaOutput] Stream ${streamIndex} Invalid DTS > PTS: DTS=${pkt.dts}, PTS=${pkt.pts}, fixing...`);
+      const last = streamInfo.lastMuxDts !== AV_NOPTS_VALUE ? streamInfo.lastMuxDts + 1n : 0n;
+      const min = pkt.pts < pkt.dts ? (pkt.pts < last ? pkt.pts : last) : pkt.dts < last ? pkt.dts : last;
+      const max = pkt.pts > pkt.dts ? (pkt.pts > last ? pkt.pts : last) : pkt.dts > last ? pkt.dts : last;
+      const median = pkt.pts + pkt.dts + last - min - max;
+      pkt.pts = median;
+      pkt.dts = median;
+    }
+
+    // 4. Enforce monotonic DTS
+    if ((codecType === AVMEDIA_TYPE_AUDIO || codecType === AVMEDIA_TYPE_VIDEO) && pkt.dts !== AV_NOPTS_VALUE && streamInfo.lastMuxDts !== AV_NOPTS_VALUE) {
+      const max = streamInfo.lastMuxDts + 1n;
+      if (pkt.dts < max) {
+        // console.log(`[MediaOutput] Stream ${streamIndex} Non-monotonic DTS: previous=${streamInfo.lastMuxDts}, current=${pkt.dts}, changing to ${max}`);
+        // Adjust PTS if it would create invalid relationship
+        if (pkt.pts !== AV_NOPTS_VALUE && pkt.pts >= pkt.dts) {
+          pkt.pts = pkt.pts > max ? pkt.pts : max;
+        }
+        pkt.dts = max;
+      }
+    }
+
+    // 5. Update last mux DTS for next packet
+    streamInfo.lastMuxDts = pkt.dts;
+
+    // console.log(
+    //   `[muxFixupTs] Stream ${streamIndex} AFTER: PTS=${pkt.pts}, DTS=${pkt.dts}, Duration=${pkt.duration}, ` + `timeBase=${pkt.timeBase.num}/${pkt.timeBase.den}`,
+    // );
+  }
+
+  /**
+   * Copy container metadata from input to output.
+   *
+   * Automatically copies global metadata from input MediaInput to output format context.
+   * Only copies once (on first call). Removes duration/creation_time metadata.
+   *
+   * Matches FFmpeg CLI behavior
+   *
+   * @internal
+   */
+  private copyContainerMetadata(): void {
+    if (this.containerMetadataCopied || !this.options.input) {
+      return;
+    }
+
+    const inputFormatContext = this.options.input.getFormatContext();
+    const inputMetadata = inputFormatContext.metadata;
+
+    if (inputMetadata) {
+      // Keys that FFmpeg removes after copying
+      const keysToSkip = new Set(['duration', 'creation_time', 'company_name', 'product_name', 'product_version']);
+
+      // Get all input metadata entries
+      const entries = inputMetadata.getAll();
+
+      // Filter out keys that should be skipped
+      const filteredEntries: Record<string, string> = {};
+      for (const [key, value] of Object.entries(entries)) {
+        if (!keysToSkip.has(key)) {
+          filteredEntries[key] = value;
+        }
+      }
+
+      // Create new dictionary with filtered entries
+      const metadata = Dictionary.fromObject(filteredEntries);
+
+      // Set metadata to format context
+      // This will copy the dictionary content via av_dict_copy
+      this.formatContext.metadata = metadata;
+    }
+
+    this.containerMetadataCopied = true;
+  }
+
+  /**
+   * Auto-set DEFAULT disposition for first stream of each type.
+   *
+   * FFmpeg automatically sets DEFAULT flag for the first stream of each type
+   * if no stream of that type has DEFAULT set yet.
+   *
+   * Matches FFmpeg CLI behavior
+   *
+   * @internal
+   */
+  private updateDefaultDisposition(): void {
+    // Group streams by media type
+    const streamsByType = new Map<number, Stream[]>();
+
+    for (const streamInfo of this._streams.values()) {
+      const codecType = streamInfo.stream.codecpar.codecType;
+      if (!streamsByType.has(codecType)) {
+        streamsByType.set(codecType, []);
+      }
+      streamsByType.get(codecType)!.push(streamInfo.stream);
+    }
+
+    // For each media type, check if any stream has DEFAULT disposition
+    // If not, set DEFAULT on first stream
+    for (const [_, streams] of streamsByType.entries()) {
+      // Skip if only one stream of this type
+      if (streams.length < 2) {
+        continue;
+      }
+
+      // Check if any stream already has DEFAULT disposition
+      const hasDefault = streams.some((s) => s.hasDisposition(AV_DISPOSITION_DEFAULT));
+
+      if (!hasDefault) {
+        // Find first stream that is not an attached picture
+        const firstNonAttachedPic = streams.find((s) => !s.hasDisposition(AV_DISPOSITION_ATTACHED_PIC));
+
+        if (firstNonAttachedPic) {
+          // Set DEFAULT on first non-attached-picture stream
+          firstNonAttachedPic.setDisposition(AV_DISPOSITION_DEFAULT);
+        }
+      }
+    }
+  }
+
+  private needMoreData(): boolean {
+    const allInitialized = Array.from(this._streams.values()).every((s) => s.initialized);
+    if (!allInitialized) {
+      return true;
+    }
+
+    let needMore = false;
+    for (const s of this._streams.values()) {
+      const codecpar = s.stream.codecpar;
+      if (codecpar.codecType === AVMEDIA_TYPE_VIDEO) {
+        const hasDimensions = codecpar.width > 0 && codecpar.height > 0;
+        const formatNeedsDimensions = !this.formatContext.oformat?.hasFlags(AVFMT_NODIMENSIONS);
+        if (!hasDimensions && formatNeedsDimensions) {
+          needMore = true;
+        }
+      } else if (codecpar.codecType === AVMEDIA_TYPE_AUDIO) {
+        if (codecpar.sampleRate <= 0) {
+          needMore = true;
+        }
+      }
+    }
+    return needMore;
   }
 
   /**
