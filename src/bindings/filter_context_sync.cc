@@ -23,8 +23,9 @@ Napi::Value FilterContext::BuffersrcAddFrameSync(const Napi::CallbackInfo& info)
     frame = UnwrapNativeObject<Frame>(env, info[0], "Frame");
   }
 
-  // Direct synchronous call
-  int ret = av_buffersrc_add_frame(ctx, frame ? frame->Get() : nullptr);
+  // Direct synchronous call with PUSH flag (matches FFmpeg CLI behavior)
+  // The PUSH flag causes the filter to process frames immediately
+  int ret = av_buffersrc_add_frame_flags(ctx, frame ? frame->Get() : nullptr, AV_BUFFERSRC_FLAG_PUSH);
 
   return Napi::Number::New(env, ret);
 }

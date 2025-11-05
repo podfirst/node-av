@@ -22,7 +22,9 @@ public:
       deferred_(Napi::Promise::Deferred::New(env)) {}
 
   void Execute() override {
-    ret_ = av_buffersrc_add_frame(ctx_->Get(), frame_ ? frame_->Get() : nullptr);
+    // Use av_buffersrc_add_frame_flags with PUSH flag (matches FFmpeg CLI behavior)
+    // The PUSH flag causes the filter to process frames immediately
+    ret_ = av_buffersrc_add_frame_flags(ctx_->Get(), frame_ ? frame_->Get() : nullptr, AV_BUFFERSRC_FLAG_PUSH);
   }
 
   void OnOK() override {
