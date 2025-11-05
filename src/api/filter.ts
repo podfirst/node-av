@@ -1,9 +1,16 @@
-import { AVERROR_EAGAIN, AVERROR_EOF, AVFILTER_FLAG_HWDEVICE } from '../constants/constants.js';
-import { FFmpegError, Filter, FilterGraph, FilterInOut, Frame } from '../lib/index.js';
-import { avGetSampleFmtName } from '../lib/utilities.js';
+/* eslint-disable @stylistic/indent-binary-ops */
+import { AV_BUFFERSRC_FLAG_PUSH, AVERROR_EAGAIN, AVERROR_EOF, AVFILTER_FLAG_HWDEVICE } from '../constants/constants.js';
+import { FFmpegError } from '../lib/error.js';
+import { FilterGraph } from '../lib/filter-graph.js';
+import { FilterInOut } from '../lib/filter-inout.js';
+import { Filter } from '../lib/filter.js';
+import { Frame } from '../lib/frame.js';
+import { Rational } from '../lib/rational.js';
+import { avGetSampleFmtName, avInvQ, avRescaleQ } from '../lib/utilities.js';
 
-import type { AVFilterCmdFlag, AVSampleFormat } from '../constants/constants.js';
-import type { FilterContext } from '../lib/index.js';
+import type { AVColorRange, AVColorSpace, AVFilterCmdFlag, AVPixelFormat, AVSampleFormat } from '../constants/index.js';
+import type { FilterContext } from '../lib/filter-context.js';
+import type { ChannelLayout, IDimension, IRational } from '../lib/types.js';
 import type { FilterOptions } from './types.js';
 
 /**
@@ -49,8 +56,21 @@ export class FilterAPI implements Disposable {
   private options: FilterOptions;
   private buffersrcCtx: FilterContext | null = null;
   private buffersinkCtx: FilterContext | null = null;
+  private frame: Frame = new Frame(); // Reusable frame for receive operations
   private initialized = false;
   private isClosed = false;
+
+  // Auto-calculated timeBase from first frame
+  private calculatedTimeBase: IRational | null = null;
+
+  // Track last frame properties for change detection (for dropOnChange/allowReinit)
+  private lastFrameProps: {
+    format: number;
+    width: number;
+    height: number;
+    sampleRate: number;
+    channels: number;
+  } | null = null;
 
   /**
    * @param graph - Filter graph instance
@@ -72,44 +92,51 @@ export class FilterAPI implements Disposable {
    *
    * Creates and allocates filter graph immediately.
    * Filter configuration is completed on first frame with frame properties.
+   * TimeBase is automatically calculated from first frame based on CFR option.
    * Hardware frames context is automatically detected from input frames.
    *
    * Direct mapping to avfilter_graph_parse_ptr() and avfilter_graph_config().
    *
    * @param description - Filter graph description
    *
-   * @param options - Filter options including required timeBase
+   * @param options - Filter options
    *
    * @returns Configured filter instance
    *
+   * @throws {Error} If cfr=true but framerate is not set
+   *
    * @example
    * ```typescript
-   * // Simple video filter
-   * const filter = FilterAPI.create('scale=640:480', {
-   *   timeBase: video.timeBase
+   * // Simple video filter (VFR mode, auto timeBase)
+   * const filter = FilterAPI.create('scale=640:480', {});
+   * ```
+   *
+   * @example
+   * ```typescript
+   * // CFR mode with constant framerate
+   * const filter = FilterAPI.create('scale=1920:1080', {
+   *   cfr: true,
+   *   framerate: { num: 25, den: 1 }
    * });
    * ```
    *
    * @example
    * ```typescript
-   * // Complex filter chain
-   * const filter = FilterAPI.create('crop=640:480:0:0,rotate=PI/4', {
-   *   timeBase: video.timeBase
-   * });
-   * ```
-   *
-   * @example
-   * ```typescript
-   * // Audio filter
-   * const filter = FilterAPI.create('volume=0.5,aecho=0.8:0.9:1000:0.3', {
-   *   timeBase: audio.timeBase
+   * // Audio filter with resampling
+   * const filter = FilterAPI.create('aformat=sample_fmts=s16:sample_rates=44100', {
+   *   audioResampleOpts: 'async=1'
    * });
    * ```
    *
    * @see {@link process} For frame processing
    * @see {@link FilterOptions} For configuration options
    */
-  static create(description: string, options: FilterOptions): FilterAPI {
+  static create(description: string, options: FilterOptions = {}): FilterAPI {
+    // Validate options: CFR requires framerate
+    if (options.cfr && !options.framerate) {
+      throw new Error('cfr=true requires framerate to be set');
+    }
+
     // Create graph
     const graph = new FilterGraph();
     graph.alloc();
@@ -161,6 +188,271 @@ export class FilterAPI implements Disposable {
   }
 
   /**
+   * Get buffersink filter context.
+   *
+   * Provides access to the buffersink filter context for advanced operations.
+   * Returns null if filter is not initialized.
+   *
+   * @returns Buffersink context or null
+   *
+   * @example
+   * ```typescript
+   * const sink = filter.buffersink;
+   * if (sink) {
+   *   const fr = sink.buffersinkGetFrameRate();
+   *   console.log(`Output frame rate: ${fr.num}/${fr.den}`);
+   * }
+   * ```
+   */
+  get buffersink(): FilterContext | null {
+    return this.buffersinkCtx;
+  }
+
+  /**
+   * Output frame rate from filter graph.
+   *
+   * Returns the frame rate determined by the filter graph output.
+   * Matches FFmpeg CLI's av_buffersink_get_frame_rate() behavior.
+   * Returns null if filter is not initialized or frame rate is not set.
+   *
+   * Direct mapping to av_buffersink_get_frame_rate().
+   *
+   * @returns Frame rate or null if not available
+   *
+   * @example
+   * ```typescript
+   * const frameRate = filter.frameRate;
+   * if (frameRate) {
+   *   console.log(`Filter output: ${frameRate.num}/${frameRate.den} fps`);
+   * }
+   * ```
+   *
+   * @see {@link timeBase} For output timebase
+   */
+  get frameRate(): IRational | null {
+    if (!this.initialized || !this.buffersinkCtx) {
+      return null;
+    }
+    const fr = this.buffersinkCtx.buffersinkGetFrameRate();
+    // Return null if frame rate is not set (0/0 or 0/1)
+    if (fr.num <= 0 || fr.den <= 0) {
+      return null;
+    }
+    return fr;
+  }
+
+  /**
+   * Output time base from filter graph.
+   *
+   * Returns the time base of the buffersink output.
+   * Matches FFmpeg CLI's av_buffersink_get_time_base() behavior.
+   *
+   * Direct mapping to av_buffersink_get_time_base().
+   *
+   * @returns Time base or null if not initialized
+   *
+   * @example
+   * ```typescript
+   * const timeBase = filter.timeBase;
+   * if (timeBase) {
+   *   console.log(`Filter timebase: ${timeBase.num}/${timeBase.den}`);
+   * }
+   * ```
+   *
+   * @see {@link frameRate} For output frame rate
+   */
+  get timeBase(): IRational | null {
+    if (!this.initialized || !this.buffersinkCtx) {
+      return null;
+    }
+    return this.buffersinkCtx.buffersinkGetTimeBase();
+  }
+
+  /**
+   * Output format from filter graph.
+   *
+   * Returns the pixel format (video) or sample format (audio) of the buffersink output.
+   * Matches FFmpeg CLI's av_buffersink_get_format() behavior.
+   *
+   * Direct mapping to av_buffersink_get_format().
+   *
+   * @returns Pixel format or sample format, or null if not initialized
+   *
+   * @example
+   * ```typescript
+   * const format = filter.format;
+   * if (format !== null) {
+   *   console.log(`Filter output format: ${format}`);
+   * }
+   * ```
+   */
+  get format(): AVPixelFormat | AVSampleFormat | null {
+    if (!this.initialized || !this.buffersinkCtx) {
+      return null;
+    }
+    return this.buffersinkCtx.buffersinkGetFormat();
+  }
+
+  /**
+   * Output dimensions from filter graph (video only).
+   *
+   * Returns the width and height of the buffersink output.
+   * Matches FFmpeg CLI's av_buffersink_get_w() and av_buffersink_get_h() behavior.
+   * Only meaningful for video filters.
+   *
+   * Direct mapping to av_buffersink_get_w() and av_buffersink_get_h().
+   *
+   * @returns Dimensions object or null if not initialized
+   *
+   * @example
+   * ```typescript
+   * const dims = filter.dimensions;
+   * if (dims) {
+   *   console.log(`Filter output: ${dims.width}x${dims.height}`);
+   * }
+   * ```
+   */
+  get dimensions(): IDimension | null {
+    if (!this.initialized || !this.buffersinkCtx) {
+      return null;
+    }
+    return {
+      width: this.buffersinkCtx.buffersinkGetWidth(),
+      height: this.buffersinkCtx.buffersinkGetHeight(),
+    };
+  }
+
+  /**
+   * Output sample rate from filter graph (audio only).
+   *
+   * Returns the sample rate of the buffersink output.
+   * Matches FFmpeg CLI's av_buffersink_get_sample_rate() behavior.
+   * Only meaningful for audio filters.
+   *
+   * Direct mapping to av_buffersink_get_sample_rate().
+   *
+   * @returns Sample rate or null if not initialized
+   *
+   * @example
+   * ```typescript
+   * const sampleRate = filter.sampleRate;
+   * if (sampleRate) {
+   *   console.log(`Filter output sample rate: ${sampleRate} Hz`);
+   * }
+   * ```
+   */
+  get sampleRate(): number | null {
+    if (!this.initialized || !this.buffersinkCtx) {
+      return null;
+    }
+    return this.buffersinkCtx.buffersinkGetSampleRate();
+  }
+
+  /**
+   * Output channel layout from filter graph (audio only).
+   *
+   * Returns the channel layout of the buffersink output.
+   * Matches FFmpeg CLI's av_buffersink_get_ch_layout() behavior.
+   * Only meaningful for audio filters.
+   *
+   * Direct mapping to av_buffersink_get_ch_layout().
+   *
+   * @returns Channel layout or null if not initialized
+   *
+   * @example
+   * ```typescript
+   * const layout = filter.channelLayout;
+   * if (layout) {
+   *   console.log(`Filter output channels: ${layout.nbChannels}`);
+   * }
+   * ```
+   */
+  get channelLayout(): ChannelLayout | null {
+    if (!this.initialized || !this.buffersinkCtx) {
+      return null;
+    }
+    return this.buffersinkCtx.buffersinkGetChannelLayout();
+  }
+
+  /**
+   * Output color space from filter graph (video only).
+   *
+   * Returns the color space of the buffersink output.
+   * Matches FFmpeg CLI's av_buffersink_get_colorspace() behavior.
+   * Only meaningful for video filters.
+   *
+   * Direct mapping to av_buffersink_get_colorspace().
+   *
+   * @returns Color space or null if not initialized
+   *
+   * @example
+   * ```typescript
+   * const colorSpace = filter.colorSpace;
+   * if (colorSpace !== null) {
+   *   console.log(`Filter output color space: ${colorSpace}`);
+   * }
+   * ```
+   */
+  get colorSpace(): AVColorSpace | null {
+    if (!this.initialized || !this.buffersinkCtx) {
+      return null;
+    }
+    return this.buffersinkCtx.buffersinkGetColorspace();
+  }
+
+  /**
+   * Output color range from filter graph (video only).
+   *
+   * Returns the color range of the buffersink output.
+   * Matches FFmpeg CLI's av_buffersink_get_color_range() behavior.
+   * Only meaningful for video filters.
+   *
+   * Direct mapping to av_buffersink_get_color_range().
+   *
+   * @returns Color range or null if not initialized
+   *
+   * @example
+   * ```typescript
+   * const colorRange = filter.colorRange;
+   * if (colorRange !== null) {
+   *   console.log(`Filter output color range: ${colorRange}`);
+   * }
+   * ```
+   */
+  get colorRange(): AVColorRange | null {
+    if (!this.initialized || !this.buffersinkCtx) {
+      return null;
+    }
+    return this.buffersinkCtx.buffersinkGetColorRange();
+  }
+
+  /**
+   * Output sample aspect ratio from filter graph (video only).
+   *
+   * Returns the sample aspect ratio of the buffersink output.
+   * Matches FFmpeg CLI's av_buffersink_get_sample_aspect_ratio() behavior.
+   * Only meaningful for video filters.
+   *
+   * Direct mapping to av_buffersink_get_sample_aspect_ratio().
+   *
+   * @returns Sample aspect ratio or null if not initialized
+   *
+   * @example
+   * ```typescript
+   * const sar = filter.sampleAspectRatio;
+   * if (sar) {
+   *   console.log(`Filter output SAR: ${sar.num}:${sar.den}`);
+   * }
+   * ```
+   */
+  get sampleAspectRatio(): IRational | null {
+    if (!this.initialized || !this.buffersinkCtx) {
+      return null;
+    }
+    return this.buffersinkCtx.buffersinkGetSampleAspectRatio();
+  }
+
+  /**
    * Check if filter is ready for processing.
    *
    * @returns true if initialized and ready
@@ -204,6 +496,10 @@ export class FilterAPI implements Disposable {
    * May buffer frames internally before producing output.
    * Hardware frames context is automatically detected from frame.
    * Returns null if filter is closed and frame is null.
+   *
+   * **Note**: This method receives only ONE frame per call.
+   * A single input frame can produce multiple output frames (e.g., fps filter, deinterlace).
+   * To receive all frames from an input, use {@link processAll} or {@link frames} instead.
    *
    * Direct mapping to av_buffersrc_add_frame() and av_buffersink_get_frame().
    *
@@ -262,27 +558,35 @@ export class FilterAPI implements Disposable {
       throw new Error('Could not initialize filter contexts');
     }
 
-    // Send frame to filter
-    const addRet = await this.buffersrcCtx.buffersrcAddFrame(frame);
-    FFmpegError.throwIfError(addRet, 'Failed to add frame to filter');
-
-    // Try to get filtered frame
-    const outputFrame = new Frame();
-    outputFrame.alloc();
-
-    const getRet = await this.buffersinkCtx.buffersinkGetFrame(outputFrame);
-
-    if (getRet >= 0) {
-      return outputFrame;
-    } else if (getRet === AVERROR_EAGAIN) {
-      // Need more input
-      outputFrame.free();
-      return null;
-    } else {
-      outputFrame.free();
-      FFmpegError.throwIfError(getRet, 'Failed to get frame from filter');
+    // Check for frame property changes (FFmpeg: dropOnChange/allowReinit logic)
+    if (frame && !this.checkFramePropertiesChanged(frame)) {
+      // Frame dropped due to property change
       return null;
     }
+
+    // If reinitialized, reinitialize now
+    if (!this.initialized && frame) {
+      await this.initialize(frame);
+      if (!this.buffersrcCtx || !this.buffersinkCtx) {
+        throw new Error('Could not reinitialize filter contexts');
+      }
+    }
+
+    // Rescale timestamps to filter's timeBase (FFmpeg's send_frame behavior)
+    // This matches ffmpeg_filter.c lines 3205-3207
+    if (frame && this.calculatedTimeBase) {
+      const originalTimeBase = frame.timeBase;
+      frame.pts = avRescaleQ(frame.pts, originalTimeBase, this.calculatedTimeBase);
+      frame.duration = avRescaleQ(frame.duration, originalTimeBase, this.calculatedTimeBase);
+      frame.timeBase = new Rational(this.calculatedTimeBase.num, this.calculatedTimeBase.den);
+    }
+
+    // Send frame to filter with PUSH flag for immediate processing
+    const addRet = await this.buffersrcCtx.buffersrcAddFrame(frame, AV_BUFFERSRC_FLAG_PUSH);
+    FFmpegError.throwIfError(addRet, 'Failed to add frame to filter');
+
+    // Try to get filtered frame using receive()
+    return await this.receive();
   }
 
   /**
@@ -294,6 +598,10 @@ export class FilterAPI implements Disposable {
    * May buffer frames internally before producing output.
    * Hardware frames context is automatically detected from frame.
    * Returns null if filter is closed and frame is null.
+   *
+   * **Note**: This method receives only ONE frame per call.
+   * A single input frame can produce multiple output frames (e.g., fps filter, deinterlace).
+   * To receive all frames from an input, use {@link processAllSync} or {@link framesSync} instead.
    *
    * Direct mapping to av_buffersrc_add_frame() and av_buffersink_get_frame().
    *
@@ -344,31 +652,43 @@ export class FilterAPI implements Disposable {
       this.initializeSync(frame);
     }
 
+    if (!this.initialized) {
+      return null;
+    }
+
     if (!this.buffersrcCtx || !this.buffersinkCtx) {
       throw new Error('Could not initialize filter contexts');
     }
 
-    // Send frame to filter
-    const addRet = this.buffersrcCtx.buffersrcAddFrameSync(frame);
-    FFmpegError.throwIfError(addRet, 'Failed to add frame to filter');
-
-    // Try to get filtered frame
-    const outputFrame = new Frame();
-    outputFrame.alloc();
-
-    const getRet = this.buffersinkCtx.buffersinkGetFrameSync(outputFrame);
-
-    if (getRet >= 0) {
-      return outputFrame;
-    } else if (getRet === AVERROR_EAGAIN) {
-      // Need more input
-      outputFrame.free();
-      return null;
-    } else {
-      outputFrame.free();
-      FFmpegError.throwIfError(getRet, 'Failed to get frame from filter');
+    // Check for frame property changes (FFmpeg: dropOnChange/allowReinit logic)
+    if (frame && !this.checkFramePropertiesChanged(frame)) {
+      // Frame dropped due to property change
       return null;
     }
+
+    // If reinitialized, reinitialize now
+    if (!this.initialized && frame) {
+      this.initializeSync(frame);
+      if (!this.buffersrcCtx || !this.buffersinkCtx) {
+        throw new Error('Could not reinitialize filter contexts');
+      }
+    }
+
+    // Rescale timestamps to filter's timeBase (FFmpeg's send_frame behavior)
+    // This matches ffmpeg_filter.c lines 3205-3207
+    if (frame && this.calculatedTimeBase) {
+      const originalTimeBase = frame.timeBase;
+      frame.pts = avRescaleQ(frame.pts, originalTimeBase, this.calculatedTimeBase);
+      frame.duration = avRescaleQ(frame.duration, originalTimeBase, this.calculatedTimeBase);
+      frame.timeBase = new Rational(this.calculatedTimeBase.num, this.calculatedTimeBase.den);
+    }
+
+    // Send frame to filter with PUSH flag for immediate processing
+    const addRet = this.buffersrcCtx.buffersrcAddFrameSync(frame, AV_BUFFERSRC_FLAG_PUSH);
+    FFmpegError.throwIfError(addRet, 'Failed to add frame to filter');
+
+    // Try to get filtered frame using receiveSync()
+    return this.receiveSync();
   }
 
   /**
@@ -435,29 +755,25 @@ export class FilterAPI implements Disposable {
       throw new Error('Could not initialize filter contexts');
     }
 
-    // Send frame to filter
-    const addRet = await this.buffersrcCtx.buffersrcAddFrame(frame);
+    // Rescale timestamps to filter's timeBase (FFmpeg's send_frame behavior)
+    // This matches ffmpeg_filter.c lines 3205-3207
+    if (frame && this.calculatedTimeBase) {
+      const originalTimeBase = frame.timeBase;
+      frame.pts = avRescaleQ(frame.pts, originalTimeBase, this.calculatedTimeBase);
+      frame.duration = avRescaleQ(frame.duration, originalTimeBase, this.calculatedTimeBase);
+      frame.timeBase = new Rational(this.calculatedTimeBase.num, this.calculatedTimeBase.den);
+    }
+
+    // Send frame to filter with PUSH flag for immediate processing
+    const addRet = await this.buffersrcCtx.buffersrcAddFrame(frame, AV_BUFFERSRC_FLAG_PUSH);
     FFmpegError.throwIfError(addRet, 'Failed to add frame to filter');
 
-    // Receive all available frames
+    // Receive all available frames using receive()
     const frames: Frame[] = [];
-    while (true) {
-      const outputFrame = new Frame();
-      outputFrame.alloc();
-
-      const getRet = await this.buffersinkCtx.buffersinkGetFrame(outputFrame);
-
-      if (getRet >= 0) {
-        frames.push(outputFrame);
-      } else if (getRet === AVERROR_EAGAIN || getRet === AVERROR_EOF) {
-        // Need more input or EOF
-        outputFrame.free();
-        break;
-      } else {
-        outputFrame.free();
-        FFmpegError.throwIfError(getRet, 'Failed to get frame from filter');
-        break;
-      }
+    while (!this.isClosed) {
+      const outputFrame = await this.receive();
+      if (!outputFrame) break;
+      frames.push(outputFrame);
     }
 
     return frames;
@@ -524,127 +840,28 @@ export class FilterAPI implements Disposable {
       throw new Error('Could not initialize filter contexts');
     }
 
-    // Send frame to filter
-    const addRet = this.buffersrcCtx.buffersrcAddFrameSync(frame);
+    // Rescale timestamps to filter's timeBase (FFmpeg's send_frame behavior)
+    // This matches ffmpeg_filter.c lines 3205-3207
+    if (frame && this.calculatedTimeBase) {
+      const originalTimeBase = frame.timeBase;
+      frame.pts = avRescaleQ(frame.pts, originalTimeBase, this.calculatedTimeBase);
+      frame.duration = avRescaleQ(frame.duration, originalTimeBase, this.calculatedTimeBase);
+      frame.timeBase = new Rational(this.calculatedTimeBase.num, this.calculatedTimeBase.den);
+    }
+
+    // Send frame to filter with PUSH flag for immediate processing
+    const addRet = this.buffersrcCtx.buffersrcAddFrameSync(frame, AV_BUFFERSRC_FLAG_PUSH);
     FFmpegError.throwIfError(addRet, 'Failed to add frame to filter');
 
-    // Receive all available frames
+    // Receive all available frames using receiveSync()
     const frames: Frame[] = [];
-    while (true) {
-      const outputFrame = new Frame();
-      outputFrame.alloc();
-
-      const getRet = this.buffersinkCtx.buffersinkGetFrameSync(outputFrame);
-
-      if (getRet >= 0) {
-        frames.push(outputFrame);
-      } else if (getRet === AVERROR_EAGAIN || getRet === AVERROR_EOF) {
-        // Need more input or EOF
-        outputFrame.free();
-        break;
-      } else {
-        outputFrame.free();
-        FFmpegError.throwIfError(getRet, 'Failed to get frame from filter');
-        break;
-      }
+    while (!this.isClosed) {
+      const outputFrame = this.receiveSync();
+      if (!outputFrame) break;
+      frames.push(outputFrame);
     }
 
     return frames;
-  }
-
-  /**
-   * Process multiple frames at once.
-   *
-   * Processes batch of frames and drains all output.
-   * Useful for filters that buffer multiple frames.
-   *
-   * @param frames - Array of input frames
-   *
-   * @returns Array of all output frames (empty if filter closed)
-   *
-   * @throws {Error} If filter not ready
-   *
-   * @throws {FFmpegError} If processing fails
-   *
-   * @example
-   * ```typescript
-   * const outputs = await filter.processMultiple([frame1, frame2, frame3]);
-   * for (const output of outputs) {
-   *   console.log(`Output frame: pts=${output.pts}`);
-   *   output.free();
-   * }
-   * ```
-   *
-   * @see {@link process} For single frame processing
-   * @see {@link processAll} For processing multiple output frames
-   * @see {@link processMultipleSync} For synchronous version
-   */
-  async processMultiple(frames: Frame[]): Promise<Frame[]> {
-    const outputFrames: Frame[] = [];
-
-    for (const frame of frames) {
-      const output = await this.process(frame);
-      if (output) {
-        outputFrames.push(output);
-      }
-
-      // Drain any additional frames
-      while (!this.isClosed) {
-        const additional = await this.receive();
-        if (!additional) break;
-        outputFrames.push(additional);
-      }
-    }
-
-    return outputFrames;
-  }
-
-  /**
-   * Process multiple frames at once synchronously.
-   * Synchronous version of processMultiple.
-   *
-   * Processes batch of frames and drains all output.
-   * Useful for filters that buffer multiple frames.
-   *
-   * @param frames - Array of input frames
-   *
-   * @returns Array of all output frames (empty if filter closed)
-   *
-   * @throws {Error} If filter not ready
-   *
-   * @throws {FFmpegError} If processing fails
-   *
-   * @example
-   * ```typescript
-   * const outputs = filter.processMultipleSync([frame1, frame2, frame3]);
-   * for (const output of outputs) {
-   *   console.log(`Output frame: pts=${output.pts}`);
-   *   output.free();
-   * }
-   * ```
-   *
-   * @see {@link processSync} For single frame processing
-   * @see {@link processAllSync} For processing multiple output frames
-   * @see {@link processMultiple} For async version
-   */
-  processMultipleSync(frames: Frame[]): Frame[] {
-    const outputFrames: Frame[] = [];
-
-    for (const frame of frames) {
-      const output = this.processSync(frame);
-      if (output) {
-        outputFrames.push(output);
-      }
-
-      // Drain any additional frames
-      while (!this.isClosed) {
-        const additional = this.receiveSync();
-        if (!additional) break;
-        outputFrames.push(additional);
-      }
-    }
-
-    return outputFrames;
   }
 
   /**
@@ -692,23 +909,45 @@ export class FilterAPI implements Disposable {
    * @see {@link framesSync} For sync version
    */
   async *frames(frames: AsyncIterable<Frame>): AsyncGenerator<Frame> {
-    for await (const frame of frames) {
-      try {
-        // Process input frame
-        const output = await this.process(frame);
-        if (output) {
-          yield output;
-        }
+    for await (using frame of frames) {
+      if (this.isClosed) {
+        break;
+      }
 
-        // Drain any buffered frames
-        while (!this.isClosed) {
-          const buffered = await this.receive();
-          if (!buffered) break;
-          yield buffered;
+      // Open filter if not already done
+      if (!this.initialized) {
+        if (!frame) {
+          continue;
         }
-      } finally {
-        // Free the input frame after processing
-        frame.free();
+        await this.initialize(frame);
+      }
+
+      if (!this.initialized) {
+        continue;
+      }
+
+      if (!this.buffersrcCtx || !this.buffersinkCtx) {
+        throw new Error('Could not initialize filter contexts');
+      }
+
+      // Rescale timestamps to filter's timeBase (FFmpeg's send_frame behavior)
+      // This matches ffmpeg_filter.c lines 3205-3207
+      if (this.calculatedTimeBase) {
+        const originalTimeBase = frame.timeBase;
+        frame.pts = avRescaleQ(frame.pts, originalTimeBase, this.calculatedTimeBase);
+        frame.duration = avRescaleQ(frame.duration, originalTimeBase, this.calculatedTimeBase);
+        frame.timeBase = new Rational(this.calculatedTimeBase.num, this.calculatedTimeBase.den);
+      }
+
+      // Send frame to filter
+      const addRet = await this.buffersrcCtx.buffersrcAddFrame(frame, AV_BUFFERSRC_FLAG_PUSH);
+      FFmpegError.throwIfError(addRet, 'Failed to add frame to filter');
+
+      // Receive all available frames
+      while (!this.isClosed) {
+        const buffered = await this.receive();
+        if (!buffered) break;
+        yield buffered;
       }
     }
 
@@ -767,23 +1006,45 @@ export class FilterAPI implements Disposable {
    * @see {@link frames} For async version
    */
   *framesSync(frames: Generator<Frame>): Generator<Frame> {
-    for (const frame of frames) {
-      try {
-        // Process input frame
-        const output = this.processSync(frame);
-        if (output) {
-          yield output;
-        }
+    for (using frame of frames) {
+      if (this.isClosed) {
+        break;
+      }
 
-        // Drain any buffered frames
-        while (!this.isClosed) {
-          const buffered = this.receiveSync();
-          if (!buffered) break;
-          yield buffered;
+      // Open filter if not already done
+      if (!this.initialized) {
+        if (!frame) {
+          continue;
         }
-      } finally {
-        // Free the input frame after processing
-        frame.free();
+        this.initializeSync(frame);
+      }
+
+      if (!this.initialized) {
+        continue;
+      }
+
+      if (!this.buffersrcCtx || !this.buffersinkCtx) {
+        throw new Error('Could not initialize filter contexts');
+      }
+
+      // Rescale timestamps to filter's timeBase (FFmpeg's send_frame behavior)
+      // This matches ffmpeg_filter.c lines 3205-3207
+      if (this.calculatedTimeBase) {
+        const originalTimeBase = frame.timeBase;
+        frame.pts = avRescaleQ(frame.pts, originalTimeBase, this.calculatedTimeBase);
+        frame.duration = avRescaleQ(frame.duration, originalTimeBase, this.calculatedTimeBase);
+        frame.timeBase = new Rational(this.calculatedTimeBase.num, this.calculatedTimeBase.den);
+      }
+
+      // Send frame to filter
+      const addRet = this.buffersrcCtx.buffersrcAddFrameSync(frame, AV_BUFFERSRC_FLAG_PUSH);
+      FFmpegError.throwIfError(addRet, 'Failed to add frame to filter');
+
+      // Receive all available frames
+      while (!this.isClosed) {
+        const buffered = this.receiveSync();
+        if (!buffered) break;
+        yield buffered;
       }
     }
 
@@ -827,7 +1088,7 @@ export class FilterAPI implements Disposable {
     }
 
     // Send flush frame (null)
-    const ret = await this.buffersrcCtx.buffersrcAddFrame(null);
+    const ret = await this.buffersrcCtx.buffersrcAddFrame(null, AV_BUFFERSRC_FLAG_PUSH);
     if (ret < 0 && ret !== AVERROR_EOF) {
       FFmpegError.throwIfError(ret, 'Failed to flush filter');
     }
@@ -865,7 +1126,7 @@ export class FilterAPI implements Disposable {
     }
 
     // Send flush frame (null)
-    const ret = this.buffersrcCtx.buffersrcAddFrameSync(null);
+    const ret = this.buffersrcCtx.buffersrcAddFrameSync(null, AV_BUFFERSRC_FLAG_PUSH);
     if (ret < 0 && ret !== AVERROR_EOF) {
       FFmpegError.throwIfError(ret, 'Failed to flush filter');
     }
@@ -971,15 +1232,18 @@ export class FilterAPI implements Disposable {
       return null;
     }
 
-    const frame = new Frame();
-    frame.alloc();
+    // Reuse frame - but alloc() instead of unref() for buffersink
+    // buffersink needs a fresh allocated frame, not an unreferenced one
+    this.frame.alloc();
 
-    const ret = await this.buffersinkCtx.buffersinkGetFrame(frame);
+    const ret = await this.buffersinkCtx.buffersinkGetFrame(this.frame);
 
     if (ret >= 0) {
-      return frame;
+      // Post-process output frame (set timeBase from buffersink, calculate duration)
+      this.postProcessOutputFrame(this.frame);
+      // Clone for user (keeps internal frame for reuse)
+      return this.frame.clone();
     } else {
-      frame.free();
       if (ret === AVERROR_EAGAIN || ret === AVERROR_EOF) {
         return null;
       }
@@ -1020,15 +1284,18 @@ export class FilterAPI implements Disposable {
       return null;
     }
 
-    const frame = new Frame();
-    frame.alloc();
+    // Reuse frame - but alloc() instead of unref() for buffersink
+    // buffersink needs a fresh allocated frame, not an unreferenced one
+    this.frame.alloc();
 
-    const ret = this.buffersinkCtx.buffersinkGetFrameSync(frame);
+    const ret = this.buffersinkCtx.buffersinkGetFrameSync(this.frame);
 
     if (ret >= 0) {
-      return frame;
+      // Post-process output frame (set timeBase from buffersink, calculate duration)
+      this.postProcessOutputFrame(this.frame);
+      // Clone for user (keeps internal frame for reuse)
+      return this.frame.clone();
     } else {
-      frame.free();
       if (ret === AVERROR_EAGAIN || ret === AVERROR_EOF) {
         return null;
       }
@@ -1150,6 +1417,7 @@ export class FilterAPI implements Disposable {
 
     this.isClosed = true;
 
+    this.frame.free();
     this.graph.free();
     this.buffersrcCtx = null;
     this.buffersinkCtx = null;
@@ -1173,6 +1441,27 @@ export class FilterAPI implements Disposable {
    * @internal
    */
   private async initialize(frame: Frame): Promise<void> {
+    // Calculate timeBase from first frame
+    this.calculatedTimeBase = this.calculateTimeBase(frame);
+
+    // Track initial frame properties for change detection
+    this.lastFrameProps = {
+      format: frame.format,
+      width: frame.width,
+      height: frame.height,
+      sampleRate: frame.sampleRate,
+      channels: frame.channelLayout?.nbChannels ?? 0,
+    };
+
+    // Set graph options before parsing
+    if (this.options.scaleSwsOpts) {
+      this.graph.scaleSwsOpts = this.options.scaleSwsOpts;
+    }
+
+    if (this.options.audioResampleOpts) {
+      this.graph.aresampleSwrOpts = this.options.audioResampleOpts;
+    }
+
     // Create buffer source and sink
     this.createBufferSource(frame);
     this.createBufferSink(frame);
@@ -1206,6 +1495,27 @@ export class FilterAPI implements Disposable {
    * @see {@link initialize} For async version
    */
   private initializeSync(frame: Frame): void {
+    // Calculate timeBase from first frame
+    this.calculatedTimeBase = this.calculateTimeBase(frame);
+
+    // Track initial frame properties for change detection
+    this.lastFrameProps = {
+      format: frame.format,
+      width: frame.width,
+      height: frame.height,
+      sampleRate: frame.sampleRate,
+      channels: frame.channelLayout?.nbChannels ?? 0,
+    };
+
+    // Set graph options before parsing
+    if (this.options.scaleSwsOpts) {
+      this.graph.scaleSwsOpts = this.options.scaleSwsOpts;
+    }
+
+    if (this.options.audioResampleOpts) {
+      this.graph.aresampleSwrOpts = this.options.audioResampleOpts;
+    }
+
     // Create buffer source and sink
     this.createBufferSource(frame);
     this.createBufferSink(frame);
@@ -1218,6 +1528,128 @@ export class FilterAPI implements Disposable {
     FFmpegError.throwIfError(ret, 'Failed to configure filter graph');
 
     this.initialized = true;
+  }
+
+  /**
+   * Check if frame properties changed and handle according to dropOnChange/allowReinit options.
+   *
+   * Implements FFmpeg's IFILTER_FLAG_DROPCHANGED and IFILTER_FLAG_REINIT logic
+   *
+   * @param frame - Frame to check
+   *
+   * @returns true if frame should be processed, false if frame should be dropped
+   *
+   * @throws {Error} If format changed and allowReinit is false
+   *
+   * @internal
+   */
+  private checkFramePropertiesChanged(frame: Frame): boolean {
+    if (!this.lastFrameProps) {
+      return true; // No previous frame, allow
+    }
+
+    // Check for property changes
+    const changed =
+      frame.format !== this.lastFrameProps.format ||
+      frame.width !== this.lastFrameProps.width ||
+      frame.height !== this.lastFrameProps.height ||
+      frame.sampleRate !== this.lastFrameProps.sampleRate ||
+      (frame.channelLayout?.nbChannels ?? 0) !== this.lastFrameProps.channels;
+
+    if (!changed) {
+      return true; // No changes, process frame
+    }
+
+    // Properties changed - check dropOnChange flag
+    if (this.options.dropOnChange) {
+      return false; // Drop frame
+    }
+
+    // Check allowReinit flag
+    // Default is true (allow reinit), only block if explicitly set to false
+    const allowReinit = this.options.allowReinit !== false;
+    if (!allowReinit && this.initialized) {
+      throw new Error(
+        'Frame properties changed but allowReinit is false. ' +
+          `Format: ${this.lastFrameProps.format}->${frame.format}, ` +
+          `Size: ${this.lastFrameProps.width}x${this.lastFrameProps.height}->${frame.width}x${frame.height}`,
+      );
+    }
+
+    // Reinit is allowed - reinitialize filtergraph
+
+    // Close current graph and reinitialize
+    this.graph.free();
+    this.graph = new FilterGraph();
+    this.buffersrcCtx = null;
+    this.buffersinkCtx = null;
+    this.initialized = false;
+    this.calculatedTimeBase = null;
+
+    return true; // Will be reinitialized on next process
+  }
+
+  /**
+   * Calculate timeBase from frame based on media type and CFR option.
+   *
+   * Implements FFmpeg's ifilter_parameters_from_frame logic:
+   * - Audio: Always { 1, sample_rate }
+   * - Video CFR: 1/framerate (inverse of framerate)
+   * - Video VFR: Use frame.timeBase
+   *
+   * @param frame - Input frame
+   *
+   * @returns Calculated timeBase
+   *
+   * @internal
+   */
+  private calculateTimeBase(frame: Frame): IRational {
+    if (frame.isAudio()) {
+      // Audio: Always { 1, sample_rate }
+      return { num: 1, den: frame.sampleRate };
+    } else {
+      // Video: Check CFR flag
+      if (this.options.cfr) {
+        // CFR mode: timeBase = 1/framerate = inverse(framerate)
+        // Note: framerate is guaranteed to be set (validated in create())
+        return avInvQ(this.options.framerate!);
+      } else {
+        // VFR mode: Use frame.timeBase
+        return frame.timeBase;
+      }
+    }
+  }
+
+  /**
+   * Post-process output frame from buffersink.
+   *
+   * Applies FFmpeg's fg_output_step() behavior:
+   * 1. Sets frame.timeBase from buffersink (filters can change timeBase, e.g., aresample)
+   * 2. Calculates video frame duration from frame rate if not set
+   *
+   * This must be called AFTER buffersinkGetFrame() for every output frame.
+   *
+   * @param frame - Output frame from buffersink
+   *
+   * @throws {Error} If buffersink context not available
+   *
+   * @internal
+   */
+  private postProcessOutputFrame(frame: Frame): void {
+    if (!this.buffersinkCtx) {
+      throw new Error('Buffersink context not available');
+    }
+
+    // Filters can change timeBase (e.g., aresample sets output to {1, out_sample_rate})
+    // Without this, frame has INPUT timeBase instead of filter's OUTPUT timeBase
+    frame.timeBase = this.buffersinkCtx.buffersinkGetTimeBase();
+
+    if (frame.isVideo() && !frame.duration) {
+      const frameRate = this.buffersinkCtx.buffersinkGetFrameRate();
+      if (frameRate.num > 0 && frameRate.den > 0) {
+        frame.duration = avRescaleQ(1, avInvQ(frameRate), frame.timeBase);
+      }
+    }
   }
 
   /**
@@ -1241,6 +1673,11 @@ export class FilterAPI implements Disposable {
       throw new Error(`${filterName} filter not found`);
     }
 
+    // Ensure timeBase was calculated
+    if (!this.calculatedTimeBase) {
+      throw new Error('TimeBase not calculated - this should not happen');
+    }
+
     // For audio, create with args. For video, use allocFilter + buffersrcParametersSet
     if (frame.isVideo()) {
       // Allocate filter without args
@@ -1253,8 +1690,8 @@ export class FilterAPI implements Disposable {
         width: frame.width,
         height: frame.height,
         format: frame.format,
-        timeBase: this.options.timeBase,
-        frameRate: this.options.frameRate ?? frame.timeBase,
+        timeBase: this.calculatedTimeBase,
+        frameRate: this.options.framerate,
         sampleAspectRatio: frame.sampleAspectRatio,
         colorRange: frame.colorRange,
         colorSpace: frame.colorSpace,
@@ -1270,7 +1707,7 @@ export class FilterAPI implements Disposable {
       const formatName = avGetSampleFmtName(frame.format as AVSampleFormat);
       const channelLayout = frame.channelLayout.mask === 0n ? 'stereo' : frame.channelLayout.mask.toString();
       // eslint-disable-next-line @stylistic/max-len
-      const args = `time_base=${this.options.timeBase.num}/${this.options.timeBase.den}:sample_rate=${frame.sampleRate}:sample_fmt=${formatName}:channel_layout=${channelLayout}`;
+      const args = `time_base=${this.calculatedTimeBase.num}/${this.calculatedTimeBase.den}:sample_rate=${frame.sampleRate}:sample_fmt=${formatName}:channel_layout=${channelLayout}`;
       this.buffersrcCtx = this.graph.createFilter(bufferFilter, 'in', args);
       if (!this.buffersrcCtx) {
         throw new Error('Failed to create audio buffer source');
@@ -1343,8 +1780,8 @@ export class FilterAPI implements Disposable {
       if (filters) {
         for (const filterCtx of filters) {
           const filter = filterCtx.filter;
-          if (filter && (filter.flags & AVFILTER_FLAG_HWDEVICE) !== 0) {
-            filterCtx.hwDeviceCtx = frame.hwFramesCtx?.deviceRef ?? this.options.hardware?.deviceContext ?? null;
+          if (filter?.hasFlags(AVFILTER_FLAG_HWDEVICE)) {
+            filterCtx.hwDeviceCtx = this.options.hardware?.deviceContext ?? frame.hwFramesCtx?.deviceRef ?? null;
 
             // Set extra_hw_frames if specified
             if (this.options.extraHWFrames !== undefined && this.options.extraHWFrames > 0) {
