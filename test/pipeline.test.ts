@@ -18,6 +18,7 @@ import {
   MediaOutput,
   Packet,
   pipeline,
+  Rational,
 } from '../src/index.js';
 import { getInputFile, getOutputFile, getTmpDir, prepareTestEnvironment, skipInCI } from './index.js';
 
@@ -127,8 +128,7 @@ describe('Pipeline - Comprehensive Tests', () => {
         using decoder = await Decoder.create(videoStream);
 
         using encoder = await Encoder.create(FF_ENCODER_LIBX264, {
-          timeBase: videoStream.timeBase,
-          frameRate: videoStream.avgFrameRate,
+          decoder,
           bitrate: '1M',
           gopSize: 30,
         });
@@ -165,13 +165,12 @@ describe('Pipeline - Comprehensive Tests', () => {
 
         // Create a simple scale filter
         using filter = FilterAPI.create('scale=320:240', {
-          frameRate: videoStream.avgFrameRate,
-          timeBase: videoStream.timeBase,
+          framerate: videoStream.avgFrameRate,
         });
 
         using encoder = await Encoder.create(FF_ENCODER_LIBX264, {
-          frameRate: videoStream.avgFrameRate,
-          timeBase: videoStream.timeBase,
+          decoder,
+          filter,
           bitrate: '500k',
         });
 
@@ -235,8 +234,7 @@ describe('Pipeline - Comprehensive Tests', () => {
 
         using decoder = await Decoder.create(videoStream);
         using encoder = await Encoder.create(FF_ENCODER_LIBX264, {
-          timeBase: { num: 1, den: 30 },
-          frameRate: { num: 30, den: 1 },
+          decoder,
           bitrate: '1M',
         });
 
@@ -273,14 +271,12 @@ describe('Pipeline - Comprehensive Tests', () => {
         // Create processing stages
         using videoDecoder = await Decoder.create(videoStream);
         using videoEncoder = await Encoder.create(FF_ENCODER_LIBX264, {
-          timeBase: { num: 1, den: 30 },
-          frameRate: { num: 30, den: 1 },
+          decoder: videoDecoder,
           bitrate: '1M',
         });
 
         using audioDecoder = await Decoder.create(audioStream);
         using audioEncoder = await Encoder.create(FF_ENCODER_AAC, {
-          timeBase: { num: 1, den: 44100 },
           bitrate: '128k',
         });
 
@@ -326,8 +322,7 @@ describe('Pipeline - Comprehensive Tests', () => {
         // Process video, passthrough audio
         using videoDecoder = await Decoder.create(videoStream);
         using videoEncoder = await Encoder.create(FF_ENCODER_LIBX264, {
-          timeBase: { num: 1, den: 30 },
-          frameRate: { num: 30, den: 1 },
+          decoder: videoDecoder,
           bitrate: '500k',
         });
 
@@ -376,13 +371,14 @@ describe('Pipeline - Comprehensive Tests', () => {
         }
 
         using decoder = await Decoder.create(videoStream);
+
         using filter = FilterAPI.create('scale=320:240', {
-          timeBase: { num: 1, den: 30 },
-          frameRate: { num: 30, den: 1 },
+          framerate: videoStream.avgFrameRate,
         });
+
         using encoder = await Encoder.create(FF_ENCODER_LIBX264, {
-          timeBase: { num: 1, den: 30 },
-          frameRate: { num: 30, den: 1 },
+          decoder,
+          filter,
           bitrate: '500k',
         });
 
@@ -435,8 +431,7 @@ describe('Pipeline - Comprehensive Tests', () => {
 
       using decoder = await Decoder.create(videoStream);
       using filter = FilterAPI.create('scale=160:120', {
-        timeBase: videoStream.timeBase,
-        frameRate: videoStream.avgFrameRate,
+        framerate: videoStream.avgFrameRate,
       });
 
       // Partial pipeline with filter
@@ -464,13 +459,14 @@ describe('Pipeline - Comprehensive Tests', () => {
       }
 
       using decoder = await Decoder.create(videoStream);
+
       using filter = FilterAPI.create('scale=320:240', {
-        timeBase: videoStream.timeBase,
-        frameRate: videoStream.avgFrameRate,
+        framerate: videoStream.avgFrameRate,
       });
+
       using encoder = await Encoder.create(FF_ENCODER_LIBX264, {
-        timeBase: videoStream.timeBase,
-        frameRate: videoStream.avgFrameRate,
+        decoder,
+        filter,
         bitrate: '500k',
       });
 
@@ -498,8 +494,7 @@ describe('Pipeline - Comprehensive Tests', () => {
 
       using decoder = await Decoder.create(videoStream);
       using encoder = await Encoder.create(FF_ENCODER_LIBX264, {
-        timeBase: { num: 1, den: 30 },
-        frameRate: { num: 30, den: 1 },
+        decoder,
         bitrate: '1M',
       });
 
@@ -539,17 +534,15 @@ describe('Pipeline - Comprehensive Tests', () => {
 
         // Chain multiple filters
         using scaleFilter = FilterAPI.create('scale=320:240', {
-          timeBase: videoStream.timeBase,
-          frameRate: videoStream.avgFrameRate,
+          framerate: videoStream.avgFrameRate,
         });
+
         using rotateFilter = FilterAPI.create('transpose=1', {
-          timeBase: videoStream.timeBase,
-          frameRate: videoStream.avgFrameRate,
+          framerate: videoStream.avgFrameRate,
         });
 
         using encoder = await Encoder.create(FF_ENCODER_LIBX264, {
-          timeBase: { num: 1, den: 30 },
-          frameRate: { num: 30, den: 1 },
+          decoder,
           bitrate: '500k',
         });
 
@@ -578,18 +571,18 @@ describe('Pipeline - Comprehensive Tests', () => {
 
         // Array of filters
         const filter1 = FilterAPI.create('scale=320:240', {
-          timeBase: videoStream.timeBase,
-          frameRate: videoStream.avgFrameRate,
+          framerate: videoStream.avgFrameRate,
         });
+
         const filter2 = FilterAPI.create('format=yuv420p', {
-          timeBase: videoStream.timeBase,
-          frameRate: videoStream.avgFrameRate,
+          framerate: videoStream.avgFrameRate,
         });
+
         const filters = [filter1, filter2];
 
         using encoder = await Encoder.create(FF_ENCODER_LIBX264, {
-          timeBase: { num: 1, den: 30 },
-          frameRate: { num: 30, den: 1 },
+          decoder,
+          filter: filter2,
           bitrate: '500k',
         });
 
@@ -622,6 +615,7 @@ describe('Pipeline - Comprehensive Tests', () => {
             frame.height = 240;
             frame.format = AV_PIX_FMT_YUV420P;
             frame.pts = BigInt(i);
+            frame.timeBase = new Rational(1, 30);
 
             // Allocate buffer for the frame
             const ret = frame.getBuffer(0);
@@ -635,8 +629,6 @@ describe('Pipeline - Comprehensive Tests', () => {
         }
 
         using encoder = await Encoder.create(FF_ENCODER_LIBX264, {
-          timeBase: { num: 1, den: 30 },
-          frameRate: { num: 30, den: 1 },
           bitrate: '500k',
           gopSize: 10,
           maxBFrames: 0,
@@ -702,13 +694,12 @@ describe('Pipeline - Comprehensive Tests', () => {
         using decoder = await Decoder.create(videoStream, { hardware: hw });
 
         using filter = FilterAPI.create('hwdownload,format=nv12', {
-          timeBase: { num: 1, den: 30 },
-          frameRate: { num: 30, den: 1 },
+          framerate: videoStream.avgFrameRate,
         });
 
         using encoder = await Encoder.create(FF_ENCODER_LIBX264, {
-          timeBase: { num: 1, den: 30 },
-          frameRate: { num: 30, den: 1 },
+          decoder,
+          filter,
           bitrate: '1M',
         });
 
@@ -765,6 +756,7 @@ describe('Pipeline - Comprehensive Tests', () => {
               frame.height = 240;
               frame.format = AV_PIX_FMT_YUV420P;
               frame.pts = BigInt(i);
+              frame.timeBase = new Rational(1, 30);
 
               const ret = frame.getBuffer(0);
               if (ret < 0) {
@@ -776,13 +768,10 @@ describe('Pipeline - Comprehensive Tests', () => {
           }
 
           // Create filter and encoder
-          using filter = FilterAPI.create('scale=160:120', {
-            timeBase: { num: 1, den: 30 },
-          });
+          using filter = FilterAPI.create('scale=160:120');
 
           using encoder = await Encoder.create(FF_ENCODER_LIBX264, {
-            timeBase: { num: 1, den: 30 },
-            frameRate: { num: 30, den: 1 },
+            filter,
             bitrate: '500k',
             gopSize: 10,
             maxBFrames: 0,
@@ -808,6 +797,7 @@ describe('Pipeline - Comprehensive Tests', () => {
             frame.height = 240;
             frame.format = AV_PIX_FMT_YUV420P;
             frame.pts = BigInt(i);
+            frame.timeBase = new Rational(1, 30);
 
             const ret = frame.getBuffer(0);
             if (ret < 0) {
@@ -818,9 +808,7 @@ describe('Pipeline - Comprehensive Tests', () => {
           }
         }
 
-        using filter = FilterAPI.create('scale=160:120', {
-          timeBase: { num: 1, den: 30 },
-        });
+        using filter = FilterAPI.create('scale=160:120');
 
         // Partial pipeline: frames → filter (returns frames)
         const filteredFrames = pipeline(generateFrames(), filter);
@@ -847,6 +835,7 @@ describe('Pipeline - Comprehensive Tests', () => {
             frame.height = 240;
             frame.format = AV_PIX_FMT_YUV420P;
             frame.pts = BigInt(i);
+            frame.timeBase = new Rational(1, 30);
 
             const ret = frame.getBuffer(0);
             if (ret < 0) {
@@ -858,8 +847,6 @@ describe('Pipeline - Comprehensive Tests', () => {
         }
 
         using encoder = await Encoder.create(FF_ENCODER_LIBX264, {
-          timeBase: { num: 1, den: 30 },
-          frameRate: { num: 30, den: 1 },
           bitrate: '500k',
           gopSize: 10,
           maxBFrames: 0,
@@ -889,6 +876,7 @@ describe('Pipeline - Comprehensive Tests', () => {
             frame.height = 240;
             frame.format = AV_PIX_FMT_YUV420P;
             frame.pts = BigInt(i);
+            frame.timeBase = new Rational(1, 30);
 
             const ret = frame.getBuffer(0);
             if (ret < 0) {
@@ -899,13 +887,10 @@ describe('Pipeline - Comprehensive Tests', () => {
           }
         }
 
-        using filter = FilterAPI.create('scale=160:120', {
-          timeBase: { num: 1, den: 30 },
-        });
+        using filter = FilterAPI.create('scale=160:120');
 
         using encoder = await Encoder.create(FF_ENCODER_LIBX264, {
-          timeBase: { num: 1, den: 30 },
-          frameRate: { num: 30, den: 1 },
+          filter: filter,
           bitrate: '500k',
           gopSize: 10,
           maxBFrames: 0,
@@ -953,13 +938,12 @@ describe('Pipeline - Comprehensive Tests', () => {
           const audioDecoder = await Decoder.create(audioStream);
 
           const videoEncoder = await Encoder.create(FF_ENCODER_LIBX264, {
-            timeBase: { num: 1, den: 30 },
-            frameRate: { num: 30, den: 1 },
+            decoder: videoDecoder,
             bitrate: '500k',
           });
 
           const audioEncoder = await Encoder.create(FF_ENCODER_AAC, {
-            timeBase: { num: 1, den: 44100 },
+            decoder: audioDecoder,
             bitrate: '128k',
           });
 
@@ -1005,8 +989,7 @@ describe('Pipeline - Comprehensive Tests', () => {
 
           using decoder = await Decoder.create(videoStream);
           using encoder = await Encoder.create(FF_ENCODER_LIBX264, {
-            timeBase: { num: 1, den: 30 },
-            frameRate: { num: 30, den: 1 },
+            decoder,
             bitrate: '1M',
           });
 
@@ -1036,8 +1019,6 @@ describe('Pipeline - Comprehensive Tests', () => {
         }
 
         using encoder = await Encoder.create(FF_ENCODER_LIBX264, {
-          timeBase: { num: 1, den: 30 },
-          frameRate: { num: 30, den: 1 },
           bitrate: '500k',
         });
 
@@ -1070,6 +1051,7 @@ describe('Pipeline - Comprehensive Tests', () => {
               frame.height = 240;
               frame.format = AV_PIX_FMT_YUV420P;
               frame.pts = BigInt(i);
+              frame.timeBase = new Rational(1, 30);
 
               const ret = frame.getBuffer(0);
               if (ret < 0) {
@@ -1081,8 +1063,6 @@ describe('Pipeline - Comprehensive Tests', () => {
           }
 
           using encoder = await Encoder.create(FF_ENCODER_LIBX264, {
-            timeBase: { num: 1, den: 30 },
-            frameRate: { num: 30, den: 1 },
             bitrate: '500k',
             gopSize: 30,
             maxBFrames: 0,

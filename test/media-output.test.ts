@@ -123,6 +123,116 @@ describe('MediaOutput', () => {
     });
   });
 
+  describe('options', () => {
+    it('should open with maxMuxingQueueSize option', async () => {
+      const outputFile = getTempFile('mp4');
+      const output = await MediaOutput.open(outputFile, {
+        maxMuxingQueueSize: 2048,
+      });
+
+      assert(output instanceof MediaOutput);
+      assert.equal(output.isOutputOpen, true);
+
+      await output.close();
+      await cleanup();
+    });
+
+    it('should open with muxingQueueDataThreshold option', async () => {
+      const outputFile = getTempFile('mp4');
+      const output = await MediaOutput.open(outputFile, {
+        muxingQueueDataThreshold: 100 * 1024 * 1024, // 100MB
+      });
+
+      assert(output instanceof MediaOutput);
+      assert.equal(output.isOutputOpen, true);
+
+      await output.close();
+      await cleanup();
+    });
+
+    it('should open with syncQueueBufferDuration option', async () => {
+      const outputFile = getTempFile('mp4');
+      const output = await MediaOutput.open(outputFile, {
+        syncQueueBufferDuration: 2.0, // 2 seconds
+      });
+
+      assert(output instanceof MediaOutput);
+      assert.equal(output.isOutputOpen, true);
+
+      await output.close();
+      await cleanup();
+    });
+
+    it('should open with startTime option', async () => {
+      const outputFile = getTempFile('mp4');
+      const output = await MediaOutput.open(outputFile, {
+        startTime: 10.0, // Start at 10 seconds
+      });
+
+      assert(output instanceof MediaOutput);
+      assert.equal(output.isOutputOpen, true);
+
+      await output.close();
+      await cleanup();
+    });
+
+    it('should open with copyInitialNonkeyframes option', async () => {
+      const outputFile = getTempFile('mp4');
+      const output = await MediaOutput.open(outputFile, {
+        copyInitialNonkeyframes: true,
+      });
+
+      assert(output instanceof MediaOutput);
+      assert.equal(output.isOutputOpen, true);
+
+      await output.close();
+      await cleanup();
+    });
+
+    it('should open with copyPriorStart option', async () => {
+      const outputFile = getTempFile('mp4');
+      const output = await MediaOutput.open(outputFile, {
+        copyPriorStart: 1, // 1 = copy frames before start time
+      });
+
+      assert(output instanceof MediaOutput);
+      assert.equal(output.isOutputOpen, true);
+
+      await output.close();
+      await cleanup();
+    });
+
+    it('should open with all sync queue options combined', async () => {
+      const outputFile = getTempFile('mp4');
+      const output = await MediaOutput.open(outputFile, {
+        maxMuxingQueueSize: 2048,
+        muxingQueueDataThreshold: 100 * 1024 * 1024,
+        syncQueueBufferDuration: 2.0,
+        startTime: 5.0,
+        copyInitialNonkeyframes: true,
+        copyPriorStart: 1,
+      });
+
+      assert(output instanceof MediaOutput);
+      assert.equal(output.isOutputOpen, true);
+
+      await output.close();
+      await cleanup();
+    });
+
+    it('should open with options (sync)', () => {
+      const outputFile = getTempFile('mp4');
+      const output = MediaOutput.openSync(outputFile, {
+        maxMuxingQueueSize: 1024,
+        syncQueueBufferDuration: 1.5,
+      });
+
+      assert(output instanceof MediaOutput);
+
+      output.closeSync();
+    });
+  });
+
   describe('properties', () => {
     it('should get format name and long name (async)', async () => {
       const outputFile = getTempFile('mp4');
@@ -162,6 +272,7 @@ describe('MediaOutput', () => {
     });
 
     it('should get streams (async)', async () => {
+      const input = await MediaInput.open(inputFile);
       const outputFile = getTempFile('mp4');
       const output = await MediaOutput.open(outputFile);
 
@@ -170,12 +281,11 @@ describe('MediaOutput', () => {
       assert.equal(output.streams.length, 0, 'Should have no streams initially');
 
       // Add a stream
-      const encoder = await Encoder.create(FF_ENCODER_LIBX264, {
-        frameRate: { num: 25, den: 1 },
-        timeBase: { num: 1, den: 25 },
-      });
+      const videoStream = input.video();
+      assert(videoStream);
+      const encoder = await Encoder.create(FF_ENCODER_LIBX264);
 
-      output.addStream(encoder);
+      output.addStream(videoStream, { encoder });
 
       // Now should have one stream
       assert.equal(output.streams.length, 1, 'Should have one stream after adding');
@@ -183,6 +293,7 @@ describe('MediaOutput', () => {
 
       encoder.close();
       await output.close();
+      await input.close();
       await cleanup();
     });
 
@@ -199,11 +310,10 @@ describe('MediaOutput', () => {
 
       const decoder = await Decoder.create(videoStream);
       const encoder = await Encoder.create(FF_ENCODER_LIBX264, {
-        frameRate: { num: 25, den: 1 },
-        timeBase: { num: 1, den: 25 },
+        decoder,
       });
 
-      const streamIdx = output.addStream(encoder);
+      const streamIdx = output.addStream(videoStream, { encoder });
 
       // Still not initialized until first packet
       assert.equal(output.isOutputInitialized, false, 'Should not be initialized before first packet');
@@ -248,13 +358,11 @@ describe('MediaOutput', () => {
   });
 
   describe('addStream', () => {
-    it('should add stream from encoder (async)', async () => {
+    it('should add stream from encoder only (async)', async () => {
       const outputFile = getTempFile('mp4');
       const output = await MediaOutput.open(outputFile);
 
       const encoder = await Encoder.create(FF_ENCODER_LIBX264, {
-        frameRate: { num: 25, den: 1 },
-        timeBase: { num: 1, den: 25 },
         bitrate: '1M',
       });
 
@@ -267,13 +375,11 @@ describe('MediaOutput', () => {
       await cleanup();
     });
 
-    it('should add stream from encoder (sync)', () => {
+    it('should add stream from encoder only (sync)', () => {
       const outputFile = getTempFile('mp4');
       const output = MediaOutput.openSync(outputFile);
 
       const encoder = Encoder.createSync(FF_ENCODER_LIBX264, {
-        frameRate: { num: 25, den: 1 },
-        timeBase: { num: 1, den: 25 },
         bitrate: '1M',
       });
 
@@ -283,6 +389,88 @@ describe('MediaOutput', () => {
 
       encoder.close();
       output.closeSync();
+    });
+
+    it('should add stream from encoder with input stream for metadata (async)', async () => {
+      const input = await MediaInput.open(inputFile);
+      const outputFile = getTempFile('mp4');
+      const output = await MediaOutput.open(outputFile);
+
+      const videoStream = input.video();
+      assert(videoStream);
+      const encoder = await Encoder.create(FF_ENCODER_LIBX264, {
+        bitrate: '1M',
+      });
+
+      const streamIndex = output.addStream(encoder, { inputStream: videoStream });
+      assert.equal(typeof streamIndex, 'number');
+      assert.equal(streamIndex, 0);
+
+      encoder.close();
+      await output.close();
+      await input.close();
+      await cleanup();
+    });
+
+    it('should add stream from encoder with input stream for metadata (sync)', () => {
+      const input = MediaInput.openSync(inputFile);
+      const outputFile = getTempFile('mp4');
+      const output = MediaOutput.openSync(outputFile);
+
+      const videoStream = input.video();
+      assert(videoStream);
+      const encoder = Encoder.createSync(FF_ENCODER_LIBX264, {
+        bitrate: '1M',
+      });
+
+      const streamIndex = output.addStream(encoder, { inputStream: videoStream });
+      assert.equal(typeof streamIndex, 'number');
+      assert.equal(streamIndex, 0);
+
+      encoder.close();
+      output.closeSync();
+      input.closeSync();
+    });
+
+    it('should add stream with transcoding (async)', async () => {
+      const input = await MediaInput.open(inputFile);
+      const outputFile = getTempFile('mp4');
+      const output = await MediaOutput.open(outputFile);
+
+      const videoStream = input.video();
+      assert(videoStream);
+      const encoder = await Encoder.create(FF_ENCODER_LIBX264, {
+        bitrate: '1M',
+      });
+
+      const streamIndex = output.addStream(videoStream, { encoder });
+      assert.equal(typeof streamIndex, 'number');
+      assert.equal(streamIndex, 0);
+
+      encoder.close();
+      await output.close();
+      await input.close();
+      await cleanup();
+    });
+
+    it('should add stream with transcoding (sync)', () => {
+      const input = MediaInput.openSync(inputFile);
+      const outputFile = getTempFile('mp4');
+      const output = MediaOutput.openSync(outputFile);
+
+      const videoStream = input.video();
+      assert(videoStream);
+      const encoder = Encoder.createSync(FF_ENCODER_LIBX264, {
+        bitrate: '1M',
+      });
+
+      const streamIndex = output.addStream(videoStream, { encoder });
+      assert.equal(typeof streamIndex, 'number');
+      assert.equal(streamIndex, 0);
+
+      encoder.close();
+      output.closeSync();
+      input.closeSync();
     });
 
     it('should add stream for copy from input stream (async)', async () => {
@@ -317,47 +505,59 @@ describe('MediaOutput', () => {
     });
 
     it('should support custom timebase override (async)', async () => {
+      const input = await MediaInput.open(inputFile);
       const outputFile = getTempFile('mp4');
       const output = await MediaOutput.open(outputFile);
 
-      const encoder = await Encoder.create(FF_ENCODER_LIBX264, {
-        frameRate: { num: 25, den: 1 },
-        timeBase: { num: 1, den: 25 },
+      const videoStream = input.video();
+      assert(videoStream);
+      const encoder = await Encoder.create(FF_ENCODER_LIBX264);
+
+      output.addStream(videoStream, {
+        encoder,
+        timeBase: { num: 1, den: 90000 },
       });
 
       encoder.close();
       await output.close();
+      await input.close();
       await cleanup();
     });
 
     it('should support custom timebase override (sync)', () => {
+      const input = MediaInput.openSync(inputFile);
       const outputFile = getTempFile('mp4');
       const output = MediaOutput.openSync(outputFile);
 
-      const encoder = Encoder.createSync(FF_ENCODER_LIBX264, {
-        frameRate: { num: 25, den: 1 },
-        timeBase: { num: 1, den: 25 },
+      const videoStream = input.video();
+      assert(videoStream);
+      const encoder = Encoder.createSync(FF_ENCODER_LIBX264);
+
+      output.addStream(videoStream, {
+        encoder,
+        timeBase: { num: 1, den: 90000 },
       });
 
       encoder.close();
       output.closeSync();
+      input.closeSync();
     });
 
     it('should add multiple streams (async)', async () => {
+      const input = await MediaInput.open(inputFile);
       const outputFile = getTempFile('mp4');
       const output = await MediaOutput.open(outputFile);
 
-      const videoEncoder = await Encoder.create(FF_ENCODER_LIBX264, {
-        frameRate: { num: 25, den: 1 },
-        timeBase: { num: 1, den: 25 },
-      });
+      const videoStream = input.video();
+      const audioStream = input.audio();
+      assert(videoStream);
+      assert(audioStream);
 
-      const audioEncoder = await Encoder.create(FF_ENCODER_AAC, {
-        timeBase: { num: 1, den: 48000 },
-      });
+      const videoEncoder = await Encoder.create(FF_ENCODER_LIBX264);
+      const audioEncoder = await Encoder.create(FF_ENCODER_AAC);
 
-      const videoIdx = output.addStream(videoEncoder);
-      const audioIdx = output.addStream(audioEncoder);
+      const videoIdx = output.addStream(videoStream, { encoder: videoEncoder });
+      const audioIdx = output.addStream(audioStream, { encoder: audioEncoder });
 
       assert.equal(videoIdx, 0);
       assert.equal(audioIdx, 1);
@@ -365,24 +565,25 @@ describe('MediaOutput', () => {
       videoEncoder.close();
       audioEncoder.close();
       await output.close();
+      await input.close();
       await cleanup();
     });
 
     it('should add multiple streams (sync)', () => {
+      const input = MediaInput.openSync(inputFile);
       const outputFile = getTempFile('mp4');
       const output = MediaOutput.openSync(outputFile);
 
-      const videoEncoder = Encoder.createSync(FF_ENCODER_LIBX264, {
-        frameRate: { num: 25, den: 1 },
-        timeBase: { num: 1, den: 25 },
-      });
+      const videoStream = input.video();
+      const audioStream = input.audio();
+      assert(videoStream);
+      assert(audioStream);
 
-      const audioEncoder = Encoder.createSync(FF_ENCODER_AAC, {
-        timeBase: { num: 1, den: 48000 },
-      });
+      const videoEncoder = Encoder.createSync(FF_ENCODER_LIBX264);
+      const audioEncoder = Encoder.createSync(FF_ENCODER_AAC);
 
-      const videoIdx = output.addStream(videoEncoder);
-      const audioIdx = output.addStream(audioEncoder);
+      const videoIdx = output.addStream(videoStream, { encoder: videoEncoder });
+      const audioIdx = output.addStream(audioStream, { encoder: audioEncoder });
 
       assert.equal(videoIdx, 0);
       assert.equal(audioIdx, 1);
@@ -390,6 +591,7 @@ describe('MediaOutput', () => {
       videoEncoder.close();
       audioEncoder.close();
       output.closeSync();
+      input.closeSync();
     });
 
     it('should throw when adding stream after header (async)', async () => {
@@ -402,35 +604,40 @@ describe('MediaOutput', () => {
 
       const decoder = await Decoder.create(videoStream);
       const encoder = await Encoder.create(FF_ENCODER_LIBX264, {
-        frameRate: { num: 25, den: 1 },
-        timeBase: { num: 1, den: 25 },
+        decoder,
       });
 
-      const streamIdx = output.addStream(encoder);
+      const streamIdx = output.addStream(videoStream, { encoder });
+      let headerWritten = false;
 
       // Get first packet and decode/encode to initialize encoder and write header
-      for await (const packet of input.packets()) {
-        if (packet.streamIndex === 0) {
-          const frame = await decoder.decode(packet);
-          if (frame) {
-            const encoded = await encoder.encode(frame);
-            if (encoded) {
-              await output.writePacket(encoded, streamIdx); // This triggers header write
-              encoded.free();
-              break; // Just process one packet
-            }
-            frame.free();
+      for await (using packet of input.packets(videoStream.index)) {
+        using frame = await decoder.decode(packet);
+        if (frame) {
+          using encoded = await encoder.encode(frame);
+          if (encoded) {
+            await output.writePacket(encoded, streamIdx); // This triggers header write
+            encoded.free();
+            headerWritten = true;
+            break; // Just process one packet
           }
-          packet.free();
+        }
+      }
+
+      if (!headerWritten) {
+        for await (const encoded of encoder.flushPackets()) {
+          await output.writePacket(encoded, streamIdx);
+          encoded.free();
+          break;
         }
       }
 
       // Now try to add another stream - should fail
-      const encoder2 = await Encoder.create(FF_ENCODER_AAC, {
-        timeBase: { num: 1, den: 48000 },
-      });
+      const audioStream = input.audio();
+      assert(audioStream);
+      const encoder2 = await Encoder.create(FF_ENCODER_AAC);
 
-      assert.throws(() => output.addStream(encoder2), /Cannot add streams after packets have been written/);
+      assert.throws(() => output.addStream(audioStream, { encoder: encoder2 }), /Cannot add streams after packets have been written/);
 
       encoder2.close();
       encoder.close();
@@ -441,48 +648,50 @@ describe('MediaOutput', () => {
     });
 
     it('should throw when output is closed (async)', async () => {
+      const input = await MediaInput.open(inputFile);
       const outputFile = getTempFile('mp4');
       const output = await MediaOutput.open(outputFile);
       await output.close();
 
-      const encoder = await Encoder.create(FF_ENCODER_LIBX264, {
-        frameRate: { num: 25, den: 1 },
-        timeBase: { num: 1, den: 25 },
-      });
+      const videoStream = input.video();
+      assert(videoStream);
+      const encoder = await Encoder.create(FF_ENCODER_LIBX264);
 
-      await assert.rejects(async () => output.addStream(encoder), /MediaOutput is closed/);
+      assert.throws(() => output.addStream(videoStream, { encoder }), /MediaOutput is closed/);
 
       encoder.close();
+      await input.close();
       await cleanup();
     });
 
     it('should throw when output is closed (sync)', () => {
+      const input = MediaInput.openSync(inputFile);
       const outputFile = getTempFile('mp4');
       const output = MediaOutput.openSync(outputFile);
       output.closeSync();
 
-      const encoder = Encoder.createSync(FF_ENCODER_LIBX264, {
-        frameRate: { num: 25, den: 1 },
-        timeBase: { num: 1, den: 25 },
-      });
+      const videoStream = input.video();
+      assert(videoStream);
+      const encoder = Encoder.createSync(FF_ENCODER_LIBX264);
 
-      assert.throws(() => output.addStream(encoder), /MediaOutput is closed/);
+      assert.throws(() => output.addStream(videoStream, { encoder }), /MediaOutput is closed/);
 
       encoder.close();
+      input.closeSync();
     });
   });
 
   describe('automatic header/trailer', () => {
     it('should write header automatically on first packet and trailer on close (async)', async () => {
+      const input = await MediaInput.open(inputFile);
       const outputFile = getTempFile('mp4');
       const output = await MediaOutput.open(outputFile);
 
-      const encoder = await Encoder.create(FF_ENCODER_LIBX264, {
-        frameRate: { num: 25, den: 1 },
-        timeBase: { num: 1, den: 25 },
-      });
+      const videoStream = input.video();
+      assert(videoStream);
+      const encoder = await Encoder.create(FF_ENCODER_LIBX264);
 
-      const streamIdx = output.addStream(encoder);
+      const streamIdx = output.addStream(videoStream, { encoder });
 
       // For a real test, we'd need to encode actual frames
       // Since this is testing automatic behavior, we'll just verify the stream was added
@@ -490,6 +699,7 @@ describe('MediaOutput', () => {
 
       encoder.close();
       await output.close();
+      await input.close();
 
       // Verify file was created
       const stats = await stat(outputFile);
@@ -510,11 +720,10 @@ describe('MediaOutput', () => {
 
       const decoder = await Decoder.create(videoStream);
       const encoder = await Encoder.create(FF_ENCODER_LIBX264, {
-        frameRate: { num: 25, den: 1 },
-        timeBase: { num: 1, den: 25 },
+        decoder,
       });
 
-      const streamIdx = output.addStream(encoder);
+      const streamIdx = output.addStream(videoStream, { encoder });
 
       // Process just one frame to test header/trailer writing
       let processed = false;
@@ -534,6 +743,14 @@ describe('MediaOutput', () => {
         }
         packet.free();
         if (processed) break;
+      }
+
+      if (!processed) {
+        for await (const encoded of encoder.flushPackets()) {
+          await output.writePacket(encoded, streamIdx);
+          encoded.free();
+          break;
+        }
       }
 
       // Trailer written automatically on close
@@ -562,12 +779,10 @@ describe('MediaOutput', () => {
 
       const decoder = await Decoder.create(videoStream);
       const encoder = await Encoder.create(FF_ENCODER_LIBX264, {
-        frameRate: { num: 25, den: 1 },
-        timeBase: { num: 1, den: 25 },
         gopSize: 12,
       });
 
-      const streamIdx = output.addStream(encoder);
+      const streamIdx = output.addStream(videoStream, { encoder });
 
       // Process a few packets
       let packetCount = 0;
@@ -609,12 +824,10 @@ describe('MediaOutput', () => {
 
       const decoder = Decoder.createSync(videoStream);
       const encoder = Encoder.createSync(FF_ENCODER_LIBX264, {
-        frameRate: { num: 25, den: 1 },
-        timeBase: { num: 1, den: 25 },
         gopSize: 12,
       });
 
-      const streamIdx = output.addStream(encoder);
+      const streamIdx = output.addStream(videoStream, { encoder });
 
       // Process a few packets
       let packetCount = 0;
@@ -642,13 +855,14 @@ describe('MediaOutput', () => {
     });
 
     it('should throw for invalid stream index (async)', async () => {
+      const input = await MediaInput.open(inputFile);
       const outputFile = getTempFile('mp4');
       const output = await MediaOutput.open(outputFile);
 
-      const encoder = await Encoder.create(FF_ENCODER_LIBX264, {
-        frameRate: { num: 25, den: 1 },
-        timeBase: { num: 1, den: 25 },
-      });
+      const videoStream = input.video();
+      assert(videoStream);
+      const encoder = await Encoder.create(FF_ENCODER_LIBX264);
+      output.addStream(videoStream, { encoder });
 
       const packet = new Packet();
       packet.alloc();
@@ -658,17 +872,19 @@ describe('MediaOutput', () => {
       packet.free();
       encoder.close();
       await output.close();
+      await input.close();
       await cleanup();
     });
 
     it('should throw for invalid stream index (sync)', () => {
+      const input = MediaInput.openSync(inputFile);
       const outputFile = getTempFile('mp4');
       const output = MediaOutput.openSync(outputFile);
 
-      const encoder = Encoder.createSync(FF_ENCODER_LIBX264, {
-        frameRate: { num: 25, den: 1 },
-        timeBase: { num: 1, den: 25 },
-      });
+      const videoStream = input.video();
+      assert(videoStream);
+      const encoder = Encoder.createSync(FF_ENCODER_LIBX264);
+      output.addStream(videoStream, { encoder });
 
       const packet = new Packet();
       packet.alloc();
@@ -678,11 +894,13 @@ describe('MediaOutput', () => {
       packet.free();
       encoder.close();
       output.closeSync();
+      input.closeSync();
     });
   });
 
   describe('AsyncDisposable', () => {
     it('should support await using syntax (async)', async () => {
+      const input = await MediaInput.open(inputFile);
       const outputFile = getTempFile('mp4');
       let output: MediaOutput | null = null;
 
@@ -692,12 +910,11 @@ describe('MediaOutput', () => {
         output = o;
         assert(output instanceof MediaOutput);
 
-        const encoder = await Encoder.create(FF_ENCODER_LIBX264, {
-          frameRate: { num: 25, den: 1 },
-          timeBase: { num: 1, den: 25 },
-        });
+        const videoStream = input.video();
+        assert(videoStream);
+        const encoder = await Encoder.create(FF_ENCODER_LIBX264);
 
-        output.addStream(encoder);
+        output.addStream(videoStream, { encoder });
         // No need to write header - will be done automatically
         encoder.close();
       })();
@@ -710,6 +927,7 @@ describe('MediaOutput', () => {
         await output!.writePacket(p, 0);
       }, /MediaOutput is closed/);
 
+      await input.close();
       await cleanup();
     });
   });
@@ -798,6 +1016,7 @@ describe('MediaOutput', () => {
     });
 
     it('should handle errors correctly with using keyword and IOOutputCallbacks', async () => {
+      const input = MediaInput.openSync(inputFile);
       const chunks: Buffer[] = [];
 
       const callbacks: IOOutputCallbacks = {
@@ -811,12 +1030,11 @@ describe('MediaOutput', () => {
       try {
         using output = MediaOutput.openSync(callbacks, { format: 'mp4' });
 
-        const encoder = Encoder.createSync(FF_ENCODER_LIBX264, {
-          frameRate: { num: 25, den: 1 },
-          timeBase: { num: 1, den: 25 },
-        });
+        const videoStream = input.video();
+        assert(videoStream);
+        const encoder = Encoder.createSync(FF_ENCODER_LIBX264);
 
-        output.addStream(encoder);
+        output.addStream(videoStream, { encoder });
 
         // Throw an error intentionally
         throw new Error('Intentional test error');
@@ -825,6 +1043,7 @@ describe('MediaOutput', () => {
         assert.equal((e as Error).message, 'Intentional test error', 'Should catch the error');
       }
 
+      input.closeSync();
       assert.ok(errorCaught, 'Error should have been caught');
       // Output should have been closed despite the error - no deadlock!
     });
@@ -953,6 +1172,70 @@ describe('MediaOutput', () => {
     });
   });
 
+  describe('coded_side_data copying', () => {
+    it('should copy all coded_side_data when adding stream from input (async)', async () => {
+      const input = await MediaInput.open(inputFile);
+      const outputFile = getTempFile('mp4');
+      const output = await MediaOutput.open(outputFile);
+
+      const videoStream = input.video();
+      assert(videoStream);
+
+      // Check if input stream has any coded_side_data
+      const inputSideData = videoStream.codecpar.getAllCodedSideData();
+      console.log(`Input stream has ${inputSideData.length} coded_side_data entries`);
+
+      // Add stream - this should copy all coded_side_data
+      const streamIdx = output.addStream(videoStream);
+      const outputStream = output.streams[streamIdx];
+
+      // Verify all coded_side_data was copied
+      const outputSideData = outputStream.codecpar.getAllCodedSideData();
+      assert.equal(outputSideData.length, inputSideData.length, 'All coded_side_data should be copied');
+
+      // Verify each entry matches
+      for (let i = 0; i < inputSideData.length; i++) {
+        assert.equal(outputSideData[i].type, inputSideData[i].type, `Side data type ${i} should match`);
+        assert.equal(outputSideData[i].data.length, inputSideData[i].data.length, `Side data size ${i} should match`);
+        assert.ok(outputSideData[i].data.equals(inputSideData[i].data), `Side data content ${i} should match`);
+      }
+
+      await output.close();
+      await input.close();
+      await cleanup();
+    });
+
+    it('should copy all coded_side_data when adding stream from input (sync)', () => {
+      const input = MediaInput.openSync(inputFile);
+      const outputFile = getTempFile('mp4');
+      const output = MediaOutput.openSync(outputFile);
+
+      const videoStream = input.video();
+      assert(videoStream);
+
+      // Check if input stream has any coded_side_data
+      const inputSideData = videoStream.codecpar.getAllCodedSideData();
+
+      // Add stream - this should copy all coded_side_data
+      const streamIdx = output.addStream(videoStream);
+      const outputStream = output.streams[streamIdx];
+
+      // Verify all coded_side_data was copied
+      const outputSideData = outputStream.codecpar.getAllCodedSideData();
+      assert.equal(outputSideData.length, inputSideData.length, 'All coded_side_data should be copied');
+
+      // Verify each entry matches
+      for (let i = 0; i < inputSideData.length; i++) {
+        assert.equal(outputSideData[i].type, inputSideData[i].type, `Side data type ${i} should match`);
+        assert.equal(outputSideData[i].data.length, inputSideData[i].data.length, `Side data size ${i} should match`);
+        assert.ok(outputSideData[i].data.equals(inputSideData[i].data), `Side data content ${i} should match`);
+      }
+
+      output.closeSync();
+      input.closeSync();
+    });
+  });
+
   describe('Integration', () => {
     it('should transcode video with MediaInput/Output (async)', async () => {
       const input = await MediaInput.open(inputFile);
@@ -966,13 +1249,11 @@ describe('MediaOutput', () => {
       // Setup decoder and encoder
       const decoder = await Decoder.create(videoStream);
       const encoder = await Encoder.create(FF_ENCODER_LIBX264, {
-        timeBase: videoStream.timeBase, // Use input stream timebase
-        frameRate: { num: 25, den: 1 },
         bitrate: '500k',
         maxBFrames: 0, // Disable B-frames to simplify timing
       });
 
-      const streamIdx = output.addStream(encoder);
+      const streamIdx = output.addStream(videoStream, { encoder });
 
       // Process some packets - header written automatically on first packet
       let packetCount = 0;

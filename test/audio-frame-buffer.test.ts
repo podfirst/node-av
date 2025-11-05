@@ -190,7 +190,7 @@ describe('AudioFrameBuffer', () => {
       using frame2 = createAudioFrame(480, AV_SAMPLE_FMT_FLT, 48000, AV_CHANNEL_LAYOUT_MONO, 1000n);
       await buffer.push(frame2);
       using outputFrame = await buffer.pull();
-      assert.strictEqual(outputFrame!.pts, 1000n, 'PTS should start from new first frame PTS');
+      assert.strictEqual(outputFrame!.pts, 0n, 'PTS should reset to 0 after buffer reset');
     });
   });
 

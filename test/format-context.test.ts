@@ -122,6 +122,8 @@ describe('FormatContext', () => {
 
     it('should open input with options (async)', async () => {
       const options = new Dictionary();
+      options.alloc();
+
       const ret = await ctx.openInput(inputVideoFile, null, options);
       assert.equal(ret, 0);
       options.free();
@@ -129,6 +131,8 @@ describe('FormatContext', () => {
 
     it('should open input with options (sync)', () => {
       const options = new Dictionary();
+      options.alloc();
+
       const ret = ctx.openInputSync(inputVideoFile, null, options);
       assert.equal(ret, 0);
       options.free();
@@ -287,6 +291,8 @@ describe('FormatContext', () => {
       await ctx.openOutput();
 
       const options = new Dictionary();
+      options.alloc();
+
       const ret = await ctx.writeHeader(options);
       assert.equal(ret, 0);
 
@@ -305,6 +311,8 @@ describe('FormatContext', () => {
       ctx.openOutputSync();
 
       const options = new Dictionary();
+      options.alloc();
+
       const ret = ctx.writeHeaderSync(options);
       assert.equal(ret, 0);
 
@@ -613,6 +621,8 @@ describe('FormatContext', () => {
 
     it('should get and set metadata', () => {
       const metadata = new Dictionary();
+      metadata.alloc();
+
       metadata.set('title', 'Test Video', AVFLAG_NONE);
       metadata.set('artist', 'Test Artist', AVFLAG_NONE);
 

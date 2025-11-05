@@ -82,13 +82,13 @@ describe('Transcode Scenarios', () => {
 
     const filterChain = FilterPreset.chain().scale(100, 100).format(AV_PIX_FMT_YUV420P).build();
     using filter = FilterAPI.create(filterChain, {
-      timeBase: { num: 1, den: 30 },
+      framerate: videoStream.avgFrameRate,
     });
     assert.ok(filter, 'Should create filter');
 
     using encoder = await Encoder.create(FF_ENCODER_LIBX264, {
-      frameRate: { num: 30, den: 1 },
-      timeBase: { num: 1, den: 30 },
+      decoder,
+      filter,
       maxBFrames: 0,
     });
     assert.ok(encoder, 'Should create encoder');
@@ -106,8 +106,7 @@ describe('Transcode Scenarios', () => {
     assert.ok(decoder, 'Should create decoder');
 
     using encoder = await Encoder.create(FF_ENCODER_LIBX264, {
-      frameRate: { num: 30, den: 1 },
-      timeBase: { num: 1, den: 30 },
+      decoder,
       maxBFrames: 0,
     });
     assert.ok(encoder, 'Should create encoder');
@@ -135,14 +134,13 @@ describe('Transcode Scenarios', () => {
     const filterChain = FilterPreset.chain(hw).scale(100, 100).hwdownload().format([AV_PIX_FMT_NV12, AV_PIX_FMT_YUV420P]).build();
 
     using filter = FilterAPI.create(filterChain, {
-      timeBase: { num: 1, den: 30 },
-      hardware: hw,
+      framerate: videoStream.avgFrameRate,
     });
     assert.ok(filter, 'Should create filter with hardware context');
 
     using encoder = await Encoder.create(FF_ENCODER_LIBX264, {
-      frameRate: { num: 30, den: 1 },
-      timeBase: { num: 1, den: 30 },
+      decoder,
+      filter,
       maxBFrames: 0,
     });
     assert.ok(encoder, 'Should create software encoder');
@@ -170,7 +168,7 @@ describe('Transcode Scenarios', () => {
     const filterChain = FilterPreset.chain(hw).format(AV_PIX_FMT_NV12).hwupload().scale(100, 100).build();
 
     using filter = FilterAPI.create(filterChain, {
-      timeBase: { num: 1, den: 30 },
+      framerate: videoStream.avgFrameRate,
       hardware: hw,
     });
     assert.ok(filter, 'Should create filter with hardware upload');
@@ -184,8 +182,8 @@ describe('Transcode Scenarios', () => {
     console.log('Using Hardware Encoder:', encoderCodec.name);
 
     using encoder = await Encoder.create(encoderCodec, {
-      frameRate: { num: 30, den: 1 },
-      timeBase: { num: 1, den: 30 },
+      decoder,
+      filter,
       maxBFrames: 0,
       bitrate: '1M',
       options: {
@@ -217,7 +215,7 @@ describe('Transcode Scenarios', () => {
     const filterChain = FilterPreset.chain(hw).scale(100, 100).build();
 
     using filter = FilterAPI.create(filterChain, {
-      timeBase: { num: 1, den: 30 },
+      framerate: videoStream.avgFrameRate,
       hardware: hw,
     });
     assert.ok(filter, 'Should create hardware filter');
@@ -231,8 +229,8 @@ describe('Transcode Scenarios', () => {
     console.log('Using Hardware Encoder:', encoderCodec.name);
 
     using encoder = await Encoder.create(encoderCodec, {
-      frameRate: { num: 30, den: 1 },
-      timeBase: { num: 1, den: 30 },
+      decoder,
+      filter,
       maxBFrames: 0,
       bitrate: '1M',
     });
@@ -267,8 +265,7 @@ describe('Transcode Scenarios', () => {
     console.log('Using Hardware Encoder:', encoderCodec.name);
 
     using encoder = await Encoder.create(encoderCodec, {
-      frameRate: { num: 30, den: 1 },
-      timeBase: { num: 1, den: 30 },
+      decoder,
       maxBFrames: 0,
       bitrate: '1M',
     });
@@ -297,7 +294,7 @@ describe('Transcode Scenarios', () => {
     const filterChain = FilterPreset.chain(hw).format(AV_PIX_FMT_NV12).hwupload().build();
 
     using filter = FilterAPI.create(filterChain, {
-      timeBase: { num: 1, den: 30 },
+      framerate: videoStream.avgFrameRate,
       hardware: hw,
     });
     assert.ok(filter, 'Should create software filter');
@@ -311,8 +308,8 @@ describe('Transcode Scenarios', () => {
     console.log('Using Hardware Encoder:', encoderCodec.name);
 
     using encoder = await Encoder.create(encoderCodec, {
-      frameRate: { num: 30, den: 1 },
-      timeBase: { num: 1, den: 30 },
+      decoder,
+      filter,
       maxBFrames: 0,
       bitrate: '1M',
       options: {
@@ -347,8 +344,9 @@ describe('Transcode Scenarios', () => {
       await assert.rejects(
         async () => {
           using filter = FilterAPI.create(filterChain, {
-            timeBase: { num: 1, den: 30 },
+            framerate: videoStream.avgFrameRate,
           });
+
           // Try to process a software frame with hardware filter
           for await (const packet of input.packets()) {
             if (packet.streamIndex === videoStream.index) {
@@ -379,8 +377,7 @@ describe('Transcode Scenarios', () => {
 
       // Create encoder - it will use lazy initialization from first frame
       using encoder = await Encoder.create(FF_ENCODER_LIBX264, {
-        frameRate: { num: 60, den: 1 }, // Different frame rate
-        timeBase: { num: 1, den: 60 },
+        decoder,
         maxBFrames: 0,
       });
 

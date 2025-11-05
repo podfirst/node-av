@@ -381,8 +381,6 @@ describe('HardwareContext', () => {
       try {
         // Encoder detects hardware from frame's hw_frames_ctx
         const encoder = await Encoder.create(FF_ENCODER_LIBX264, {
-          timeBase: { num: 1, den: 25 },
-          frameRate: { num: 25, den: 1 },
           bitrate: '1M',
         });
 
@@ -600,8 +598,6 @@ describe('HardwareContext', () => {
       }
 
       const encoder = await Encoder.create(hwEncoderCodec, {
-        timeBase: { num: 1, den: 25 },
-        frameRate: { num: 25, den: 1 },
         bitrate: '1M',
       });
 
@@ -627,8 +623,6 @@ describe('HardwareContext', () => {
         }
 
         const encoder = await Encoder.create(hwEncoderCodec, {
-          timeBase: { num: 1, den: 25 },
-          frameRate: { num: 25, den: 1 },
           bitrate: '1M',
         });
 
@@ -641,6 +635,159 @@ describe('HardwareContext', () => {
         console.log('Auto hardware encoding failed (expected):', error);
         hw?.dispose();
       }
+    });
+  });
+
+  describe('hardware derivation', () => {
+    it('should derive hardware context from another (with AVHWDeviceType)', skipInCI, () => {
+      const hw = HardwareContext.auto();
+      if (!hw) {
+        console.log('No hardware available - skipping derivation test');
+        return;
+      }
+
+      console.log(`Testing derivation from ${hw.deviceTypeName}...`);
+
+      // Try to derive to OpenCL (commonly supported for derivation)
+      const derived = HardwareContext.derive(hw, AV_HWDEVICE_TYPE_OPENCL);
+
+      if (derived) {
+        console.log(`Successfully derived ${hw.deviceTypeName} -> opencl`);
+        assert.ok(derived.deviceContext, 'Derived context should have device context');
+        assert.equal(derived.deviceTypeName, 'opencl', 'Should be OpenCL device');
+        assert.ok(!derived.isDisposed, 'Derived context should not be disposed');
+
+        // Both contexts should be independent
+        assert.notEqual(hw.deviceContext, derived.deviceContext, 'Should have different device contexts');
+
+        derived.dispose();
+        assert.ok(derived.isDisposed, 'Derived context should be disposed');
+        assert.ok(!hw.isDisposed, 'Original context should not be disposed');
+      } else {
+        console.log(`Derivation from ${hw.deviceTypeName} to OpenCL not supported (expected)`);
+      }
+
+      hw.dispose();
+    });
+
+    it('should return null for invalid derivation', skipInCI, () => {
+      const hw = HardwareContext.auto();
+      if (!hw) {
+        console.log('No hardware available - skipping test');
+        return;
+      }
+
+      // Try to derive to NONE (should fail)
+      const derived1 = HardwareContext.derive(hw, AV_HWDEVICE_TYPE_NONE);
+      assert.equal(derived1, null, 'Should return null for NONE device type');
+
+      // Try to derive to invalid string
+      const derived2 = HardwareContext.derive(hw, 'invalid_hardware_type' as any);
+      assert.equal(derived2, null, 'Should return null for invalid device type string');
+
+      hw.dispose();
+    });
+
+    it('should return null when source is disposed', skipInCI, () => {
+      const hw = HardwareContext.auto();
+      if (!hw) {
+        console.log('No hardware available - skipping test');
+        return;
+      }
+
+      hw.dispose();
+
+      // Try to derive from disposed context
+      const derived = HardwareContext.derive(hw, AV_HWDEVICE_TYPE_OPENCL);
+      assert.equal(derived, null, 'Should return null when source is disposed');
+    });
+
+    it('should test common derivation paths', skipInCI, () => {
+      // Common derivation paths:
+      // - VAAPI -> OpenCL
+      // - CUDA -> Vulkan
+      // - VideoToolbox -> OpenCL
+
+      const hw = HardwareContext.auto();
+      if (!hw) {
+        console.log('No hardware available - skipping test');
+        return;
+      }
+
+      console.log(`\nTesting derivation paths for ${hw.deviceTypeName}:`);
+
+      // Test derivation to various targets
+      const targetTypes = [
+        { type: AV_HWDEVICE_TYPE_OPENCL, name: 'opencl' },
+        { type: AV_HWDEVICE_TYPE_VULKAN, name: 'vulkan' },
+      ];
+
+      let derivedCount = 0;
+      for (const target of targetTypes) {
+        const derived = HardwareContext.derive(hw, target.type);
+        if (derived) {
+          console.log(`  ✓ ${hw.deviceTypeName} -> ${target.name}`);
+          assert.equal(derived.deviceTypeName, target.name);
+          derived.dispose();
+          derivedCount++;
+        } else {
+          console.log(`  ✗ ${hw.deviceTypeName} -> ${target.name} (not supported)`);
+        }
+      }
+
+      console.log(`Total successful derivations: ${derivedCount}`);
+      hw.dispose();
+    });
+
+    it('should work with derived context in decoder', skipInCI, async () => {
+      const hw = HardwareContext.auto();
+      if (!hw) {
+        console.log('No hardware available - skipping test');
+        return;
+      }
+
+      // Try to derive to OpenCL
+      const derived = HardwareContext.derive(hw, AV_HWDEVICE_TYPE_OPENCL);
+      if (!derived) {
+        console.log('Derivation not supported - skipping decoder test');
+        hw.dispose();
+        return;
+      }
+
+      try {
+        // Try to use derived context with decoder
+        const media = await MediaInput.open(inputFile);
+        const videoStream = media.video(0);
+        assert.ok(videoStream, 'Should have video stream');
+
+        const decoder = await Decoder.create(videoStream, {
+          hardware: derived,
+        });
+
+        // Try to decode one frame
+        let frameDecoded = false;
+        for await (const packet of media.packets()) {
+          if (packet.streamIndex === videoStream.index) {
+            const frame = await decoder.decode(packet);
+            if (frame) {
+              console.log(`Decoded frame using derived ${derived.deviceTypeName} context`);
+              frame.free();
+              frameDecoded = true;
+              break;
+            }
+          }
+        }
+
+        assert.ok(frameDecoded, 'Should decode at least one frame with derived context');
+
+        decoder.close();
+        media.close();
+      } catch (error) {
+        console.log('Derived context decoder test failed (might not be supported):', error);
+      }
+
+      derived.dispose();
+      hw.dispose();
     });
   });
 
@@ -679,9 +826,8 @@ describe('HardwareContext', () => {
         }
 
         const encoder = await Encoder.create(hwEncoderCodec, {
-          timeBase: { num: 1, den: 25 },
-          frameRate: { num: 25, den: 1 },
           bitrate: '2M',
+          decoder,
         });
 
         let decodedFrames = 0;
@@ -772,9 +918,8 @@ describe('HardwareContext', () => {
         }
 
         const encoder = await Encoder.create(hwEncoderCodec, {
-          timeBase: { num: 1, den: 25 },
-          frameRate: { num: 25, den: 1 },
           bitrate: '2M',
+          decoder,
         });
 
         let decodedFrames = 0;
@@ -908,8 +1053,6 @@ describe('HardwareContext', () => {
       }
 
       const encoder = await Encoder.create(h264HwCodec, {
-        frameRate: { num: 25, den: 1 },
-        timeBase: { num: 1, den: 25 },
         bitrate: '1M',
       });
 

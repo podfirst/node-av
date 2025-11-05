@@ -296,6 +296,65 @@ describe('MediaInput', () => {
     });
   });
 
+  describe('options', () => {
+    it('should open with dtsDeltaThreshold option', async () => {
+      const media = await MediaInput.open(inputFile, {
+        dtsDeltaThreshold: 10,
+      });
+
+      assert.ok(media, 'Should create MediaInput with dtsDeltaThreshold');
+      assert.ok(media.streams.length > 0, 'Should have streams');
+
+      await media.close();
+    });
+
+    it('should open with dtsErrorThreshold option', async () => {
+      const media = await MediaInput.open(inputFile, {
+        dtsErrorThreshold: 30,
+      });
+
+      assert.ok(media, 'Should create MediaInput with dtsErrorThreshold');
+      assert.ok(media.streams.length > 0, 'Should have streams');
+
+      await media.close();
+    });
+
+    it('should open with copyTs option', async () => {
+      const media = await MediaInput.open(inputFile, {
+        copyTs: true,
+      });
+
+      assert.ok(media, 'Should create MediaInput with copyTs');
+      assert.ok(media.streams.length > 0, 'Should have streams');
+
+      await media.close();
+    });
+
+    it('should open with all timestamp options combined', async () => {
+      const media = await MediaInput.open(inputFile, {
+        dtsDeltaThreshold: 10,
+        dtsErrorThreshold: 30,
+        copyTs: true,
+      });
+
+      assert.ok(media, 'Should create MediaInput with all timestamp options');
+      assert.ok(media.streams.length > 0, 'Should have streams');
+
+      await media.close();
+    });
+
+    it('should open with copyTs (sync)', () => {
+      const media = MediaInput.openSync(inputFile, {
+        copyTs: true,
+      });
+
+      assert.ok(media, 'Should create MediaInput with copyTs (sync)');
+      assert.ok(media.streams.length > 0, 'Should have streams');
+
+      media.closeSync();
+    });
+  });
+
   describe('stream info', () => {
     it('should parse video stream info', async () => {
       const media = await MediaInput.open(inputFile);

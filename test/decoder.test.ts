@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 
 import { Decoder } from '../src/api/decoder.js';
 import { MediaInput } from '../src/api/media-input.js';
-import { AV_CODEC_ID_H264 } from '../src/constants/constants.js';
+import { AV_CODEC_ID_H264, AV_PIX_FMT_YUV420P } from '../src/constants/constants.js';
 import { FF_DECODER_AAC, FF_DECODER_H264 } from '../src/constants/decoders.js';
 import { Codec, Packet } from '../src/lib/index.js';
 import { getInputFile, prepareTestEnvironment } from './index.js';
@@ -63,154 +63,88 @@ describe('Decoder', () => {
       decoder.close();
       media.closeSync();
     });
+  });
 
-    it('should create decoder with thread options (sync)', () => {
-      const media = MediaInput.openSync(inputFile);
-      const videoStream = media.video();
-      assert.ok(videoStream);
+  it('should create decoder for audio stream (async)', async () => {
+    const media = await MediaInput.open(inputFile);
 
-      // Create decoder with 4 threads
-      const decoder = Decoder.createSync(videoStream, {
-        threads: 4,
-      });
-      assert.ok(decoder);
+    // Find audio stream
+    const audioStream = media.audio();
+    assert.ok(audioStream, 'Should find audio stream');
 
-      decoder.close();
-      media.closeSync();
-    });
+    // Create decoder
+    const decoder = await Decoder.create(audioStream);
+    assert.ok(decoder);
+    assert.equal(decoder.isDecoderOpen, true);
 
-    it('should create decoder for audio stream (async)', async () => {
-      const media = await MediaInput.open(inputFile);
+    decoder.close();
+    await media.close();
+  });
 
-      // Find audio stream
-      const audioStream = media.audio();
-      assert.ok(audioStream, 'Should find audio stream');
+  it('should create decoder for video stream (sync)', () => {
+    const media = MediaInput.openSync(inputFile);
 
-      // Create decoder
-      const decoder = await Decoder.create(audioStream);
-      assert.ok(decoder);
-      assert.equal(decoder.isDecoderOpen, true);
+    // Find video stream
+    const videoStream = media.video();
+    assert.ok(videoStream, 'Should find video stream');
 
-      decoder.close();
-      await media.close();
-    });
+    // Create decoder
+    const decoder = Decoder.createSync(videoStream);
+    assert.ok(decoder);
+    assert.equal(decoder.isDecoderOpen, true);
+    assert.equal(decoder.getStream().index, videoStream.index);
 
-    it('should create decoder for video stream (sync)', () => {
-      const media = MediaInput.openSync(inputFile);
+    decoder.close();
+    media.closeSync();
+  });
 
-      // Find video stream
-      const videoStream = media.video();
-      assert.ok(videoStream, 'Should find video stream');
+  it('should create decoder for audio stream (sync)', () => {
+    const media = MediaInput.openSync(inputFile);
 
-      // Create decoder
-      const decoder = Decoder.createSync(videoStream);
-      assert.ok(decoder);
-      assert.equal(decoder.isDecoderOpen, true);
-      assert.equal(decoder.getStream().index, videoStream.index);
+    // Find audio stream
+    const audioStream = media.audio();
+    assert.ok(audioStream, 'Should find audio stream');
 
-      decoder.close();
-      media.closeSync();
-    });
+    // Create decoder
+    const decoder = Decoder.createSync(audioStream);
+    assert.ok(decoder);
+    assert.equal(decoder.isDecoderOpen, true);
 
-    it('should create decoder for audio stream (sync)', () => {
-      const media = MediaInput.openSync(inputFile);
+    decoder.close();
+    media.closeSync();
+  });
 
-      // Find audio stream
-      const audioStream = media.audio();
-      assert.ok(audioStream, 'Should find audio stream');
+  it('should create decoder for video stream (sync)', () => {
+    const media = MediaInput.openSync(inputFile);
 
-      // Create decoder
-      const decoder = Decoder.createSync(audioStream);
-      assert.ok(decoder);
-      assert.equal(decoder.isDecoderOpen, true);
+    // Find video stream
+    const videoStream = media.video();
+    assert.ok(videoStream, 'Should find video stream');
 
-      decoder.close();
-      media.closeSync();
-    });
+    // Create decoder
+    const decoder = Decoder.createSync(videoStream);
+    assert.ok(decoder);
+    assert.equal(decoder.isDecoderOpen, true);
+    assert.equal(decoder.getStream().index, videoStream.index);
 
-    it('should create decoder with thread options (sync)', () => {
-      const media = MediaInput.openSync(inputFile);
-      const videoStream = media.video();
-      assert.ok(videoStream);
+    decoder.close();
+    media.closeSync();
+  });
 
-      // Create decoder with 4 threads
-      const decoder = Decoder.createSync(videoStream, {
-        threads: 4,
-      });
-      assert.ok(decoder);
+  it('should create decoder for audio stream (sync)', () => {
+    const media = MediaInput.openSync(inputFile);
 
-      decoder.close();
-      media.closeSync();
-    });
+    // Find audio stream
+    const audioStream = media.audio();
+    assert.ok(audioStream, 'Should find audio stream');
 
-    it('should create decoder with thread options (async)', async () => {
-      const media = await MediaInput.open(inputFile);
-      const videoStream = media.video();
-      assert.ok(videoStream);
+    // Create decoder
+    const decoder = Decoder.createSync(audioStream);
+    assert.ok(decoder);
+    assert.equal(decoder.isDecoderOpen, true);
 
-      // Create decoder with 4 threads
-      const decoder = await Decoder.create(videoStream, {
-        threads: 4,
-      });
-      assert.ok(decoder);
-
-      decoder.close();
-      await media.close();
-    });
-
-    it('should create decoder for video stream (sync)', () => {
-      const media = MediaInput.openSync(inputFile);
-
-      // Find video stream
-      const videoStream = media.video();
-      assert.ok(videoStream, 'Should find video stream');
-
-      // Create decoder
-      const decoder = Decoder.createSync(videoStream);
-      assert.ok(decoder);
-      assert.equal(decoder.isDecoderOpen, true);
-      assert.equal(decoder.getStream().index, videoStream.index);
-
-      decoder.close();
-      media.closeSync();
-    });
-
-    it('should create decoder for audio stream (sync)', () => {
-      const media = MediaInput.openSync(inputFile);
-
-      // Find audio stream
-      const audioStream = media.audio();
-      assert.ok(audioStream, 'Should find audio stream');
-
-      // Create decoder
-      const decoder = Decoder.createSync(audioStream);
-      assert.ok(decoder);
-      assert.equal(decoder.isDecoderOpen, true);
-
-      decoder.close();
-      media.closeSync();
-    });
-
-    it('should create decoder with thread options (sync)', () => {
-      const media = MediaInput.openSync(inputFile);
-      const videoStream = media.video();
-      assert.ok(videoStream);
-
-      // Create decoder with 4 threads
-      const decoder = Decoder.createSync(videoStream, {
-        threads: 4,
-      });
-      assert.ok(decoder);
-
-      decoder.close();
-      media.closeSync();
-    });
-
-    it('should throw for unsupported codec', async () => {
-      // This test would need a file with an unsupported codec
-      // For now, we'll skip it as our test files use standard codecs
-      assert.ok(true, 'Skipped - needs special test file');
-    });
+    decoder.close();
+    media.closeSync();
   });
 
   describe('explicit codec selection', () => {
@@ -220,9 +154,7 @@ describe('Decoder', () => {
       assert.ok(videoStream);
 
       // Use explicit decoder codec name
-      const decoder = await Decoder.create(videoStream, FF_DECODER_H264, {
-        threads: 2,
-      });
+      const decoder = await Decoder.create(videoStream, FF_DECODER_H264);
       assert.ok(decoder);
       assert.equal(decoder.isDecoderOpen, true);
       assert.equal(decoder.getStream().index, videoStream.index);
@@ -237,9 +169,7 @@ describe('Decoder', () => {
       assert.ok(videoStream);
 
       // Use explicit decoder codec name
-      const decoder = Decoder.createSync(videoStream, FF_DECODER_H264, {
-        threads: 2,
-      });
+      const decoder = Decoder.createSync(videoStream, FF_DECODER_H264);
       assert.ok(decoder);
       assert.equal(decoder.isDecoderOpen, true);
       assert.equal(decoder.getStream().index, videoStream.index);
@@ -254,9 +184,7 @@ describe('Decoder', () => {
       assert.ok(videoStream);
 
       // Use explicit codec ID
-      const decoder = await Decoder.create(videoStream, AV_CODEC_ID_H264, {
-        threads: 2,
-      });
+      const decoder = await Decoder.create(videoStream, AV_CODEC_ID_H264);
       assert.ok(decoder);
       assert.equal(decoder.isDecoderOpen, true);
 
@@ -270,9 +198,7 @@ describe('Decoder', () => {
       assert.ok(videoStream);
 
       // Use explicit codec ID
-      const decoder = Decoder.createSync(videoStream, AV_CODEC_ID_H264, {
-        threads: 2,
-      });
+      const decoder = Decoder.createSync(videoStream, AV_CODEC_ID_H264);
       assert.ok(decoder);
       assert.equal(decoder.isDecoderOpen, true);
 
@@ -289,9 +215,7 @@ describe('Decoder', () => {
       const codec = Codec.findDecoder(AV_CODEC_ID_H264);
       assert.ok(codec);
 
-      const decoder = await Decoder.create(videoStream, codec, {
-        threads: 2,
-      });
+      const decoder = await Decoder.create(videoStream, codec);
       assert.ok(decoder);
       assert.equal(decoder.isDecoderOpen, true);
       assert.equal(decoder.getCodec().id, codec.id);
@@ -309,9 +233,7 @@ describe('Decoder', () => {
       const codec = Codec.findDecoder(AV_CODEC_ID_H264);
       assert.ok(codec);
 
-      const decoder = Decoder.createSync(videoStream, codec, {
-        threads: 2,
-      });
+      const decoder = Decoder.createSync(videoStream, codec);
       assert.ok(decoder);
       assert.equal(decoder.isDecoderOpen, true);
       assert.equal(decoder.getCodec().id, codec.id);
@@ -461,6 +383,103 @@ describe('Decoder', () => {
       }
 
       assert.ok(frameCount > 0, 'Should decode at least one frame with explicit codec');
+
+      decoder.close();
+      media.closeSync();
+    });
+  });
+
+  describe('options', () => {
+    it('should create decoder with hwaccelOutputFormat option', async () => {
+      const media = await MediaInput.open(inputFile);
+      const videoStream = media.video();
+      assert.ok(videoStream);
+
+      // Test with hwaccelOutputFormat option (won't use HW acceleration without hardware context)
+      const decoder = await Decoder.create(videoStream, {
+        hwaccelOutputFormat: AV_PIX_FMT_YUV420P,
+      });
+
+      assert.ok(decoder, 'Should create decoder with hwaccelOutputFormat');
+
+      decoder.close();
+      await media.close();
+    });
+
+    it('should create decoder with forcedFramerate option', async () => {
+      const media = await MediaInput.open(inputFile);
+      const videoStream = media.video();
+      assert.ok(videoStream);
+
+      const decoder = await Decoder.create(videoStream, {
+        forcedFramerate: { num: 30, den: 1 },
+      });
+
+      assert.ok(decoder, 'Should create decoder with forcedFramerate');
+
+      decoder.close();
+      await media.close();
+    });
+
+    it('should create decoder with sarOverride option', async () => {
+      const media = await MediaInput.open(inputFile);
+      const videoStream = media.video();
+      assert.ok(videoStream);
+
+      const decoder = await Decoder.create(videoStream, {
+        sarOverride: { num: 1, den: 1 },
+      });
+
+      assert.ok(decoder, 'Should create decoder with sarOverride');
+
+      decoder.close();
+      await media.close();
+    });
+
+    it('should create decoder with applyCropping option', async () => {
+      const media = await MediaInput.open(inputFile);
+      const videoStream = media.video();
+      assert.ok(videoStream);
+
+      const decoder = await Decoder.create(videoStream, {
+        applyCropping: true,
+      });
+
+      assert.ok(decoder, 'Should create decoder with applyCropping');
+
+      decoder.close();
+      await media.close();
+    });
+
+    it('should create decoder with all video options combined', async () => {
+      const media = await MediaInput.open(inputFile);
+      const videoStream = media.video();
+      assert.ok(videoStream);
+
+      const decoder = await Decoder.create(videoStream, {
+        hwaccelOutputFormat: AV_PIX_FMT_YUV420P,
+        forcedFramerate: { num: 25, den: 1 },
+        sarOverride: { num: 1, den: 1 },
+        applyCropping: true,
+      });
+
+      assert.ok(decoder, 'Should create decoder with all video options');
+
+      decoder.close();
+      await media.close();
+    });
+
+    it('should create decoder with options (sync)', () => {
+      const media = MediaInput.openSync(inputFile);
+      const videoStream = media.video();
+      assert.ok(videoStream);
+
+      const decoder = Decoder.createSync(videoStream, {
+        forcedFramerate: { num: 30, den: 1 },
+        applyCropping: false,
+      });
+
+      assert.ok(decoder, 'Should create decoder with options (sync)');
 
       decoder.close();
       media.closeSync();

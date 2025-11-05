@@ -8,6 +8,7 @@ describe('Dictionary', () => {
 
   beforeEach(() => {
     dict = new Dictionary();
+    dict.alloc();
   });
 
   afterEach(() => {
@@ -34,6 +35,7 @@ describe('Dictionary', () => {
 
     it('should support using statement for automatic disposal', () => {
       using testDict = new Dictionary();
+      testDict.alloc();
       testDict.set('key', 'value', AVFLAG_NONE);
       assert.ok(testDict);
       // testDict will be automatically disposed when leaving scope
@@ -183,6 +185,8 @@ describe('Dictionary', () => {
       dict.set('key2', 'value2', AVFLAG_NONE);
 
       const dst = new Dictionary();
+      dst.alloc();
+
       const ret = dict.copy(dst, AVFLAG_NONE);
       assert.equal(ret, 0);
 
@@ -198,6 +202,8 @@ describe('Dictionary', () => {
       dict.set('key1', 'value1', AVFLAG_NONE);
 
       const dst = new Dictionary();
+      dst.alloc();
+
       dst.set('key1', 'oldvalue', AVFLAG_NONE);
       dst.set('key2', 'keep', AVFLAG_NONE);
 

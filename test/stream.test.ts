@@ -224,6 +224,8 @@ describe('Stream', () => {
   describe('Metadata', () => {
     it('should get and set metadata', () => {
       const metadata = new Dictionary();
+      metadata.alloc();
+
       metadata.set('title', 'Test Stream', AVFLAG_NONE);
       metadata.set('language', 'eng', AVFLAG_NONE);
 

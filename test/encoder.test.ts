@@ -32,15 +32,6 @@ describe('Encoder', () => {
       encoder.close();
     });
 
-    it('should create encoder with thread options (async)', async () => {
-      const encoder = await Encoder.create(FF_ENCODER_LIBX264, {
-        threads: 4,
-      });
-
-      assert.ok(encoder);
-      encoder.close();
-    });
-
     it('should create encoder with codec options (async)', async () => {
       const encoder = await Encoder.create(FF_ENCODER_LIBX264, {
         options: {
@@ -108,15 +99,6 @@ describe('Encoder', () => {
       assert.equal(encoder.isEncoderOpen, true);
       assert.equal(encoder.getCodec().name, FF_ENCODER_AAC);
 
-      encoder.close();
-    });
-
-    it('should create encoder with thread options (sync)', () => {
-      const encoder = Encoder.createSync(FF_ENCODER_LIBX264, {
-        threads: 4,
-      });
-
-      assert.ok(encoder);
       encoder.close();
     });
 

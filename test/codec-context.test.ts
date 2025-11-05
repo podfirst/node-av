@@ -545,6 +545,7 @@ describe('CodecContext', () => {
       ctx.sampleFormat = AV_SAMPLE_FMT_S16;
 
       const options = new Dictionary();
+      options.alloc();
       // PCM codecs typically don't need options
 
       const ret = await ctx.open2(codec, options);
@@ -565,6 +566,7 @@ describe('CodecContext', () => {
       ctx.sampleFormat = AV_SAMPLE_FMT_S16;
 
       const options = new Dictionary();
+      options.alloc();
       // PCM codecs typically don't need options
 
       const ret = ctx.open2Sync(codec, options);
