@@ -18,9 +18,11 @@
 
 import {
   AV_LOG_DEBUG,
+  AV_SAMPLE_FMT_FLTP,
   Codec,
   Decoder,
   Encoder,
+  FF_ENCODER_AAC,
   FF_ENCODER_LIBX265,
   FilterAPI,
   FilterPreset,
@@ -116,9 +118,10 @@ using decoder = await Decoder.create(videoStream, {
   exitOnError: false,
 });
 
-const filterChain = FilterPreset.chain(hardware).scale(scaleWidth, scaleHeight).custom('setpts=N/FRAME_RATE/TB').build();
+const filterChain = FilterPreset.chain(hardware).scale(scaleWidth, scaleHeight).build();
 
 using filter = FilterAPI.create(filterChain, {
+  framerate: videoStream.avgFrameRate,
   hardware,
 });
 
@@ -142,13 +145,24 @@ await using output = await MediaOutput.open(outputFile);
 console.log('Setting up pipeline...');
 
 if (audioStream) {
-  // Pipeline with audio passthrough
-  console.log('Using named pipeline with audio passthrough');
+  const audioDecoder = await Decoder.create(audioStream, {
+    exitOnError: false,
+  });
+
+  const filterChain = FilterPreset.chain().aformat(AV_SAMPLE_FMT_FLTP, 44100, 'stereo').build();
+  const audioFilter = FilterAPI.create(filterChain);
+
+  const audioEncoder = await Encoder.create(FF_ENCODER_AAC, {
+    decoder: audioDecoder,
+    filter: audioFilter,
+    bitrate: '128k',
+  });
+
   pipelineControl = pipeline(
     { video: input, audio: input },
     {
       video: [decoder, filter, encoder],
-      audio: 'passthrough', // Direct stream copy for audio
+      audio: [audioDecoder, audioFilter, audioEncoder],
     },
     output,
   );

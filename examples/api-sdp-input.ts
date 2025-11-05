@@ -4,9 +4,9 @@
  * Demonstrates generating SDP (Session Description Protocol) from media inputs.
  * Supports file paths, URLs, and RTSP streams.
  *
- * Usage: tsx examples/sdp.ts <input> [rtsp_transport]
- * Example: tsx examples/sdp.ts input.mp4
- * Example: tsx examples/sdp.ts rtsp://camera.local/stream tcp
+ * Usage: tsx examples/api-sdp-input.ts <input> [rtsp_transport]
+ * Example: tsx examples/api-sdp-input.ts testdata/video.mp4
+ * Example: tsx examples/api-sdp-input.ts rtsp://camera.local/stream tcp
  *
  * Note: For RTSP streams, specify tcp or udp as second argument (default: tcp)
  */

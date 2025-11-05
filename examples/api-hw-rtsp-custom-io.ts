@@ -16,7 +16,7 @@
 
 import { RtpPacket } from 'werift';
 
-import { AV_LOG_DEBUG, Codec, Decoder, Encoder, FF_ENCODER_LIBX265, FilterAPI, FilterPreset, HardwareContext, Log, MediaInput, MediaOutput } from '../src/index.js';
+import { Codec, Decoder, Encoder, FF_ENCODER_LIBX265, FilterAPI, FilterPreset, HardwareContext, MediaInput, MediaOutput } from '../src/index.js';
 import { prepareTestEnvironment } from './index.js';
 
 // Parse command line arguments
@@ -37,7 +37,6 @@ const duration = durationIndex !== -1 ? parseInt(args[durationIndex + 1]) : 10;
 let stop = false;
 
 prepareTestEnvironment();
-Log.setLevel(AV_LOG_DEBUG);
 
 console.log(`Input: ${rtspUrl}`);
 console.log(`Duration: ${duration} seconds`);
@@ -48,9 +47,9 @@ await using input = await MediaInput.open(rtspUrl, {
   options: {
     rtsp_transport: 'tcp',
     flags: 'nodelay',
-    fflags: '+discardcorrupt+flush_packets+nobuffer',
+    fflags: 'nobuffer',
     analyzeduration: 0,
-    probesize: 500000,
+    probesize: 32,
     timeout: 5000000,
   },
 });
@@ -88,11 +87,11 @@ if (hardware) {
   console.log('No hardware acceleration available, using software');
 }
 
-// Create decoder
+// Create decoder (exitOnError: false allows recovery from decode errors in RTSP streams)
 console.log('Creating video decoder...');
 using decoder = await Decoder.create(videoStream, {
   hardware,
-  exitOnError: false,
+  exitOnError: false, // Important: continue on decode errors (FFmpeg CLI default behavior)
 });
 
 // Create filter
@@ -103,6 +102,7 @@ const filterChain = FilterPreset.chain(hardware)
 
 console.log(`Creating filter: ${filterChain}`);
 using filter = FilterAPI.create(filterChain, {
+  framerate: videoStream.avgFrameRate,
   hardware,
 });
 
@@ -121,27 +121,51 @@ using encoder = await Encoder.create(encoderCodec, {
 });
 
 let receivedRTPPackets = 0;
-await using output = await MediaOutput.open(
+await using videoOutput = await MediaOutput.open(
   {
     write: (data) => {
       receivedRTPPackets++;
       const rtpPacket = RtpPacket.deSerialize(data);
-      console.log(`RTP packet received: pt=${rtpPacket.header.payloadType}, seq=${rtpPacket.header.sequenceNumber}, timestamp=${rtpPacket.header.timestamp}`);
+      console.log(`RTP video packet received: pt=${rtpPacket.header.payloadType}, seq=${rtpPacket.header.sequenceNumber}, timestamp=${rtpPacket.header.timestamp}`);
+      return data.length;
     },
   },
   {
+    input,
     format: 'rtp',
-    bufferSize: 64 * 1024, // 64KB
+    bufferSize: 1300,
+    options: {
+      packet_size: 1300,
+    },
+  },
+);
+
+await using audioOutput = await MediaOutput.open(
+  {
+    write: (data) => {
+      receivedRTPPackets++;
+      const rtpPacket = RtpPacket.deSerialize(data);
+      console.log(`RTP video packet received: pt=${rtpPacket.header.payloadType}, seq=${rtpPacket.header.sequenceNumber}, timestamp=${rtpPacket.header.timestamp}`);
+      return data.length;
+    },
+  },
+  {
+    input,
+    format: 'rtp',
+    bufferSize: 1300,
+    options: {
+      packet_size: 1300,
+    },
   },
 );
 
 // Add video stream
-const videoOutputIndex = output.addStream(encoder);
+const videoOutputIndex = videoOutput.addStream(encoder);
 
 // Add audio stream if available (direct copy)
 let audioOutputIndex = -1;
 if (audioStream) {
-  audioOutputIndex = output.addStream(audioStream);
+  audioOutputIndex = audioOutput.addStream(audioStream);
   console.log('Audio stream will be copied directly');
 }
 
@@ -165,17 +189,19 @@ try {
   const processVideo = async () => {
     for await (const packet of videoEncoderGenerator) {
       if (stop) break;
-      await output.writePacket(packet, videoOutputIndex);
+      await videoOutput.writePacket(packet, videoOutputIndex);
       videoPackets++;
     }
   };
 
   const processAudio = async () => {
-    if (audioOutputIndex === -1) return;
+    if (audioOutputIndex === -1) {
+      return;
+    }
 
     for await (const packet of input.packets(audioStream!.index)) {
       if (stop) break;
-      await output.writePacket(packet, audioOutputIndex);
+      await audioOutput.writePacket(packet, audioOutputIndex);
       audioPackets++;
     }
   };

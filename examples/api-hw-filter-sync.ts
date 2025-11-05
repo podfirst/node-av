@@ -75,6 +75,7 @@ using decoder = Decoder.createSync(videoStream, {
 const filterChain = FilterPreset.chain(hwOpencl).format(AV_PIX_FMT_GRAY8).hwupload().sobel().hwdownload().format([AV_PIX_FMT_GRAY8, AV_PIX_FMT_NV12]).build();
 console.log('Creating filter with:', filterChain);
 using filter = FilterAPI.create(filterChain, {
+  framerate: videoStream.avgFrameRate,
   hardware: hwOpencl,
 });
 

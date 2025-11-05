@@ -16,7 +16,21 @@
  *   tsx examples/api-hw-rtsp.ts rtsp://server/live output.mp4 --scale 1280x720
  */
 
-import { AV_LOG_DEBUG, Codec, Decoder, Encoder, FF_ENCODER_LIBX265, FilterAPI, FilterPreset, HardwareContext, Log, MediaInput, MediaOutput } from '../src/index.js';
+import {
+  AV_LOG_DEBUG,
+  AV_SAMPLE_FMT_FLTP,
+  Codec,
+  Decoder,
+  Encoder,
+  FF_ENCODER_AAC,
+  FF_ENCODER_LIBX265,
+  FilterAPI,
+  FilterPreset,
+  HardwareContext,
+  Log,
+  MediaInput,
+  MediaOutput,
+} from '../src/index.js';
 import { prepareTestEnvironment } from './index.js';
 
 // Parse command line arguments
@@ -97,14 +111,15 @@ if (hardware) {
 
 // Create decoder
 console.log('Creating video decoder...');
-using decoder = await Decoder.create(videoStream, {
+using videoDecoder = await Decoder.create(videoStream, {
   hardware,
 });
 
 // Create filter
 const filterChain = FilterPreset.chain(hardware).scale(scaleWidth, scaleHeight).custom('setpts=N/FRAME_RATE/TB').build();
-console.log(`Creating filter: ${filterChain}`);
-using filter = FilterAPI.create(filterChain, {
+console.log(`Creating video filter: ${filterChain}`);
+using videoFilter = FilterAPI.create(filterChain, {
+  framerate: videoStream.avgFrameRate,
   hardware,
 });
 
@@ -114,26 +129,45 @@ if (!encoderCodec) {
   throw new Error('No suitable encoder found');
 }
 
-console.log(`Creating encoder: ${encoderCodec.name}...`);
-using encoder = await Encoder.create(encoderCodec, {
-  decoder,
-  filter,
+console.log(`Creating video encoder: ${encoderCodec.name}...`);
+using videoEncoder = await Encoder.create(encoderCodec, {
+  decoder: videoDecoder,
+  filter: videoFilter,
   bitrate: '2M',
   gopSize: 60,
 });
 
 // Create output
 console.log('Creating output file...');
-await using output = await MediaOutput.open(outputFile);
+await using output = await MediaOutput.open(outputFile, {
+  input,
+});
 
 // Add video stream
-const videoOutputIndex = output.addStream(encoder);
+const videoOutputIndex = output.addStream(videoStream, { encoder: videoEncoder });
 
 // Add audio stream if available (direct copy)
 let audioOutputIndex = -1;
+
+let audioDecoder: Decoder | null = null;
+let audioFilter: FilterAPI | null = null;
+let audioEncoder: Encoder | null = null;
+
 if (audioStream) {
-  audioOutputIndex = output.addStream(audioStream);
-  console.log('Audio stream will be copied directly');
+  console.log('Creating audio decoder...');
+  audioDecoder = await Decoder.create(audioStream);
+
+  const filterChain = FilterPreset.chain().aformat(AV_SAMPLE_FMT_FLTP, 44100, 'stereo').build();
+  console.log('Creating audio filter:', filterChain);
+  audioFilter = FilterAPI.create(filterChain);
+
+  console.log('Creating audio encoder:', FF_ENCODER_AAC);
+  audioEncoder = await Encoder.create(FF_ENCODER_AAC, {
+    decoder: audioDecoder,
+    filter: audioFilter,
+  });
+
+  audioOutputIndex = output.addStream(audioStream, { encoder: audioEncoder });
 }
 
 // Set up timeout for recording duration
@@ -149,31 +183,32 @@ let videoPackets = 0;
 let audioPackets = 0;
 
 try {
-  // Create video processing pipeline
-  const videoInputGenerator = input.packets(videoStream.index);
-  const videoDecoderGenerator = decoder.frames(videoInputGenerator);
-  const videoFilterGenerator = filter.frames(videoDecoderGenerator);
-  const videoEncoderGenerator = encoder.packets(videoFilterGenerator);
-
   // Process video and audio in parallel
   const processVideo = async () => {
+    // Create video processing pipeline
+    const videoInputGenerator = input.packets(videoStream.index);
+    const videoDecoderGenerator = videoDecoder.frames(videoInputGenerator);
+    const videoFilterGenerator = videoFilter.frames(videoDecoderGenerator);
+    const videoEncoderGenerator = videoEncoder.packets(videoFilterGenerator);
+
     for await (const packet of videoEncoderGenerator) {
       if (stop) break;
       await output.writePacket(packet, videoOutputIndex);
       videoPackets++;
-
-      // Progress indicator
-      if (videoPackets % 30 === 0) {
-        const elapsed = (Date.now() - startTime) / 1000;
-        console.log(`Recording: ${elapsed.toFixed(1)}s - Video: ${videoPackets} packets`);
-      }
     }
   };
 
   const processAudio = async () => {
-    if (audioOutputIndex === -1) return;
+    if (!audioStream || audioOutputIndex === -1 || !audioDecoder || !audioEncoder || !audioFilter) {
+      return;
+    }
 
-    for await (const packet of input.packets(audioStream!.index)) {
+    const audioInputGenerator = input.packets(audioStream.index);
+    const audioDecoderGenerator = audioDecoder.frames(audioInputGenerator);
+    const audioFilterGenerator = audioFilter.frames(audioDecoderGenerator);
+    const audioEncoderGenerator = audioEncoder.packets(audioFilterGenerator);
+
+    for await (const packet of audioEncoderGenerator) {
       if (stop) break;
       await output.writePacket(packet, audioOutputIndex);
       audioPackets++;

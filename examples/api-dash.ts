@@ -22,7 +22,7 @@
 
 import fs from 'fs/promises';
 
-import { AV_PIX_FMT_YUV420P, Decoder, Encoder, FF_ENCODER_LIBX265, FilterAPI, FilterPreset, MediaInput, MediaOutput } from '../src/index.js';
+import { AV_PIX_FMT_YUV420P, Decoder, Encoder, FF_ENCODER_LIBX264, FilterAPI, FilterPreset, MediaInput, MediaOutput } from '../src/index.js';
 import { prepareTestEnvironment } from './index.js';
 
 // Parse command line arguments
@@ -105,11 +105,13 @@ using decoder = await Decoder.create(videoStream);
 // Create filter (ensure YUV420P for DASH compatibility)
 const filterChain = FilterPreset.chain().format(AV_PIX_FMT_YUV420P).build();
 console.log(`\nCreating filter: ${filterChain}`);
-using filter = FilterAPI.create(filterChain);
+using filter = FilterAPI.create(filterChain, {
+  framerate: videoStream.avgFrameRate,
+});
 
 // Create encoder
 console.log('\nCreating H.265 encoder...');
-using encoder = await Encoder.create(FF_ENCODER_LIBX265, {
+using encoder = await Encoder.create(FF_ENCODER_LIBX264, {
   decoder,
   filter,
   bitrate,
@@ -122,6 +124,7 @@ using encoder = await Encoder.create(FF_ENCODER_LIBX265, {
 // Create DASH output
 console.log('\nCreating DASH output...');
 await using dashOutput = await MediaOutput.open(dashManifestPath, {
+  input, // Pass input for automatic metadata copying (Title, etc.)
   options: {
     movflags: 'frag_keyframe+empty_moov+default_base_moof',
     seg_duration: segmentDuration,
@@ -131,7 +134,7 @@ await using dashOutput = await MediaOutput.open(dashManifestPath, {
 });
 
 // Add video stream
-const dashVideoStreamIndex = dashOutput.addStream(encoder);
+const dashVideoStreamIndex = dashOutput.addStream(videoStream, { encoder });
 
 console.log('\nDASH Configuration:');
 console.log(`Segment Duration: ${segmentDuration}s`);
@@ -159,7 +162,9 @@ try {
 
   // Process video
   for await (const packet of videoEncoderGenerator) {
-    if (stop) break;
+    if (stop) {
+      break;
+    }
 
     await dashOutput.writePacket(packet, dashVideoStreamIndex);
     packetsWritten++;

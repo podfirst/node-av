@@ -1,8 +1,9 @@
-#!/usr/bin/env tsx
 /**
  * Example: Native FFmpeg SDP Generation for RTP/SRTP Input
  *
  * Demonstrates using FFmpeg's native SDP generator for RFC-compliant codec names
+ *
+ * Usage: tsx examples/api-sdp-custom.ts
  */
 
 import { StreamingUtils } from '../src/api/index.js';

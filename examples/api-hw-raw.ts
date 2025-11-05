@@ -108,6 +108,7 @@ const filterChain = FilterPreset.chain(hardware)
 
 console.log(`Creating filter: ${filterChain}`);
 using filter = FilterAPI.create(filterChain, {
+  framerate: videoStream.avgFrameRate,
   hardware,
 });
 
