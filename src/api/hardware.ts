@@ -1,7 +1,6 @@
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { Decoder, Encoder, MediaInput } from '../api/index.js';
 import {
   AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX,
   AV_CODEC_HW_CONFIG_METHOD_HW_FRAMES_CTX,
@@ -42,16 +41,28 @@ import {
   AV_PIX_FMT_VIDEOTOOLBOX,
   AV_PIX_FMT_VULKAN,
 } from '../constants/constants.js';
-import { avGetHardwareDeviceTypeFromName, Codec, Dictionary, FFmpegError, HardwareDeviceContext } from '../lib/index.js';
+import { Codec } from '../lib/codec.js';
+import { Dictionary } from '../lib/dictionary.js';
+import { FFmpegError } from '../lib/error.js';
+import { HardwareDeviceContext } from '../lib/hardware-device-context.js';
+import { Stream } from '../lib/stream.js';
+import { avGetHardwareDeviceTypeFromName } from '../lib/utilities.js';
+import { Decoder } from './decoder.js';
+import { Encoder } from './encoder.js';
+import { MediaInput } from './media-input.js';
 
 import type { AVCodecID, AVHWDeviceType, AVPixelFormat, FFDecoderCodec, FFEncoderCodec, FFHWDeviceType } from '../constants/index.js';
-import type { Packet } from '../lib/index.js';
+import type { Packet } from '../lib/packet.js';
 import type { BaseCodecName, HardwareOptions } from './types.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const h264Data = join(__dirname, 'data', 'test_h264.h264');
 const hevcData = join(__dirname, 'data', 'test_hevc.h265');
+const vp8Data = join(__dirname, 'data', 'test_vp8.ivf');
+const vp9Data = join(__dirname, 'data', 'test_vp9.ivf');
+const av1Data = join(__dirname, 'data', 'test_av1.ivf');
+const mjpegData = join(__dirname, 'data', 'test_mjpeg.mjpeg');
 
 /**
  * High-level hardware acceleration management.
@@ -225,6 +236,88 @@ export class HardwareContext implements Disposable {
     }
 
     return hw;
+  }
+
+  /**
+   * Create a derived hardware device context.
+   *
+   * Creates a new hardware context derived from an existing one.
+   * Allows creating contexts on different device types that can share
+   * memory or resources with the source device. Useful for cross-device
+   * pipelines (e.g., VAAPI → OpenCL, CUDA → Vulkan).
+   *
+   * Direct mapping to av_hwdevice_ctx_create_derived().
+   *
+   * @param source - Source hardware context to derive from
+   *
+   * @param targetType - Target device type to create
+   *
+   * @returns New hardware context or null if derivation fails
+   *
+   * @example
+   * ```typescript
+   * import { AV_HWDEVICE_TYPE_VAAPI, AV_HWDEVICE_TYPE_OPENCL } from 'node-av/constants';
+   *
+   * // Create VAAPI device for decoding
+   * const vaapi = HardwareContext.create(AV_HWDEVICE_TYPE_VAAPI);
+   *
+   * // Derive OpenCL device for filtering (shares memory with VAAPI)
+   * const opencl = HardwareContext.derive(vaapi, AV_HWDEVICE_TYPE_OPENCL);
+   *
+   * if (opencl) {
+   *   // Decode with VAAPI
+   *   const decoder = await Decoder.create(stream, { hardware: vaapi });
+   *
+   *   // Filter with OpenCL (overrides frame's VAAPI context)
+   *   const filter = FilterAPI.create('program_opencl=...', { hardware: opencl });
+   *
+   *   for await (const frame of decoder.frames()) {
+   *     // frame has VAAPI context, but filter uses OpenCL
+   *     const filtered = await filter.apply(frame);
+   *   }
+   * }
+   * ```
+   *
+   * @example
+   * ```typescript
+   * // CUDA → Vulkan derivation
+   * const cuda = HardwareContext.create(AV_HWDEVICE_TYPE_CUDA);
+   * const vulkan = HardwareContext.derive(cuda, AV_HWDEVICE_TYPE_VULKAN);
+   * ```
+   *
+   * @see {@link create} For creating independent device
+   */
+  static derive(source: HardwareContext, targetType: AVHWDeviceType | FFHWDeviceType): HardwareContext | null {
+    if (!source || source.isDisposed) {
+      return null;
+    }
+
+    if (typeof targetType === 'string') {
+      targetType = avGetHardwareDeviceTypeFromName(targetType);
+    }
+
+    if (targetType === AV_HWDEVICE_TYPE_NONE) {
+      return null;
+    }
+
+    try {
+      const derivedDeviceCtx = new HardwareDeviceContext();
+      const ret = derivedDeviceCtx.createDerived(source.deviceContext, targetType);
+      if (FFmpegError.isFFmpegError(ret)) {
+        derivedDeviceCtx.free();
+        return null;
+      }
+
+      const deviceTypeName = HardwareDeviceContext.getTypeName(targetType);
+      if (!deviceTypeName) {
+        derivedDeviceCtx.free();
+        return null;
+      }
+
+      return new HardwareContext(derivedDeviceCtx, targetType, deviceTypeName);
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -417,7 +510,7 @@ export class HardwareContext implements Disposable {
    * Returns null if no hardware encoder is available for the codec.
    * Automatically tests encoder viability before returning.
    *
-   * @param codec - Generic codec name (e.g., 'h264', 'hevc', 'av1') or AVCodecID
+   * @param codecOrStream - Generic codec name (e.g., 'h264', 'hevc', 'av1'), AVCodecID or Stream
    *
    * @param validate - Whether to validate encoder by testing (default: false)
    *
@@ -443,15 +536,18 @@ export class HardwareContext implements Disposable {
    *
    * @see {@link Encoder.create} For using the codec
    */
-  getEncoderCodec(codec: BaseCodecName | AVCodecID, validate?: boolean): Codec | null {
+  getEncoderCodec(codecOrStream: BaseCodecName | AVCodecID | Stream, validate?: boolean): Codec | null {
     // Build the encoder name
     let codecBaseName: BaseCodecName | null = null;
     let encoderSuffix = '';
 
-    if (typeof codec === 'number') {
-      codecBaseName = this.getBaseCodecName(codec) ?? null;
+    if (codecOrStream instanceof Stream) {
+      const codecParams = codecOrStream.codecpar;
+      codecBaseName = this.getBaseCodecName(codecParams.codecId) ?? null;
+    } else if (typeof codecOrStream === 'number') {
+      codecBaseName = this.getBaseCodecName(codecOrStream) ?? null;
     } else {
-      codecBaseName = codec;
+      codecBaseName = codecOrStream;
     }
 
     if (!codecBaseName) {
@@ -802,7 +898,29 @@ export class HardwareContext implements Disposable {
         throw new Error('Decoder codec not found');
       }
 
-      const testFilePath = codecDecoder.id === AV_CODEC_ID_HEVC ? hevcData : h264Data;
+      // Select appropriate test file based on codec
+      let testFilePath: string;
+      switch (codecDecoder.id) {
+        case AV_CODEC_ID_HEVC:
+          testFilePath = hevcData;
+          break;
+        case AV_CODEC_ID_VP8:
+          testFilePath = vp8Data;
+          break;
+        case AV_CODEC_ID_VP9:
+          testFilePath = vp9Data;
+          break;
+        case AV_CODEC_ID_AV1:
+          testFilePath = av1Data;
+          break;
+        case AV_CODEC_ID_MJPEG:
+          testFilePath = mjpegData;
+          break;
+        case AV_CODEC_ID_H264:
+        default:
+          testFilePath = h264Data;
+          break;
+      }
 
       // Read test bitstream
       using input = MediaInput.openSync(testFilePath);
@@ -831,8 +949,7 @@ export class HardwareContext implements Disposable {
         }
 
         encoder = Encoder.createSync(codecEncoder, {
-          timeBase: videoStream.timeBase,
-          frameRate: videoStream.avgFrameRate,
+          decoder,
         });
 
         packetGenerator = encoder.packetsSync(frameGenerator);
