@@ -138,7 +138,7 @@ function addStream(ost: OutputStream, oc: FormatContext, codecId: AVCodecID): Co
   if (!ost.st) {
     throw new Error('Could not allocate stream');
   }
-  ost.st.id = (oc.streams?.length ?? 1) - 1;
+  ost.st.id = (oc.streams.length ?? 1) - 1;
 
   const c = new CodecContext();
   c.allocContext3(codec);
@@ -640,6 +640,7 @@ async function main(): Promise<void> {
 
   const filename = args[0];
   const options = new Dictionary();
+  options.alloc();
 
   // Parse additional options (like -flags or -fflags)
   for (let i = 1; i + 1 < args.length; i += 2) {

@@ -165,8 +165,8 @@ if (formatContext.metadata) {
 console.log('[/FORMAT]\n');
 
 // This shows that NodeAV can access ALL codec parameters, not just the commonly used ones
-const audioStream = formatContext.streams?.find((s) => s.codecpar.codecType === AVMEDIA_TYPE_AUDIO);
-const videoStream = formatContext.streams?.find((s) => s.codecpar.codecType === AVMEDIA_TYPE_VIDEO);
+const audioStream = formatContext.streams.find((s) => s.codecpar.codecType === AVMEDIA_TYPE_AUDIO);
+const videoStream = formatContext.streams.find((s) => s.codecpar.codecType === AVMEDIA_TYPE_VIDEO);
 
 if (videoStream) {
   console.log('// Video stream codec parameters:');

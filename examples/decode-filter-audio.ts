@@ -70,7 +70,7 @@ async function openInputFile(filename: string): Promise<void> {
   audioStreamIndex = result;
 
   // Get the stream and find decoder
-  const stream = formatCtx.streams![audioStreamIndex];
+  const stream = formatCtx.streams[audioStreamIndex];
   if (!stream?.codecpar) {
     throw new Error('Audio stream or codec parameters not found');
   }
@@ -111,7 +111,7 @@ async function initFilters(filtersDescr: string): Promise<void> {
   filterGraph.alloc();
 
   // Get stream time base
-  const stream = formatCtx!.streams![audioStreamIndex];
+  const stream = formatCtx!.streams[audioStreamIndex];
   if (!stream) {
     throw new Error('Audio stream not found');
   }

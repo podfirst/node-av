@@ -172,9 +172,7 @@ const parseEnums = (headerPath) => {
       if (!cleanLine) continue;
 
       // Match enum values starting with AV_
-      const valueMatch = cleanLine.match(
-        /^\s*(AV_[A-Z0-9_]+)\s*(?:=\s*(.+?))?$/,
-      );
+      const valueMatch = cleanLine.match(/^\s*(AV_[A-Z0-9_]+)\s*(?:=\s*(.+?))?$/);
 
       if (valueMatch) {
         const name = valueMatch[1];

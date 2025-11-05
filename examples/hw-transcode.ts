@@ -177,7 +177,7 @@ async function openInputFile(filename: string, deviceType: AVHWDeviceType): Prom
   videoStreamIndex = streamResult.streamIndex;
   const suggestedDecoder = streamResult.decoder;
 
-  const videoStream = inputCtx.streams![videoStreamIndex];
+  const videoStream = inputCtx.streams[videoStreamIndex];
   if (!videoStream) {
     console.error('Video stream not found');
     return -1;
@@ -305,7 +305,7 @@ async function encodeWrite(packet: Packet, frame: Frame | null): Promise<number>
     packet.streamIndex = 0;
 
     // Rescale timestamps
-    packet.rescaleTs(inputCtx!.streams![videoStreamIndex].timeBase, outputCtx!.streams![0].timeBase);
+    packet.rescaleTs(inputCtx!.streams[videoStreamIndex].timeBase, outputCtx!.streams[0].timeBase);
 
     // Write packet
     const writeRet = await outputCtx!.interleavedWriteFrame(packet);

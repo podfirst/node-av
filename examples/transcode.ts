@@ -80,7 +80,7 @@ async function open_input_file(filename: string): Promise<number> {
   stream_ctx = new Array(nb_streams);
 
   for (let i = 0; i < nb_streams; i++) {
-    const stream = ifmt_ctx.streams![i];
+    const stream = ifmt_ctx.streams[i];
     const codecpar = stream.codecpar;
     const dec = Codec.findDecoder(codecpar.codecId);
 
@@ -147,7 +147,7 @@ async function open_output_file(filename: string): Promise<number> {
       return -1;
     }
 
-    const in_stream = ifmt_ctx!.streams![i];
+    const in_stream = ifmt_ctx!.streams[i];
     const dec_ctx = stream_ctx[i].dec_ctx;
 
     if (dec_ctx && (dec_ctx.codecType === AVMEDIA_TYPE_VIDEO || dec_ctx.codecType === AVMEDIA_TYPE_AUDIO)) {
@@ -444,7 +444,7 @@ async function init_filters(): Promise<number> {
       filtered_frame: null,
     };
 
-    const codecpar = ifmt_ctx!.streams![i].codecpar;
+    const codecpar = ifmt_ctx!.streams[i].codecpar;
     if (!(codecpar.codecType === AVMEDIA_TYPE_AUDIO || codecpar.codecType === AVMEDIA_TYPE_VIDEO)) {
       continue;
     }
@@ -502,7 +502,7 @@ async function encode_write_frame(stream_index: number, flush: boolean): Promise
 
     // Prepare packet for muxing
     enc_pkt.streamIndex = stream_index;
-    enc_pkt.rescaleTs(stream.enc_ctx!.timeBase, ofmt_ctx!.streams![stream_index].timeBase);
+    enc_pkt.rescaleTs(stream.enc_ctx!.timeBase, ofmt_ctx!.streams[stream_index].timeBase);
 
     // console.log('Muxing frame');
     // Mux encoded frame
@@ -628,7 +628,7 @@ async function main(): Promise<void> {
       }
     } else {
       // Remux this frame without reencoding
-      packet.rescaleTs(ifmt_ctx!.streams![stream_index].timeBase, ofmt_ctx!.streams![stream_index].timeBase);
+      packet.rescaleTs(ifmt_ctx!.streams[stream_index].timeBase, ofmt_ctx!.streams[stream_index].timeBase);
 
       ret = await ofmt_ctx!.interleavedWriteFrame(packet);
       if (ret < 0) {

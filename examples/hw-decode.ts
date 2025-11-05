@@ -166,7 +166,7 @@ async function main(): Promise<number> {
       return -1;
     }
 
-    const videoStream = inputCtx.streams![videoStreamIndex];
+    const videoStream = inputCtx.streams[videoStreamIndex];
 
     // Find the decoder for the stream
     const decoder = Codec.findDecoder(videoStream.codecpar.codecId);

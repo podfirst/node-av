@@ -59,7 +59,7 @@ async function openInputFile(filename: string): Promise<{
     throw new Error(`Expected one audio input stream, but found ${inputFormatContext.nbStreams}`);
   }
 
-  const stream = inputFormatContext.streams![0];
+  const stream = inputFormatContext.streams[0];
 
   // Find a decoder for the audio stream
   const inputCodec = Codec.findDecoder(stream.codecpar.codecId);

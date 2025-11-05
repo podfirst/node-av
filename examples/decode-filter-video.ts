@@ -68,7 +68,7 @@ async function openInputFile(filename: string): Promise<void> {
   videoStreamIndex = result;
 
   // Get the stream and find decoder
-  const stream = formatCtx.streams![videoStreamIndex];
+  const stream = formatCtx.streams[videoStreamIndex];
   if (!stream?.codecpar) {
     throw new Error('Video stream or codec parameters not found');
   }
@@ -113,7 +113,7 @@ async function initFilters(filtersDescr: string): Promise<void> {
   filterGraph.alloc();
 
   // Get stream time base
-  const stream = formatCtx!.streams![videoStreamIndex];
+  const stream = formatCtx!.streams[videoStreamIndex];
   if (!stream) {
     throw new Error('Video stream not found');
   }
@@ -267,7 +267,7 @@ async function decodeFilterVideo(inputFile: string): Promise<void> {
                   const filtRet = await buffersinkCtx!.buffersinkGetFrame(filtFrame);
                   if (filtRet < 0) break;
 
-                  const stream = formatCtx!.streams![videoStreamIndex];
+                  const stream = formatCtx!.streams[videoStreamIndex];
                   displayFrame(filtFrame, stream.timeBase);
                   filtFrame.unref();
                 }
@@ -283,7 +283,7 @@ async function decodeFilterVideo(inputFile: string): Promise<void> {
               const filtRet = await buffersinkCtx!.buffersinkGetFrame(filtFrame);
               if (filtRet < 0) break;
 
-              const stream = formatCtx!.streams![videoStreamIndex];
+              const stream = formatCtx!.streams[videoStreamIndex];
               displayFrame(filtFrame, stream.timeBase);
               filtFrame.unref();
             }
@@ -329,7 +329,7 @@ async function decodeFilterVideo(inputFile: string): Promise<void> {
             }
             FFmpegError.throwIfError(sinkRet, `Error getting filtered frame: ${new FFmpegError(sinkRet).message}`);
 
-            const stream = formatCtx!.streams![videoStreamIndex];
+            const stream = formatCtx!.streams[videoStreamIndex];
             displayFrame(filtFrame, stream.timeBase);
             filtFrame.unref();
           }
