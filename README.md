@@ -140,50 +140,44 @@ while (true) {
 Higher-level abstractions for common tasks like decoding, encoding, filtering, and transcoding. Easier to use while still providing access to low-level details when needed.
 
 ```typescript
-import { Decoder, Encoder, MediaInput, MediaOutput } from 'node-av/api';
+import { Decoder, Encoder, MediaInput, MediaOutput, HardwareContext } from 'node-av/api';
 import { FF_ENCODER_LIBX264 } from 'node-av/constants';
 
 // Open media
 await using input = await MediaInput.open('input.mp4');
-await using output = await MediaOutput.open('output.mp4');
+await using output = await MediaOutput.open('output.mp4', {
+  input, // Optional, used to copy global headers and metadata
+});
 
 // Get video stream
 const videoStream = input.video()!;
 
+// Setup hardware acceleration
+using hw = HardwareContext.auto();
+
 // Create decoder
-using decoder = await Decoder.create(videoStream);
+using decoder = await Decoder.create(videoStream, {
+  hardware: hw, // Optional, use hardware acceleration if available
+});
 
 // Create encoder
 using encoder = await Encoder.create(FF_ENCODER_LIBX264, {
-  timeBase: videoStream.timeBase,
-  frameRate: videoStream.avgFrameRate,
+  decoder, // Optional, copy settings from decoder
 });
 
 // Add stream to output
-const outputIndex = output.addStream(encoder);
+const outputIndex = output.addStream(encoder, {
+  inputStream: videoStream, // Optional, copy settings from input stream
+});
+
+// Create processing generators
+const inputGenerator = input.packets(videoStream.index);
+const decoderGenerator = decoder.frames(inputGenerator);
+const encoderGenerator = encoder.packets(decoderGenerator);
 
 // Process packets
-for await (using packet of input.packets(videoStream.index)) {
-  using frame = await decoder.decode(packet);
-  if (frame) {
-    using encoded = await encoder.encode(frame);
-    if (encoded) {
-      await output.writePacket(encoded, outputIndex);
-    }
-  }
-}
-
-// Flush decoder
-for await (using frame of decoder.flushFrames()) {
-  using encoded = await encoder.encode(frame);
-  if (encoded) {
-    await output.writePacket(encoded, outputIndex);
-  }
-}
-
-// Flush encoder
-for await (using packet of encoder.flushPackets()) {
-  await output.writePacket(packet, outputIndex);
+for await (using packet of inputGenerator) {
+  await output.writePacket(encoded, outputIndex);
 }
 
 // Done
@@ -198,11 +192,12 @@ import { pipeline, MediaInput, MediaOutput, Decoder, Encoder } from 'node-av/api
 
 // Simple transcode pipeline: input → decoder → encoder → output
 const input = await MediaInput.open('input.mp4');
-const output = await MediaOutput.open('output.mp4');
+const output = await MediaOutput.open('output.mp4', {
+  input,
+});
 const decoder = await Decoder.create(input.video());
 const encoder = await Encoder.create(FF_ENCODER_LIBX264, {
-  timeBase: videoStream.timeBase,
-  frameRate: videoStream.avgFrameRate,
+  decoder,
 });
 
 const control = pipeline(input, decoder, encoder, output);
@@ -231,8 +226,7 @@ const decoder = await Decoder.create(stream, {
 // Use with encoder (use hardware-specific codec)
 const encoderCodec = hw?.getEncoderCodec('h264') ?? FF_ENCODER_LIBX264;
 const encoder = await Encoder.create(encoderCodec, {
-  timeBase: videoStream.timeBase,
-  frameRate: videoStream.avgFrameRate,
+  decoder,
 });
 ```
 
@@ -422,6 +416,7 @@ NodeAV provides direct bindings to FFmpeg's C APIs, which work with raw memory p
 | `api-encode-decode` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-encode-decode.ts) |
 | `api-fmp4` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-fmp4.ts) |
 | `api-frame-extract` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-frame-extract.ts) |
+| `api-hw-codecs` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-hw-codecs.ts) |
 | `api-hw-decode-sw-encode` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-hw-decode-sw-encode.ts) |
 | `api-hw-raw` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-hw-raw.ts) |
 | `api-hw-raw-output` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-hw-raw-output.ts) |
