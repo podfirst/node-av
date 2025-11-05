@@ -909,7 +909,15 @@ async function consumeSimplePipeline(stream: AsyncIterable<Packet | Frame>, outp
   let streamIndex = 0;
 
   if (metadata.encoder) {
-    streamIndex = output.addStream(metadata.encoder);
+    // Encoding path
+    if (metadata.decoder) {
+      // Have decoder - use its stream for metadata/properties
+      const originalStream = metadata.decoder.getStream();
+      streamIndex = output.addStream(originalStream, { encoder: metadata.encoder });
+    } else {
+      // Encoder-only mode (e.g., frame generator) - no input stream
+      streamIndex = output.addStream(metadata.encoder);
+    }
   } else if (metadata.decoder) {
     // Stream copy - use decoder's original stream
     const originalStream = metadata.decoder.getStream();
@@ -1507,7 +1515,15 @@ async function consumeNamedStream(stream: AsyncIterable<Packet>, output: MediaOu
   let streamIndex = 0;
 
   if (metadata.encoder) {
-    streamIndex = output.addStream(metadata.encoder);
+    // Encoding path
+    if (metadata.decoder) {
+      // Have decoder - use its stream for metadata/properties
+      const originalStream = metadata.decoder.getStream();
+      streamIndex = output.addStream(originalStream, { encoder: metadata.encoder });
+    } else {
+      // Encoder-only mode (e.g., frame generator) - no input stream
+      streamIndex = output.addStream(metadata.encoder);
+    }
   } else if (metadata.decoder) {
     // Stream copy - use decoder's original stream
     const originalStream = metadata.decoder.getStream();
@@ -1573,7 +1589,15 @@ async function interleaveToOutput(
 
   for (const [name, meta] of Object.entries(metadata) as [StreamName, StreamMetadata][]) {
     if (meta.encoder) {
-      streamIndices[name] = output.addStream(meta.encoder);
+      // Encoding path
+      if (meta.decoder) {
+        // Have decoder - use its stream for metadata/properties
+        const originalStream = meta.decoder.getStream();
+        streamIndices[name] = output.addStream(originalStream, { encoder: meta.encoder });
+      } else {
+        // Encoder-only mode (e.g., frame generator) - no input stream
+        streamIndices[name] = output.addStream(meta.encoder);
+      }
     } else if (meta.decoder) {
       // Stream copy - use decoder's original stream
       const originalStream = meta.decoder.getStream();
