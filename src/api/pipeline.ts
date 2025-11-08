@@ -33,11 +33,6 @@ interface StreamMetadata {
   mediaInput?: MediaInput; // Track source MediaInput for stream copy
 }
 
-// Create packet queues for each stream
-interface PacketWithStream extends Packet {
-  _streamName: string;
-}
-
 /**
  * Pipeline control interface for managing pipeline execution.
  * Allows graceful stopping and completion tracking of running pipelines.
@@ -476,6 +471,33 @@ export function pipeline(source: AsyncIterable<Frame>, filter: FilterAPI | Filte
 // ============================================================================
 
 /**
+ * Named pipeline with shared input and single output.
+ *
+ * @param input - Shared input source (used for all streams)
+ *
+ * @param stages - Named processing stages for each stream
+ *
+ * @param output - Single output destination for all streams
+ *
+ * @returns Pipeline control for managing execution
+ *
+ * @example
+ * ```typescript
+ * // Named pipeline with shared input
+ * const control = pipeline(
+ *   input, // Automatically used for both video and audio
+ *   {
+ *     video: [videoDecoder, scaleFilter, videoEncoder],
+ *     audio: [audioDecoder, volumeFilter, audioEncoder]
+ *   },
+ *   output
+ * );
+ * await control.completion;
+ * ```
+ */
+export function pipeline<K extends StreamName>(input: MediaInput, stages: NamedStages<K>, output: MediaOutput): PipelineControl;
+
+/**
  * Named pipeline with single output - all streams go to the same output.
  *
  * @param inputs - Named input sources (video/audio)
@@ -501,6 +523,33 @@ export function pipeline(source: AsyncIterable<Frame>, filter: FilterAPI | Filte
  * ```
  */
 export function pipeline<K extends StreamName>(inputs: NamedInputs<K>, stages: NamedStages<K>, output: MediaOutput): PipelineControl;
+
+/**
+ * Named pipeline with shared input and multiple outputs.
+ *
+ * @param input - Shared input source (used for all streams)
+ *
+ * @param stages - Named processing stages for each stream
+ *
+ * @param outputs - Named output destinations
+ *
+ * @returns Pipeline control for managing execution
+ *
+ * @example
+ * ```typescript
+ * // Named pipeline with shared input and separate outputs
+ * const control = pipeline(
+ *   input, // Automatically used for both video and audio
+ *   {
+ *     video: [videoDecoder, scaleFilter, videoEncoder],
+ *     audio: [audioDecoder, volumeFilter, audioEncoder]
+ *   },
+ *   { video: videoOutput, audio: audioOutput }
+ * );
+ * await control.completion;
+ * ```
+ */
+export function pipeline<K extends StreamName>(input: MediaInput, stages: NamedStages<K>, outputs: NamedOutputs<K>): PipelineControl;
 
 /**
  * Named pipeline with multiple outputs - each stream has its own output.
@@ -605,6 +654,28 @@ export function pipeline<K extends StreamName, T extends Packet | Frame = Packet
 export function pipeline(...args: any[]): PipelineControl | AsyncGenerator<Packet | Frame> | Record<StreamName, AsyncGenerator<Packet | Frame>> {
   // Detect pipeline type based on first argument
   const firstArg = args[0];
+  const secondArg = args[1];
+
+  // Check for shared MediaInput + NamedStages pattern
+  if (isMediaInput(firstArg) && isNamedStages(secondArg)) {
+    // Convert shared input to NamedInputs based on stages keys
+    const sharedInput = firstArg;
+    const stages = secondArg;
+    const namedInputs: any = {};
+
+    // Create NamedInputs with shared input for all streams in stages
+    for (const streamName of Object.keys(stages)) {
+      namedInputs[streamName] = sharedInput;
+    }
+
+    if (args.length === 3) {
+      // Full named pipeline with output(s)
+      return runNamedPipeline(namedInputs, stages, args[2]);
+    } else {
+      // Partial named pipeline
+      return runNamedPartialPipeline(namedInputs, stages);
+    }
+  }
 
   if (isNamedInputs(firstArg)) {
     // Named pipeline (2 or 3 arguments)
@@ -1053,107 +1124,6 @@ function runNamedPipeline<K extends StreamName>(inputs: NamedInputs<K>, stages: 
 }
 
 /**
- * Demux a shared packet stream into separate streams by stream index.
- *
- * @param packets - Shared packet stream (all packets)
- *
- * @param streamIndexMap - Map of stream names to stream indices
- *
- * @param shouldStop - Function to check if pipeline should stop
- *
- * @returns Record of demuxed packet streams
- *
- * @internal
- */
-function demuxPacketStream<K extends StreamName>(
-  packets: AsyncIterable<Packet>,
-  streamIndexMap: Record<K, number>,
-  shouldStop: () => boolean,
-): Record<K, AsyncIterable<Packet>> {
-  const result = {} as Record<K, AsyncIterable<Packet>>;
-
-  // Create a promise-based queue for each stream
-  const queues: Record<K, (Packet | null)[]> = {} as any;
-  const resolvers: Record<K, ((value: Packet | null) => void)[]> = {} as any;
-
-  // Initialize queues
-  for (const streamName of Object.keys(streamIndexMap) as K[]) {
-    (queues as any)[streamName] = [];
-    (resolvers as any)[streamName] = [];
-  }
-
-  // Start reading packets in background and distribute to queues
-  (async () => {
-    try {
-      for await (const packet of packets) {
-        if (shouldStop()) {
-          packet.free();
-          break;
-        }
-
-        // Find which stream this packet belongs to
-        for (const [streamName, streamIndex] of Object.entries(streamIndexMap) as [K, number][]) {
-          if (packet.streamIndex === streamIndex) {
-            const queue = (queues as any)[streamName];
-            const resolver = (resolvers as any)[streamName].shift();
-
-            if (resolver) {
-              // Someone is waiting for a packet
-              resolver(packet);
-            } else {
-              // Queue the packet
-              queue.push(packet);
-            }
-            break;
-          }
-        }
-      }
-    } finally {
-      // Signal end to all streams
-      for (const streamName of Object.keys(streamIndexMap) as K[]) {
-        const resolver = (resolvers as any)[streamName].shift();
-        if (resolver) {
-          resolver(null);
-        } else {
-          (queues as any)[streamName].push(null);
-        }
-      }
-    }
-  })();
-
-  // Create async generators for each stream
-  for (const streamName of Object.keys(streamIndexMap) as K[]) {
-    (result as any)[streamName] = (async function* () {
-      const queue = (queues as any)[streamName];
-      const resolverQueue = (resolvers as any)[streamName];
-
-      while (!shouldStop()) {
-        let packet: Packet | null;
-
-        if (queue.length > 0) {
-          // Get packet from queue
-          packet = queue.shift()!;
-        } else {
-          // Wait for packet
-          packet = await new Promise<Packet | null>((resolve) => {
-            resolverQueue.push(resolve);
-          });
-        }
-
-        if (packet === null) {
-          // End of stream
-          break;
-        }
-
-        yield packet;
-      }
-    })();
-  }
-
-  return result;
-}
-
-/**
  * Run named pipeline asynchronously.
  *
  * @param inputs - Named input sources
@@ -1182,12 +1152,11 @@ async function runNamedPipelineAsync<K extends StreamName>(
   // Process each named stream into generators
   const processedStreams: Record<StreamName, AsyncIterable<Packet>> = {} as any;
 
-  // If all inputs are the same instance, use shared packet stream with demuxing
+  // If all inputs are the same instance, use MediaInput's built-in parallel packet generators
   if (allSameInput) {
     const sharedInput = inputValues[0];
-    const streamIndexMap: Record<StreamName, number> = {} as any;
 
-    // First pass: collect stream indices and metadata
+    // Single pass: collect metadata and build pipelines directly using input.packets(streamIndex)
     for (const [streamName, streamStages] of Object.entries(stages) as [
       StreamName,
       (Decoder | FilterAPI | FilterAPI[] | Encoder | BitStreamFilterAPI | BitStreamFilterAPI[] | undefined)[] | 'passthrough',
@@ -1206,7 +1175,7 @@ async function runNamedPipelineAsync<K extends StreamName>(
         }
       }
 
-      // Determine stream index
+      // Determine stream index and build pipeline
       let streamIndex: number | undefined;
       if (normalizedStages !== 'passthrough') {
         const stages = normalizedStages;
@@ -1234,8 +1203,11 @@ async function runNamedPipelineAsync<K extends StreamName>(
           }
           streamIndex = stream.index;
         }
+
+        // Build pipeline with packets from this specific stream
+        (processedStreams as any)[streamName] = buildNamedStreamPipeline(sharedInput.packets(streamIndex), stages, metadata);
       } else {
-        // Passthrough
+        // Passthrough - use MediaInput's built-in stream filtering
         metadata.type = streamName;
         metadata.mediaInput = sharedInput;
         const stream = streamName === 'video' ? sharedInput.video() : sharedInput.audio();
@@ -1243,40 +1215,9 @@ async function runNamedPipelineAsync<K extends StreamName>(
           throw new Error(`No ${streamName} stream found in input for passthrough.`);
         }
         streamIndex = stream.index;
-      }
 
-      (streamIndexMap as any)[streamName] = streamIndex;
-    }
-
-    // Create demuxed packet streams
-    const demuxedPackets = demuxPacketStream(sharedInput.packets(), streamIndexMap, shouldStop);
-
-    // Second pass: build pipelines for each stream
-    for (const [streamName, streamStages] of Object.entries(stages) as [
-      StreamName,
-      (Decoder | FilterAPI | FilterAPI[] | Encoder | BitStreamFilterAPI | BitStreamFilterAPI[] | undefined)[] | 'passthrough',
-    ][]) {
-      const metadata = streamMetadata[streamName];
-      const packets = (demuxedPackets as any)[streamName];
-
-      // Normalize stages again
-      let normalizedStages: typeof streamStages = streamStages;
-      if (Array.isArray(streamStages)) {
-        const definedStages = streamStages.filter((stage) => stage !== undefined);
-        if (definedStages.length === 0) {
-          normalizedStages = 'passthrough';
-        } else {
-          normalizedStages = definedStages;
-        }
-      }
-
-      if (normalizedStages === 'passthrough') {
-        // Direct passthrough
-        (processedStreams as any)[streamName] = packets;
-      } else {
-        // Build pipeline
-        const stages = normalizedStages;
-        (processedStreams as any)[streamName] = buildNamedStreamPipeline(packets, stages, metadata);
+        // Direct passthrough using input.packets(streamIndex)
+        (processedStreams as any)[streamName] = sharedInput.packets(streamIndex);
       }
     }
   } else {
@@ -1376,8 +1317,50 @@ async function runNamedPipelineAsync<K extends StreamName>(
 
   // Write to output(s)
   if (isMediaOutput(output)) {
-    // Single output - properly interleave all streams
-    await interleaveToOutput(processedStreams, output, streamMetadata, shouldStop);
+    // Always write streams in parallel - MediaOutput's SyncQueue handles interleaving internally
+    const streamIndices: Record<StreamName, number> = {} as any;
+
+    // Add all streams to output first
+    for (const [name, meta] of Object.entries(streamMetadata) as [StreamName, StreamMetadata][]) {
+      if (meta.encoder) {
+        // Encoding path
+        if (meta.decoder) {
+          // Have decoder - use its stream for metadata/properties
+          const originalStream = meta.decoder.getStream();
+          streamIndices[name] = output.addStream(originalStream, { encoder: meta.encoder });
+        } else {
+          // Encoder-only mode (e.g., frame generator) - no input stream
+          streamIndices[name] = output.addStream(meta.encoder);
+        }
+      } else if (meta.decoder) {
+        // Stream copy - use decoder's original stream
+        const originalStream = meta.decoder.getStream();
+        streamIndices[name] = output.addStream(originalStream);
+      } else if (meta.bitStreamFilter) {
+        // BSF - use BSF's original stream
+        const originalStream = meta.bitStreamFilter.getStream();
+        streamIndices[name] = output.addStream(originalStream);
+      } else if (meta.mediaInput) {
+        // Passthrough from MediaInput
+        const stream = name.includes('video') ? meta.mediaInput.video() : meta.mediaInput.audio();
+        if (!stream) {
+          throw new Error(`No matching stream found in MediaInput for ${name}`);
+        }
+        streamIndices[name] = output.addStream(stream);
+      } else {
+        throw new Error(`Cannot determine stream configuration for ${name}. This is likely a bug in the pipeline.`);
+      }
+    }
+
+    // Write all streams in parallel - MediaOutput's SyncQueue handles interleaving
+    const promises: Promise<void>[] = [];
+    for (const [name, stream] of Object.entries(processedStreams) as [StreamName, AsyncIterable<Packet>][]) {
+      const streamIndex = streamIndices[name];
+      promises.push(consumeStreamInParallel(stream, output, streamIndex, shouldStop));
+    }
+
+    await Promise.all(promises);
+    await output.close();
   } else {
     // Multiple outputs - write each stream to its output
     const outputs = output;
@@ -1498,6 +1481,34 @@ async function* buildNamedStreamPipeline(
 }
 
 /**
+ * Consume a stream in parallel (for passthrough pipelines).
+ * Stream index is already added to output.
+ *
+ * @param stream - Stream of packets
+ *
+ * @param output - Media output destination
+ *
+ * @param streamIndex - Pre-allocated stream index in output
+ *
+ * @param shouldStop - Function to check if pipeline should stop
+ *
+ * @internal
+ */
+async function consumeStreamInParallel(stream: AsyncIterable<Packet>, output: MediaOutput, streamIndex: number, shouldStop: () => boolean): Promise<void> {
+  // Write all packets
+  for await (using packet of stream) {
+    // Check if we should stop
+    if (shouldStop()) {
+      break;
+    }
+
+    await output.writePacket(packet, streamIndex);
+  }
+
+  // Note: Don't close output here - it will be closed by the caller after all streams finish
+}
+
+/**
  * Consume a named stream and write to output.
  *
  * @param stream - Stream of packets
@@ -1562,162 +1573,7 @@ async function consumeNamedStream(stream: AsyncIterable<Packet>, output: MediaOu
     }
   }
 
-  // Note: Trailer will be written by interleaveToOutput
-}
-
-/**
- * Interleave multiple streams to a single output.
- *
- * @param streams - Record of packet streams
- *
- * @param output - Media output destination
- *
- * @param metadata - Stream metadata for each stream
- *
- * @param shouldStop - Function to check if pipeline should stop
- *
- * @internal
- */
-async function interleaveToOutput(
-  streams: Record<StreamName, AsyncIterable<Packet>>,
-  output: MediaOutput,
-  metadata: Record<StreamName, StreamMetadata>,
-  shouldStop: () => boolean,
-): Promise<void> {
-  // Add all streams to output first
-  const streamIndices: Record<StreamName, number> = {} as any;
-
-  for (const [name, meta] of Object.entries(metadata) as [StreamName, StreamMetadata][]) {
-    if (meta.encoder) {
-      // Encoding path
-      if (meta.decoder) {
-        // Have decoder - use its stream for metadata/properties
-        const originalStream = meta.decoder.getStream();
-        streamIndices[name] = output.addStream(originalStream, { encoder: meta.encoder });
-      } else {
-        // Encoder-only mode (e.g., frame generator) - no input stream
-        streamIndices[name] = output.addStream(meta.encoder);
-      }
-    } else if (meta.decoder) {
-      // Stream copy - use decoder's original stream
-      const originalStream = meta.decoder.getStream();
-      streamIndices[name] = output.addStream(originalStream);
-    } else if (meta.bitStreamFilter) {
-      // BSF - use BSF's original stream
-      const originalStream = meta.bitStreamFilter.getStream();
-      streamIndices[name] = output.addStream(originalStream);
-    } else if (meta.mediaInput) {
-      // Passthrough from MediaInput - use stream name to determine which stream
-      const stream = name.includes('video') ? meta.mediaInput.video() : meta.mediaInput.audio();
-      if (!stream) {
-        throw new Error(`No matching stream found in MediaInput for ${name}`);
-      }
-      streamIndices[name] = output.addStream(stream);
-    } else {
-      // This should not happen
-      throw new Error(`Cannot determine stream configuration for ${name}. This is likely a bug in the pipeline.`);
-    }
-  }
-
-  const queues = new Map<StreamName, PacketWithStream[]>();
-  const iterators = new Map<StreamName, AsyncIterator<Packet>>();
-  const done = new Set<StreamName>();
-
-  // Initialize iterators
-  for (const [name, stream] of Object.entries(streams) as [StreamName, AsyncIterable<Packet>][]) {
-    queues.set(name, []);
-    iterators.set(name, stream[Symbol.asyncIterator]());
-  }
-
-  // Read initial packet from each stream
-  for (const [name, iterator] of iterators) {
-    const result = await iterator.next();
-    if (!result.done && result.value) {
-      const packet = result.value as PacketWithStream;
-      packet._streamName = name;
-      queues.get(name)!.push(packet);
-    } else {
-      done.add(name);
-    }
-  }
-
-  // Interleave packets based on DTS/PTS
-  while (done.size < Object.keys(streams).length && !shouldStop()) {
-    // Find packet with smallest DTS/PTS
-    let minPacket: PacketWithStream | null = null;
-    let minStreamName: StreamName | null = null;
-    let minTime = BigInt(Number.MAX_SAFE_INTEGER);
-
-    for (const [name, queue] of queues) {
-      if (queue.length > 0) {
-        const packet = queue[0];
-        const time = packet.dts ?? packet.pts ?? BigInt(0);
-        if (time < minTime) {
-          minTime = time;
-          minPacket = packet;
-          minStreamName = name;
-        }
-      }
-    }
-
-    if (!minPacket || !minStreamName) {
-      // All queues empty, read more
-      for (const [name, iterator] of iterators) {
-        if (!done.has(name)) {
-          const result = await iterator.next();
-          if (!result.done && result.value) {
-            const packet = result.value as PacketWithStream;
-            packet._streamName = name;
-            queues.get(name)!.push(packet);
-          } else {
-            done.add(name);
-          }
-        }
-      }
-      continue;
-    }
-
-    // Write the packet with smallest timestamp
-    const streamIndex = streamIndices[minStreamName];
-    await output.writePacket(minPacket, streamIndex);
-
-    // Free the packet after writing
-    minPacket.free();
-
-    // Remove from queue
-    queues.get(minStreamName)!.shift();
-
-    // Read next packet from that stream
-    const iterator = iterators.get(minStreamName)!;
-    const result = await iterator.next();
-    if (!result.done && result.value) {
-      const packet = result.value as PacketWithStream;
-      packet._streamName = minStreamName;
-      queues.get(minStreamName)!.push(packet);
-    } else {
-      done.add(minStreamName);
-    }
-  }
-
-  // If stopped, free all remaining packets in queues
-  if (shouldStop()) {
-    for (const [, queue] of queues) {
-      for (const packet of queue) {
-        packet.free();
-      }
-    }
-  } else {
-    // Write any remaining packets
-    for (const [name, queue] of queues) {
-      const streamIndex = streamIndices[name];
-      for (const packet of queue) {
-        await output.writePacket(packet, streamIndex);
-        packet.free(); // Free packet after writing
-      }
-    }
-  }
-
-  await output.close();
+  // Note: Output is closed by the caller after all streams finish
 }
 
 // ============================================================================
@@ -1735,6 +1591,25 @@ async function interleaveToOutput(
  */
 function isNamedInputs(obj: any): obj is NamedInputs<any> {
   return obj && typeof obj === 'object' && !Array.isArray(obj) && !isAsyncIterable(obj) && !isMediaInput(obj);
+}
+
+/**
+ * Check if object is named stages.
+ *
+ * @param obj - Object to check
+ *
+ * @returns True if object is NamedStages
+ *
+ * @internal
+ */
+function isNamedStages(obj: any): obj is NamedStages<any> {
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
+    return false;
+  }
+
+  // Check if object has at least one stream name key (video or audio)
+  const keys = Object.keys(obj);
+  return keys.length > 0 && keys.every((key) => key === 'video' || key === 'audio');
 }
 
 /**
