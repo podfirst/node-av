@@ -63,6 +63,7 @@
             "include_dirs": [
                 "<!@(node -p \"require('node-addon-api').include\")",
                 "<(module_root_dir)/externals/jellyfin-ffmpeg",
+                "<(module_root_dir)/externals/jellyfin-ffmpeg/libavcodec",
             ],
             "dependencies": ["<!(node -p \"require('node-addon-api').gyp\")"],
             "cflags!": ["-fno-exceptions"],

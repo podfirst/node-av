@@ -64,6 +64,7 @@
                 "<!@(node -p \"require('node-addon-api').include\")",
                 "<(module_root_dir)/ffmpeg-msvc/include",
                 "<(module_root_dir)/externals/jellyfin-ffmpeg",
+                "<(module_root_dir)/externals/jellyfin-ffmpeg/libavcodec",
             ],
             "library_dirs": ["<(module_root_dir)/ffmpeg-msvc/lib"],
             "dependencies": ["<!(node -p \"require('node-addon-api').gyp\")"],
