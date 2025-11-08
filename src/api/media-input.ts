@@ -6,6 +6,7 @@ import { RtpPacket } from 'werift';
 
 import {
   AV_NOPTS_VALUE,
+  AV_PIX_FMT_NONE,
   AV_ROUND_NEAR_INF,
   AV_ROUND_PASS_MINMAX,
   AV_TIME_BASE,
@@ -28,6 +29,7 @@ import { IOContext } from '../lib/io-context.js';
 import { Packet } from '../lib/packet.js';
 import { Rational } from '../lib/rational.js';
 import { avGetPixFmtName, avGetSampleFmtName, avInvQ, avMulQ, avRescaleQ, avRescaleQRnd } from '../lib/utilities.js';
+import { DELTA_THRESHOLD, DTS_ERROR_THRESHOLD, IO_BUFFER_SIZE, MAX_INPUT_QUEUE_SIZE } from './constants.js';
 import { IOStream } from './io-stream.js';
 import { StreamingUtils } from './utilities/streaming.js';
 
@@ -110,7 +112,6 @@ export class MediaInput implements AsyncDisposable, Disposable {
   private queueResolvers = new Map<number | 'all', () => void>(); // Promise resolvers for waiting consumers
   private demuxThreadActive = false;
   private demuxEof = false;
-  private readonly MAX_QUEUE_SIZE = 100;
 
   /**
    * @param formatContext - Opened format context
@@ -471,7 +472,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
 
         // Setup custom I/O with callbacks
         ioContext = new IOContext();
-        ioContext.allocContextWithCallbacks(options.bufferSize ?? 8192, 0, input.read, null, input.seek);
+        ioContext.allocContextWithCallbacks(options.bufferSize ?? IO_BUFFER_SIZE, 0, input.read, null, input.seek);
         formatContext.pb = ioContext;
         formatContext.setFlags(AVFMT_FLAG_CUSTOM_IO);
 
@@ -485,16 +486,40 @@ export class MediaInput implements AsyncDisposable, Disposable {
       if (!options.skipStreamInfo) {
         const ret = await formatContext.findStreamInfo(null);
         FFmpegError.throwIfError(ret, 'Failed to find stream info');
+
+        // Try to parse extradata for video streams with missing dimensions
+        for (const stream of formatContext.streams ?? []) {
+          if (stream.codecpar.codecType === AVMEDIA_TYPE_VIDEO) {
+            const dimensionsMissing = stream.codecpar.width === 0 || stream.codecpar.height === 0;
+            const invalidFormat = stream.codecpar.format === AV_PIX_FMT_NONE;
+            const invalidRate = stream.codecpar.frameRate.num === 0 || stream.codecpar.frameRate.den === 0;
+
+            const needsParsing = dimensionsMissing || invalidFormat || invalidRate;
+            if (needsParsing && stream.codecpar.extradataSize > 0) {
+              stream.codecpar.parseExtradata();
+            }
+          }
+        }
+      }
+
+      // Determine buffer size
+      let bufferSize = options.bufferSize ?? IO_BUFFER_SIZE;
+      if (!ioContext && formatContext.iformat && formatContext.pb) {
+        // Check if this is a streaming input (like RTSP, HTTP, etc.)
+        const isStreaming = formatContext.pb.seekable === 0;
+        if (isStreaming) {
+          bufferSize *= 2; // double buffer size for streaming inputs
+        }
       }
 
       // Apply defaults to options
       const fullOptions: Required<MediaInputOptions> = {
-        bufferSize: options.bufferSize ?? 8192,
+        bufferSize,
         format: options.format ?? '',
         skipStreamInfo: options.skipStreamInfo ?? false,
         startWithKeyframe: options.startWithKeyframe ?? false,
-        dtsDeltaThreshold: options.dtsDeltaThreshold ?? 10,
-        dtsErrorThreshold: options.dtsErrorThreshold ?? 108000,
+        dtsDeltaThreshold: options.dtsDeltaThreshold ?? DELTA_THRESHOLD,
+        dtsErrorThreshold: options.dtsErrorThreshold ?? DTS_ERROR_THRESHOLD,
         copyTs: options.copyTs ?? false,
         options: options.options ?? {},
       };
@@ -675,7 +700,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
 
         // Setup custom I/O with callbacks
         ioContext = new IOContext();
-        ioContext.allocContextWithCallbacks(options.bufferSize ?? 8192, 0, input.read, null, input.seek);
+        ioContext.allocContextWithCallbacks(options.bufferSize ?? IO_BUFFER_SIZE, 0, input.read, null, input.seek);
         formatContext.pb = ioContext;
         formatContext.setFlags(AVFMT_FLAG_CUSTOM_IO);
 
@@ -691,14 +716,24 @@ export class MediaInput implements AsyncDisposable, Disposable {
         FFmpegError.throwIfError(ret, 'Failed to find stream info');
       }
 
+      // Determine buffer size
+      let bufferSize = options.bufferSize ?? IO_BUFFER_SIZE;
+      if (!ioContext && formatContext.iformat && formatContext.pb) {
+        // Check if this is a streaming input (like RTSP, HTTP, etc.)
+        const isStreaming = formatContext.pb.seekable === 0;
+        if (isStreaming) {
+          bufferSize *= 2; // double buffer size for streaming inputs
+        }
+      }
+
       // Apply defaults to options
       const fullOptions: Required<MediaInputOptions> = {
-        bufferSize: options.bufferSize ?? 8192,
+        bufferSize,
         format: options.format ?? '',
         skipStreamInfo: options.skipStreamInfo ?? false,
         startWithKeyframe: options.startWithKeyframe ?? false,
-        dtsDeltaThreshold: options.dtsDeltaThreshold ?? 10,
-        dtsErrorThreshold: options.dtsErrorThreshold ?? 108000,
+        dtsDeltaThreshold: options.dtsDeltaThreshold ?? DELTA_THRESHOLD,
+        dtsErrorThreshold: options.dtsErrorThreshold ?? DTS_ERROR_THRESHOLD,
         copyTs: options.copyTs ?? false,
         options: options.options ?? {},
       };
@@ -1617,7 +1652,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
         // Check if all queues are full - if so, wait a bit
         let allQueuesFull = true;
         for (const queue of this.packetQueues.values()) {
-          if (queue.length < this.MAX_QUEUE_SIZE) {
+          if (queue.length < MAX_INPUT_QUEUE_SIZE) {
             allQueuesFull = false;
             break;
           }
@@ -1655,12 +1690,12 @@ export class MediaInput implements AsyncDisposable, Disposable {
 
         const targetQueues: { queue: Packet[]; event: string }[] = [];
 
-        if (allQueue && allQueue.length < this.MAX_QUEUE_SIZE) {
+        if (allQueue && allQueue.length < MAX_INPUT_QUEUE_SIZE) {
           targetQueues.push({ queue: allQueue, event: 'packet-all' });
         }
 
         // Only add stream queue if it's different from 'all' queue
-        if (streamQueue && streamQueue !== allQueue && streamQueue.length < this.MAX_QUEUE_SIZE) {
+        if (streamQueue && streamQueue !== allQueue && streamQueue.length < MAX_INPUT_QUEUE_SIZE) {
           targetQueues.push({ queue: streamQueue, event: `packet-${packet.streamIndex}` });
         }
 
@@ -2082,13 +2117,17 @@ export class MediaInput implements AsyncDisposable, Disposable {
 
     this.isClosed = true;
 
-    // IMPORTANT: Clear pb reference FIRST to prevent use-after-free
+    // Clear pb reference FIRST to prevent use-after-free
     if (this.ioContext) {
       this.formatContext.pb = null;
     }
 
-    // Close FormatContext
+    // IMPORTANT: Close FormatContext BEFORE stopping demux thread
+    // This interrupts any blocking read() calls in the demux loop
     await this.formatContext.closeInput();
+
+    // Safely stop the demux thread
+    await this.stopDemuxThread();
 
     // NOW we can safely free the IOContext
     if (this.ioContext) {
@@ -2133,6 +2172,18 @@ export class MediaInput implements AsyncDisposable, Disposable {
 
     // Close FormatContext
     this.formatContext.closeInputSync();
+
+    this.demuxThreadActive = false;
+
+    for (const queue of this.packetQueues.values()) {
+      for (const packet of queue) {
+        packet.free();
+      }
+      queue.length = 0;
+    }
+    this.packetQueues.clear();
+    this.queueResolvers.clear();
+    this.demuxEof = false;
 
     // NOW we can safely free the IOContext
     if (this.ioContext) {
