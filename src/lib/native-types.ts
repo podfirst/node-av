@@ -324,6 +324,7 @@ export interface NativeCodecParameters extends Disposable {
   copy(dst: NativeCodecParameters): number;
   fromContext(codecContext: NativeCodecContext): number;
   toContext(codecContext: NativeCodecContext): number;
+  parseExtradata(): number;
   getCodedSideData(type: AVPacketSideDataType): Buffer | null;
   addCodedSideData(type: AVPacketSideDataType, data: Buffer): number;
   getAllCodedSideData(): { type: AVPacketSideDataType; data: Buffer }[];

@@ -3,6 +3,17 @@
 
 extern "C" {
 #include <libavutil/avutil.h>
+#include <libavcodec/avcodec.h>
+#include <libavcodec/bsf.h>
+
+// Internal FFmpeg headers for codec-specific parsing
+#define register  // C++17 doesn't support 'register' keyword
+#include <get_bits.h>
+#include <h264_ps.h>
+#include <hevc/ps.h>
+#include <av1.h>
+#include <av1_parse.h>
+#undef register
 }
 
 namespace ffmpeg {
@@ -16,6 +27,7 @@ Napi::Object CodecParameters::Init(Napi::Env env, Napi::Object exports) {
     InstanceMethod<&CodecParameters::Copy>("copy"),
     InstanceMethod<&CodecParameters::FromContext>("fromContext"),
     InstanceMethod<&CodecParameters::ToContext>("toContext"),
+    InstanceMethod<&CodecParameters::ParseExtradata>("parseExtradata"),
     InstanceMethod<&CodecParameters::ToJSON>("toJSON"),
     InstanceMethod<&CodecParameters::GetCodedSideData>("getCodedSideData"),
     InstanceMethod<&CodecParameters::AddCodedSideData>("addCodedSideData"),
@@ -150,24 +162,633 @@ Napi::Value CodecParameters::FromContext(const Napi::CallbackInfo& info) {
 
 Napi::Value CodecParameters::ToContext(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
+
   if (!params_) {
     return Napi::Number::New(env, AVERROR(EINVAL));
   }
-  
+
   if (info.Length() < 1) {
     Napi::TypeError::New(env, "CodecContext required").ThrowAsJavaScriptException();
     return Napi::Number::New(env, AVERROR(EINVAL));
   }
-  
+
   CodecContext* ctx = UnwrapNativeObject<CodecContext>(env, info[0], "CodecContext");
   if (!ctx || !ctx->Get()) {
     Napi::TypeError::New(env, "Invalid CodecContext").ThrowAsJavaScriptException();
     return Napi::Number::New(env, AVERROR(EINVAL));
   }
-  
+
   int ret = avcodec_parameters_to_context(ctx->Get(), params_);
   return Napi::Number::New(env, ret);
+}
+
+// Structure to hold all parsed codec parameters from SPS
+struct ParsedParams {
+  int width = 0;
+  int height = 0;
+  int pix_fmt = -1;
+  int profile = -1;
+  int level = -1;
+  AVRational sar = {0, 1};
+  AVRational framerate = {0, 1};
+  int color_primaries = -1;
+  int color_trc = -1;
+  int color_space = -1;
+  int color_range = -1;
+  int chroma_location = -1;
+  int64_t bit_rate = 0;
+};
+
+// Parse H.264 SPS using FFmpeg internal API
+static int parse_h264_sps(const uint8_t* sps_data, int sps_size, ParsedParams* params) {
+  if (sps_size < 4) return -1;
+
+  // Skip NAL header (1 byte)
+  const uint8_t* sps_payload = sps_data + 1;
+  int payload_size = sps_size - 1;
+
+  GetBitContext gb;
+  int ret = init_get_bits8(&gb, sps_payload, payload_size);
+  if (ret < 0) return ret;
+
+  // Allocate dummy AVCodecContext (required by parser)
+  AVCodecContext* avctx = avcodec_alloc_context3(nullptr);
+  if (!avctx) return AVERROR(ENOMEM);
+
+  H264ParamSets ps;
+  memset(&ps, 0, sizeof(ps));
+
+  // Use FFmpeg's internal H.264 SPS parser
+  ret = ff_h264_decode_seq_parameter_set(&gb, avctx, &ps, 0);
+  if (ret < 0) {
+    ff_h264_ps_uninit(&ps);
+    avcodec_free_context(&avctx);
+    return ret;
+  }
+
+  // Extract all parameters from parsed SPS
+  const SPS* sps = ps.sps_list[0];
+  if (sps) {
+    // Dimensions
+    params->width = sps->mb_width * 16;
+    params->height = sps->mb_height * 16;
+
+    // Apply cropping
+    if (sps->crop) {
+      params->width -= sps->crop_left + sps->crop_right;
+      params->height -= sps->crop_top + sps->crop_bottom;
+    }
+
+    // Pixel format
+    if (sps->chroma_format_idc == 0) {
+      params->pix_fmt = AV_PIX_FMT_GRAY8;
+    } else if (sps->bit_depth_luma == 8) {
+      params->pix_fmt = AV_PIX_FMT_YUV420P;
+    } else if (sps->bit_depth_luma == 10) {
+      params->pix_fmt = AV_PIX_FMT_YUV420P10;
+    }
+
+    // Profile and level
+    params->profile = sps->profile_idc;
+    params->level = sps->level_idc;
+
+    // VUI parameters (if present)
+    if (sps->vui_parameters_present_flag) {
+      // Sample aspect ratio
+      if (sps->vui.sar.num && sps->vui.sar.den) {
+        params->sar = sps->vui.sar;
+      }
+
+      // Color information
+      if (sps->vui.colour_description_present_flag) {
+        params->color_primaries = sps->vui.colour_primaries;
+        params->color_trc = sps->vui.transfer_characteristics;
+        params->color_space = sps->vui.matrix_coeffs;
+      }
+
+      // Color range
+      if (sps->vui.video_signal_type_present_flag) {
+        params->color_range = sps->vui.video_full_range_flag ? AVCOL_RANGE_JPEG : AVCOL_RANGE_MPEG;
+      }
+
+      // Chroma location
+      if (sps->vui.chroma_loc_info_present_flag) {
+        params->chroma_location = sps->vui.chroma_sample_loc_type_top_field;
+      }
+    }
+
+    // Frame rate (from timing info - directly in SPS, not in VUI)
+    if (sps->timing_info_present_flag && sps->num_units_in_tick && sps->time_scale) {
+      params->framerate.num = sps->time_scale;
+      params->framerate.den = sps->num_units_in_tick * 2; // *2 for field-based timing
+    }
+
+    // Bit rate (from HRD parameters - directly in SPS)
+    if (sps->nal_hrd_parameters_present_flag || sps->vcl_hrd_parameters_present_flag) {
+      if (sps->bit_rate_value[0] > 0) {
+        params->bit_rate = sps->bit_rate_value[0];
+      }
+    }
+  }
+
+  ff_h264_ps_uninit(&ps);
+  avcodec_free_context(&avctx);
+  return sps ? 0 : -1;
+}
+
+// Parse HEVC/H.265 SPS using FFmpeg internal API
+static int parse_hevc_sps(const uint8_t* sps_data, int sps_size, ParsedParams* params) {
+  if (sps_size < 4) return -1;
+
+  // Skip NAL header (2 bytes for HEVC)
+  const uint8_t* sps_payload = sps_data + 2;
+  int payload_size = sps_size - 2;
+
+  GetBitContext gb;
+  int ret = init_get_bits8(&gb, sps_payload, payload_size);
+  if (ret < 0) return ret;
+
+  // Allocate dummy AVCodecContext (required by parser)
+  AVCodecContext* avctx = avcodec_alloc_context3(nullptr);
+  if (!avctx) return AVERROR(ENOMEM);
+
+  HEVCParamSets ps;
+  memset(&ps, 0, sizeof(ps));
+
+  // Use FFmpeg's internal HEVC SPS parser
+  // nuh_layer_id = 0, apply_defdispwin = 1
+  ret = ff_hevc_decode_nal_sps(&gb, avctx, &ps, 0, 1);
+  if (ret < 0) {
+    ff_hevc_ps_uninit(&ps);
+    avcodec_free_context(&avctx);
+    return ret;
+  }
+
+  // Extract all parameters from parsed SPS
+  const HEVCSPS* sps = (const HEVCSPS*)ps.sps_list[0];
+  if (sps) {
+    // Dimensions
+    params->width = sps->width;
+    params->height = sps->height;
+
+    // Pixel format
+    if (sps->pix_fmt != AV_PIX_FMT_NONE) {
+      params->pix_fmt = sps->pix_fmt;
+    } else if (sps->bit_depth == 8) {
+      params->pix_fmt = AV_PIX_FMT_YUV420P;
+    } else if (sps->bit_depth == 10) {
+      params->pix_fmt = AV_PIX_FMT_YUV420P10;
+    } else if (sps->bit_depth == 12) {
+      params->pix_fmt = AV_PIX_FMT_YUV420P12;
+    }
+
+    // Profile and level
+    params->profile = sps->ptl.general_ptl.profile_idc;
+    params->level = sps->ptl.general_ptl.level_idc;
+
+    // VUI parameters (if present)
+    if (sps->vui_present) {
+      // Sample aspect ratio (from common H2645VUI)
+      if (sps->vui.common.sar.num && sps->vui.common.sar.den) {
+        params->sar = sps->vui.common.sar;
+      }
+
+      // Frame rate (from HEVC-specific timing info)
+      if (sps->vui.vui_timing_info_present_flag && sps->vui.vui_num_units_in_tick && sps->vui.vui_time_scale) {
+        params->framerate.num = sps->vui.vui_time_scale;
+        params->framerate.den = sps->vui.vui_num_units_in_tick;
+      }
+
+      // Color information (from common H2645VUI)
+      if (sps->vui.common.colour_description_present_flag) {
+        params->color_primaries = sps->vui.common.colour_primaries;
+        params->color_trc = sps->vui.common.transfer_characteristics;
+        params->color_space = sps->vui.common.matrix_coeffs;
+      }
+
+      // Color range (from common H2645VUI)
+      if (sps->vui.common.video_signal_type_present_flag) {
+        params->color_range = sps->vui.common.video_full_range_flag ? AVCOL_RANGE_JPEG : AVCOL_RANGE_MPEG;
+      }
+
+      // Chroma location (from common H2645VUI)
+      if (sps->vui.common.chroma_loc_info_present_flag) {
+        params->chroma_location = sps->vui.common.chroma_sample_loc_type_top_field;
+      }
+    }
+  }
+
+  ff_hevc_ps_uninit(&ps);
+  avcodec_free_context(&avctx);
+  return sps ? 0 : -1;
+}
+
+// Parse VP8 keyframe header
+// VP8 frame header: https://datatracker.ietf.org/doc/html/rfc6386#section-9.1
+static int parse_vp8_keyframe(const uint8_t* data, int size, ParsedParams* params) {
+  if (size < 10) return -1;
+
+  // Check if it's a keyframe (bit 0 of first byte should be 0)
+  uint8_t frame_tag = data[0];
+  uint8_t frame_type = frame_tag & 1;
+
+  if (frame_type != 0) {
+    // Not a keyframe, dimensions not in header
+    return AVERROR(EAGAIN);
+  }
+
+  // Check sync code (bytes 3-5 should be 0x9d 0x01 0x2a)
+  if (data[3] != 0x9d || data[4] != 0x01 || data[5] != 0x2a) {
+    return AVERROR_INVALIDDATA;
+  }
+
+  // Read width and height (14 bits each, little endian)
+  // VP8 stores dimensions as (width-1) and (height-1)
+  params->width = ((data[6] | (data[7] << 8)) & 0x3FFF) + 1;
+  params->height = ((data[8] | (data[9] << 8)) & 0x3FFF) + 1;
+
+  // VP8 is always YUV420P
+  params->pix_fmt = AV_PIX_FMT_YUV420P;
+
+  return (params->width > 0 && params->height > 0) ? 0 : -1;
+}
+
+// Parse VP9 superframe or frame header
+// VP9 doesn't have dimensions in extradata typically, but can parse from frame
+static int parse_vp9_frame(const uint8_t* data, int size, ParsedParams* params) {
+  if (size < 10) return -1;
+
+  GetBitContext gb;
+  int ret = init_get_bits8(&gb, data, size > 32 ? 32 : size);
+  if (ret < 0) return ret;
+
+  // Frame marker (2 bits, should be 0b10)
+  if (get_bits(&gb, 2) != 2) {
+    return AVERROR_INVALIDDATA;
+  }
+
+  // Profile (2 bits)
+  params->profile = get_bits(&gb, 2);
+
+  // Show existing frame (1 bit)
+  if (get_bits1(&gb)) {
+    // Show existing frame, dimensions not in header
+    return AVERROR(EAGAIN);
+  }
+
+  // Frame type (1 bit): 0 = keyframe, 1 = inter frame
+  int frame_type = get_bits1(&gb);
+
+  // Show frame (1 bit)
+  get_bits1(&gb);
+
+  // Error resilient (1 bit)
+  get_bits1(&gb);
+
+  if (frame_type != 0) {
+    // Not a keyframe, dimensions not in header
+    return AVERROR(EAGAIN);
+  }
+
+  // Sync code (24 bits, should be 0x498342)
+  if (get_bits(&gb, 24) != 0x498342) {
+    return AVERROR_INVALIDDATA;
+  }
+
+  // Color space and range
+  int color_space = get_bits(&gb, 3);
+  params->color_space = color_space;  // VP9 color space mapping
+
+  if (color_space != 7) {  // CS_RGB
+    int color_range = get_bits1(&gb);
+    params->color_range = color_range ? AVCOL_RANGE_JPEG : AVCOL_RANGE_MPEG;
+  } else {
+    // RGB has different format
+    return AVERROR(ENOSYS);
+  }
+
+  // Refresh frame flags (8 bits)
+  get_bits(&gb, 8);
+
+  // Width and height
+  params->width = get_bits(&gb, 16) + 1;
+  params->height = get_bits(&gb, 16) + 1;
+
+  // VP9 pixel format depends on profile and bit depth
+  // For simplicity, assume 8-bit YUV420P
+  params->pix_fmt = AV_PIX_FMT_YUV420P;
+
+  return (params->width > 0 && params->height > 0) ? 0 : -1;
+}
+
+// Parse AV1 sequence header from OBU
+// AV1 spec: https://aomediacodec.github.io/av1-spec/av1-spec.pdf
+static int parse_av1_sequence_header(const uint8_t* data, int size, ParsedParams* params) {
+  if (size < 10) return -1;
+
+  GetBitContext gb;
+  int ret = init_get_bits8(&gb, data, size > 128 ? 128 : size);
+  if (ret < 0) return ret;
+
+  // seq_profile (3 bits)
+  params->profile = get_bits(&gb, 3);
+
+  // still_picture (1 bit)
+  get_bits1(&gb);
+
+  // reduced_still_picture_header (1 bit)
+  int reduced_still = get_bits1(&gb);
+
+  if (!reduced_still) {
+    // timing_info_present_flag (1 bit)
+    if (get_bits1(&gb)) {
+      // Skip timing info (varies, complex to parse)
+      return AVERROR(ENOSYS);
+    }
+
+    // decoder_model_info_present_flag (1 bit)
+    if (get_bits1(&gb)) {
+      // Skip decoder model info
+      return AVERROR(ENOSYS);
+    }
+
+    // initial_display_delay_present_flag (1 bit)
+    get_bits1(&gb);
+
+    // operating_points_cnt_minus_1 (5 bits)
+    int op_pts = get_bits(&gb, 5) + 1;
+
+    // Skip operating points
+    for (int i = 0; i < op_pts; i++) {
+      get_bits(&gb, 12);  // operating_point_idc
+      get_bits(&gb, 5);   // seq_level_idx
+
+      if (get_bits(&gb, 5) > 7) {  // seq_tier
+        get_bits1(&gb);  // seq_tier bit
+      }
+      // More fields depend on previous flags - skip for simplicity
+    }
+  }
+
+  // frame_width_bits_minus_1 (4 bits)
+  int width_bits = get_bits(&gb, 4) + 1;
+
+  // frame_height_bits_minus_1 (4 bits)
+  int height_bits = get_bits(&gb, 4) + 1;
+
+  // max_frame_width_minus_1 (width_bits bits)
+  params->width = get_bits(&gb, width_bits) + 1;
+
+  // max_frame_height_minus_1 (height_bits bits)
+  params->height = get_bits(&gb, height_bits) + 1;
+
+  // Skip frame_id_numbers_present_flag
+  if (!reduced_still) {
+    get_bits1(&gb);
+  }
+
+  // use_128x128_superblock (1 bit)
+  get_bits1(&gb);
+
+  // enable_filter_intra (1 bit)
+  get_bits1(&gb);
+
+  // enable_intra_edge_filter (1 bit)
+  get_bits1(&gb);
+
+  if (!reduced_still) {
+    // enable_interintra_compound (1 bit)
+    get_bits1(&gb);
+    // enable_masked_compound (1 bit)
+    get_bits1(&gb);
+    // enable_warped_motion (1 bit)
+    get_bits1(&gb);
+    // enable_dual_filter (1 bit)
+    get_bits1(&gb);
+    // enable_order_hint (1 bit)
+    get_bits1(&gb);
+    // enable_jnt_comp (1 bit)
+    get_bits1(&gb);
+    // enable_ref_frame_mvs (1 bit)
+    get_bits1(&gb);
+
+    // seq_choose_screen_content_tools (1 bit)
+    if (get_bits1(&gb)) {
+      get_bits1(&gb);  // seq_force_screen_content_tools
+    }
+
+    // seq_choose_integer_mv (1 bit)
+    if (get_bits1(&gb)) {
+      get_bits1(&gb);  // seq_force_integer_mv
+    }
+
+    // enable_superres (1 bit)
+    get_bits1(&gb);
+    // enable_cdef (1 bit)
+    get_bits1(&gb);
+    // enable_restoration (1 bit)
+    get_bits1(&gb);
+  }
+
+  // color_config - simplified
+  // For now, assume 8-bit YUV420P
+  params->pix_fmt = AV_PIX_FMT_YUV420P;
+
+  return (params->width > 0 && params->height > 0) ? 0 : -1;
+}
+
+Napi::Value CodecParameters::ParseExtradata(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+
+  if (!params_) {
+    return Napi::Number::New(env, AVERROR(EINVAL));
+  }
+
+  // Only parse if extradata exists and dimensions are missing
+  if (!params_->extradata || params_->extradata_size == 0) {
+    return Napi::Number::New(env, 0); // Nothing to parse
+  }
+
+  // Check if we already have codec parameters (width for video, sample_rate for audio)
+  if (params_->codec_type == AVMEDIA_TYPE_VIDEO && params_->width > 0) {
+    return Napi::Number::New(env, 0); // Already have parameters
+  }
+  if (params_->codec_type == AVMEDIA_TYPE_AUDIO && params_->sample_rate > 0) {
+    return Napi::Number::New(env, 0); // Already have parameters
+  }
+
+  ParsedParams parsed = {};
+  int ret = AVERROR(ENOSYS);
+
+  // Parse based on codec type
+  if (params_->codec_id == AV_CODEC_ID_H264 || params_->codec_id == AV_CODEC_ID_HEVC) {
+    // H.264/H.265: Requires Annex B format (00 00 00 01)
+    bool is_annexb = (params_->extradata_size >= 4 &&
+                      params_->extradata[0] == 0 && params_->extradata[1] == 0 &&
+                      params_->extradata[2] == 0 && params_->extradata[3] == 1);
+
+    if (!is_annexb) {
+      // avcC/hvcC format not supported yet (would need different parsing)
+      return Napi::Number::New(env, AVERROR(ENOSYS));
+    }
+
+    // Find first NAL unit
+    uint8_t* nal_start = params_->extradata + 4;  // Skip start code
+    int nal_size = 0;
+
+    // Find NAL size (search for next start code)
+    for (int i = 4; i < params_->extradata_size - 3; i++) {
+      if (params_->extradata[i] == 0 && params_->extradata[i+1] == 0 &&
+          params_->extradata[i+2] == 0 && params_->extradata[i+3] == 1) {
+        nal_size = i - 4;
+        break;
+      }
+    }
+    if (nal_size == 0) {
+      nal_size = params_->extradata_size - 4;  // Last NAL unit
+    }
+
+    if (nal_size <= 0) {
+      return Napi::Number::New(env, AVERROR(EINVAL));
+    }
+
+    if (params_->codec_id == AV_CODEC_ID_H264) {
+      // H.264: NAL type 7 = SPS
+      if ((nal_start[0] & 0x1F) == 7) {
+        ret = parse_h264_sps(nal_start, nal_size, &parsed);
+      }
+    } else if (params_->codec_id == AV_CODEC_ID_HEVC) {
+      // HEVC: NAL type 33 = SPS
+      if (((nal_start[0] >> 1) & 0x3F) == 33) {
+        ret = parse_hevc_sps(nal_start, nal_size, &parsed);
+      }
+    }
+  } else if (params_->codec_id == AV_CODEC_ID_VP8) {
+    // VP8: Parse keyframe header directly from extradata
+    ret = parse_vp8_keyframe(params_->extradata, params_->extradata_size, &parsed);
+  } else if (params_->codec_id == AV_CODEC_ID_VP9) {
+    // VP9: Parse frame header directly from extradata
+    ret = parse_vp9_frame(params_->extradata, params_->extradata_size, &parsed);
+  } else if (params_->codec_id == AV_CODEC_ID_AV1) {
+    // AV1: Parse sequence header OBU
+    // AV1 extradata can be in different formats:
+    // 1. Raw OBU (starts with OBU header)
+    // 2. AV1CodecConfigurationRecord (MP4/WebM container format)
+
+    // Check if it's AV1CodecConfigurationRecord (MP4 format)
+    if (params_->extradata_size > 4 && (params_->extradata[0] & 0x80)) {
+      // Version 1 of AV1CodecConfigurationRecord
+      // Format: marker(1) + version(7) + seq_profile(3) + seq_level_idx(5) + ...
+      // Skip first 4 bytes of config header
+      int offset = 4;
+
+      // Find sequence header OBU (type 1)
+      while (offset < params_->extradata_size - 2) {
+        uint8_t obu_header = params_->extradata[offset];
+        uint8_t obu_type = (obu_header >> 3) & 0x0F;
+        uint8_t has_size_field = (obu_header >> 1) & 1;
+
+        int header_size = 1;
+        int payload_offset = header_size;
+
+        // If has_size_field, read LEB128 size
+        if (has_size_field && offset + 1 < params_->extradata_size) {
+          // Read simple LEB128 (assuming size < 128 for extradata)
+          uint8_t size_byte = params_->extradata[offset + header_size];
+          payload_offset = header_size + 1;
+
+          if (obu_type == 1) {  // OBU_SEQUENCE_HEADER
+            // Found sequence header, parse it
+            ret = parse_av1_sequence_header(params_->extradata + offset + payload_offset,
+                                            params_->extradata_size - offset - payload_offset,
+                                            &parsed);
+            break;
+          }
+
+          // Skip to next OBU (header + size + payload)
+          offset += payload_offset + size_byte;
+        } else {
+          // No size field, can't parse
+          break;
+        }
+      }
+    } else {
+      // Try parsing as raw OBU
+      if (params_->extradata_size > 1) {
+        uint8_t obu_header = params_->extradata[0];
+        uint8_t obu_type = (obu_header >> 3) & 0x0F;
+        uint8_t has_size_field = (obu_header >> 1) & 1;
+
+        if (obu_type == 1) {  // OBU_SEQUENCE_HEADER
+          int payload_offset = 1;
+          if (has_size_field && params_->extradata_size > 2) {
+            payload_offset = 2;  // Skip header + size byte
+          }
+          ret = parse_av1_sequence_header(params_->extradata + payload_offset,
+                                         params_->extradata_size - payload_offset,
+                                         &parsed);
+        }
+      }
+    }
+  }
+
+  if (ret == 0 && parsed.width > 0 && parsed.height > 0) {
+    // Set dimensions
+    params_->width = parsed.width;
+    params_->height = parsed.height;
+
+    // Set pixel format
+    if (parsed.pix_fmt != -1) {
+      params_->format = parsed.pix_fmt;
+    }
+
+    // Set profile and level
+    if (parsed.profile != -1) {
+      params_->profile = parsed.profile;
+    }
+    if (parsed.level != -1) {
+      params_->level = parsed.level;
+    }
+
+    // Set sample aspect ratio
+    if (parsed.sar.num && parsed.sar.den) {
+      params_->sample_aspect_ratio = parsed.sar;
+    }
+
+    // Set frame rate
+    if (parsed.framerate.num && parsed.framerate.den) {
+      params_->framerate = parsed.framerate;
+    }
+
+    // Set color information
+    if (parsed.color_primaries != -1) {
+      params_->color_primaries = (AVColorPrimaries)parsed.color_primaries;
+    }
+    if (parsed.color_trc != -1) {
+      params_->color_trc = (AVColorTransferCharacteristic)parsed.color_trc;
+    }
+    if (parsed.color_space != -1) {
+      params_->color_space = (AVColorSpace)parsed.color_space;
+    }
+    if (parsed.color_range != -1) {
+      params_->color_range = (AVColorRange)parsed.color_range;
+    }
+
+    // Set chroma location
+    if (parsed.chroma_location != -1) {
+      params_->chroma_location = (AVChromaLocation)parsed.chroma_location;
+    }
+
+    // Set bit rate
+    if (parsed.bit_rate > 0) {
+      params_->bit_rate = parsed.bit_rate;
+    }
+
+    return Napi::Number::New(env, 0);
+  }
+
+  // Codec not supported or parsing failed
+  return Napi::Number::New(env, ret < 0 ? ret : AVERROR(ENOSYS));
 }
 
 Napi::Value CodecParameters::ToJSON(const Napi::CallbackInfo& info) {

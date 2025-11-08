@@ -617,6 +617,41 @@ export class CodecParameters implements NativeWrapper<NativeCodecParameters> {
   }
 
   /**
+   * Parse extradata to extract codec parameters.
+   *
+   * Opens a decoder to parse extradata (SPS/PPS for H.264, etc.) and extract
+   * codec parameters like width/height for video or sample_rate for audio.
+   * This is used when extradata exists (e.g., from SDP sprop-parameter-sets)
+   * but dimensions are missing due to insufficient probesize.
+   *
+   * Uses FFmpeg's decoder to parse extradata, same as avformat_find_stream_info()
+   * does internally. Works for all codecs (H.264, H.265, VP9, AV1, etc.).
+   *
+   * @returns 0 on success, negative error code on failure
+   *
+   * @example
+   * ```typescript
+   * import { FFmpegError } from 'node-av';
+   *
+   * // After opening RTSP with low probesize
+   * const input = await MediaInput.open('rtsp://...', {
+   *   options: { probesize: 32 }
+   * });
+   *
+   * const stream = input.video();
+   * if (stream.codecpar.width === 0 && stream.codecpar.extradata) {
+   *   // Parse extradata to get dimensions
+   *   const ret = stream.codecpar.parseExtradata();
+   *   FFmpegError.throwIfError(ret, 'parseExtradata');
+   *   console.log(`Dimensions: ${stream.codecpar.width}x${stream.codecpar.height}`);
+   * }
+   * ```
+   */
+  parseExtradata(): number {
+    return this.native.parseExtradata();
+  }
+
+  /**
    * Convert to JSON representation.
    *
    * Returns all codec parameters as a plain object.
