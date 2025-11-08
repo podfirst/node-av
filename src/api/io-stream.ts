@@ -1,5 +1,6 @@
 import { AVSEEK_CUR, AVSEEK_END, AVSEEK_SET, AVSEEK_SIZE } from '../constants/constants.js';
 import { IOContext } from '../lib/index.js';
+import { IO_BUFFER_SIZE } from './constants.js';
 
 import type { AVSeekWhence } from '../constants/index.js';
 import type { IOInputCallbacks, MediaInputOptions } from './types.js';
@@ -95,7 +96,7 @@ export class IOStream {
    */
   static create(callbacks: IOInputCallbacks, options?: MediaInputOptions): IOContext;
   static create(input: Buffer | IOInputCallbacks, options: MediaInputOptions = {}): IOContext | Promise<IOContext> {
-    const { bufferSize = 8192 } = options;
+    const { bufferSize = IO_BUFFER_SIZE } = options;
 
     // Handle Buffer
     if (Buffer.isBuffer(input)) {
