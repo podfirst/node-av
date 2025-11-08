@@ -108,9 +108,9 @@ export interface FMP4StreamOptions {
   inputOptions?: MediaInputOptions;
 
   /**
-   * Buffer size for I/O operations in bytes.
+   * Buffer size for I/O operations in bytes (output).
    *
-   * @default 4096
+   * @default 2 MB
    */
   bufferSize?: number;
 
@@ -226,7 +226,7 @@ export class FMP4Stream {
       fragDuration: options.fragDuration ?? 1,
       hardware: options.hardware ?? { deviceType: AV_HWDEVICE_TYPE_NONE },
       inputOptions: options.inputOptions!,
-      bufferSize: options.bufferSize ?? 4096,
+      bufferSize: options.bufferSize ?? 2 * 1024 * 1024,
       boxMode: options.boxMode ?? false,
     };
 
@@ -451,9 +451,7 @@ export class FMP4Stream {
 
       const targetSampleRate = 44100;
       const filterChain = FilterPreset.chain().aformat(AV_SAMPLE_FMT_FLTP, targetSampleRate, 'stereo').build();
-
-      // FilterAPI now auto-calculates timeBase from first frame (FFmpeg behavior)
-      this.audioFilter = FilterAPI.create(filterChain, {});
+      this.audioFilter = FilterAPI.create(filterChain);
 
       this.audioEncoder = await Encoder.create(FF_ENCODER_AAC, {
         decoder: this.audioDecoder,
@@ -479,9 +477,11 @@ export class FMP4Stream {
     };
 
     this.output = await MediaOutput.open(cb, {
+      input: this.input,
       format: 'mp4',
       bufferSize: this.options.bufferSize,
       exitOnError: false,
+      useAsyncWrite: true,
       options: {
         movflags: '+frag_keyframe+separate_moof+default_base_moof+empty_moov',
         frag_duration: this.options.fragDuration,
@@ -563,43 +563,17 @@ export class FMP4Stream {
 
     if (hasAudio && hasVideo) {
       this.pipeline = pipeline(
-        {
-          video: this.input,
-          audio: this.input,
-        },
+        this.input,
         {
           video: [this.videoDecoder, this.videoEncoder],
           audio: [this.audioDecoder, this.audioFilter, this.audioEncoder],
         },
-        {
-          video: this.output,
-          audio: this.output,
-        },
+        this.output,
       );
     } else if (hasVideo) {
-      this.pipeline = pipeline(
-        {
-          video: this.input,
-        },
-        {
-          video: [this.videoDecoder, this.videoEncoder],
-        },
-        {
-          video: this.output,
-        },
-      );
+      this.pipeline = pipeline(this.input, this.videoDecoder!, this.videoEncoder!, this.output);
     } else if (hasAudio) {
-      this.pipeline = pipeline(
-        {
-          audio: this.input,
-        },
-        {
-          audio: [this.audioDecoder, this.audioFilter, this.audioEncoder],
-        },
-        {
-          audio: this.output,
-        },
-      );
+      this.pipeline = pipeline(this.input, this.audioDecoder!, this.audioFilter!, this.audioEncoder!, this.output);
     } else {
       throw new Error('No audio or video streams found in input');
     }
