@@ -125,10 +125,8 @@ export interface MediaInputOptions {
    * Buffer size for reading/writing operations.
    *
    * This option allows you to specify the buffer size used for I/O operations.
-   * A larger buffer size may improve performance by reducing the number of I/O calls,
-   * while a smaller buffer size may reduce memory usage.
    *
-   * @default 8192
+   * @default 65536
    *
    */
   bufferSize?: number;
@@ -225,7 +223,7 @@ export interface MediaOutputOptions {
    *
    * This matches FFmpeg CLI behavior which copies metadata by default.
    */
-  input?: MediaInput;
+  input?: MediaInput | RTPMediaInput;
 
   /**
    * Preferred output format.
@@ -241,13 +239,23 @@ export interface MediaOutputOptions {
    * Buffer size for I/O operations.
    *
    * This option controls the size of the internal buffer used for
-   * reading and writing data. A larger buffer may improve performance
-   * by reducing the number of I/O operations, but will also increase
-   * memory usage.
+   * reading and writing data.
    *
-   * @default 4096
+   * @default 32768 (32 KB, matches FFmpeg CLI default)
    */
   bufferSize?: number;
+
+  /**
+   * Maximum packet size for I/O operations.
+   *
+   * This option controls the maximum size of individual packets
+   * for protocols that require specific packet sizes (e.g., RTP with MTU constraints).
+   *
+   * Matches FFmpeg's max_packet_size in AVIOContext.
+   *
+   * @default 1200
+   */
+  maxPacketSize?: number;
 
   /**
    * Exit immediately on first write error.
@@ -328,6 +336,27 @@ export interface MediaOutputOptions {
    * @default -1
    */
   copyPriorStart?: number;
+
+  /**
+   * Use synchronous packet queue for interleaving.
+   *
+   * When true, enables sync queue for proper interleaving of packets
+   * across multiple streams based on timestamps.
+   *
+   * @default true
+   */
+  useSyncQueue?: boolean;
+
+  /**
+   * Use asynchronous write queue to prevent race conditions.
+   *
+   * When true, all write operations are serialized through an async queue,
+   * preventing concurrent access to AVFormatContext which can cause
+   * "Packet duration out of range" errors with parallel encoding.
+   *
+   * @default false
+   */
+  useAsyncWrite?: boolean;
 
   /**
    * FFmpeg format options passed directly to the output.
