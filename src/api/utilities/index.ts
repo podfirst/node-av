@@ -21,3 +21,6 @@ export { TimestampUtils } from './timestamp.js';
 
 // Streaming
 export { StreamingUtils } from './streaming.js';
+
+// AsyncQueue
+export { AsyncQueue } from './async-queue.js';
