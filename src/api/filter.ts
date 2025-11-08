@@ -7,11 +7,16 @@ import { Filter } from '../lib/filter.js';
 import { Frame } from '../lib/frame.js';
 import { Rational } from '../lib/rational.js';
 import { avGetSampleFmtName, avInvQ, avRescaleQ } from '../lib/utilities.js';
+import { FRAME_THREAD_QUEUE_SIZE } from './constants.js';
+import { AsyncQueue } from './utilities/async-queue.js';
+import { Scheduler } from './utilities/scheduler.js';
 
 import type { AVColorRange, AVColorSpace, AVFilterCmdFlag, AVPixelFormat, AVSampleFormat } from '../constants/index.js';
 import type { FilterContext } from '../lib/filter-context.js';
 import type { ChannelLayout, IDimension, IRational } from '../lib/types.js';
+import type { Encoder } from './encoder.js';
 import type { FilterOptions } from './types.js';
+import type { SchedulableComponent } from './utilities/scheduler.js';
 
 /**
  * High-level filter API for audio and video processing.
@@ -72,6 +77,13 @@ export class FilterAPI implements Disposable {
     channels: number;
   } | null = null;
 
+  // Worker pattern for push-based processing
+  private inputQueue: AsyncQueue<Frame>;
+  private outputQueue: AsyncQueue<Frame>;
+  private workerPromise: Promise<void> | null = null;
+  private nextComponent: SchedulableComponent<Frame> | null = null;
+  private pipeToPromise: Promise<void> | null = null;
+
   /**
    * @param graph - Filter graph instance
    *
@@ -85,6 +97,8 @@ export class FilterAPI implements Disposable {
     this.graph = graph;
     this.description = description;
     this.options = options;
+    this.inputQueue = new AsyncQueue<Frame>(FRAME_THREAD_QUEUE_SIZE);
+    this.outputQueue = new AsyncQueue<Frame>(FRAME_THREAD_QUEUE_SIZE);
   }
 
   /**
@@ -108,7 +122,7 @@ export class FilterAPI implements Disposable {
    * @example
    * ```typescript
    * // Simple video filter (VFR mode, auto timeBase)
-   * const filter = FilterAPI.create('scale=640:480', {});
+   * const filter = FilterAPI.create('scale=640:480');
    * ```
    *
    * @example
@@ -572,8 +586,7 @@ export class FilterAPI implements Disposable {
       }
     }
 
-    // Rescale timestamps to filter's timeBase (FFmpeg's send_frame behavior)
-    // This matches ffmpeg_filter.c lines 3205-3207
+    // Rescale timestamps to filter's timeBase
     if (frame && this.calculatedTimeBase) {
       const originalTimeBase = frame.timeBase;
       frame.pts = avRescaleQ(frame.pts, originalTimeBase, this.calculatedTimeBase);
@@ -674,8 +687,7 @@ export class FilterAPI implements Disposable {
       }
     }
 
-    // Rescale timestamps to filter's timeBase (FFmpeg's send_frame behavior)
-    // This matches ffmpeg_filter.c lines 3205-3207
+    // Rescale timestamps to filter's timeBase
     if (frame && this.calculatedTimeBase) {
       const originalTimeBase = frame.timeBase;
       frame.pts = avRescaleQ(frame.pts, originalTimeBase, this.calculatedTimeBase);
@@ -755,8 +767,7 @@ export class FilterAPI implements Disposable {
       throw new Error('Could not initialize filter contexts');
     }
 
-    // Rescale timestamps to filter's timeBase (FFmpeg's send_frame behavior)
-    // This matches ffmpeg_filter.c lines 3205-3207
+    // Rescale timestamps to filter's timeBase
     if (frame && this.calculatedTimeBase) {
       const originalTimeBase = frame.timeBase;
       frame.pts = avRescaleQ(frame.pts, originalTimeBase, this.calculatedTimeBase);
@@ -770,7 +781,7 @@ export class FilterAPI implements Disposable {
 
     // Receive all available frames using receive()
     const frames: Frame[] = [];
-    while (!this.isClosed) {
+    while (true) {
       const outputFrame = await this.receive();
       if (!outputFrame) break;
       frames.push(outputFrame);
@@ -840,8 +851,7 @@ export class FilterAPI implements Disposable {
       throw new Error('Could not initialize filter contexts');
     }
 
-    // Rescale timestamps to filter's timeBase (FFmpeg's send_frame behavior)
-    // This matches ffmpeg_filter.c lines 3205-3207
+    // Rescale timestamps to filter's timeBase
     if (frame && this.calculatedTimeBase) {
       const originalTimeBase = frame.timeBase;
       frame.pts = avRescaleQ(frame.pts, originalTimeBase, this.calculatedTimeBase);
@@ -855,7 +865,7 @@ export class FilterAPI implements Disposable {
 
     // Receive all available frames using receiveSync()
     const frames: Frame[] = [];
-    while (!this.isClosed) {
+    while (true) {
       const outputFrame = this.receiveSync();
       if (!outputFrame) break;
       frames.push(outputFrame);
@@ -930,8 +940,7 @@ export class FilterAPI implements Disposable {
         throw new Error('Could not initialize filter contexts');
       }
 
-      // Rescale timestamps to filter's timeBase (FFmpeg's send_frame behavior)
-      // This matches ffmpeg_filter.c lines 3205-3207
+      // Rescale timestamps to filter's timeBase
       if (this.calculatedTimeBase) {
         const originalTimeBase = frame.timeBase;
         frame.pts = avRescaleQ(frame.pts, originalTimeBase, this.calculatedTimeBase);
@@ -944,7 +953,7 @@ export class FilterAPI implements Disposable {
       FFmpegError.throwIfError(addRet, 'Failed to add frame to filter');
 
       // Receive all available frames
-      while (!this.isClosed) {
+      while (true) {
         const buffered = await this.receive();
         if (!buffered) break;
         yield buffered;
@@ -953,7 +962,7 @@ export class FilterAPI implements Disposable {
 
     // Flush and get remaining frames
     await this.flush();
-    while (!this.isClosed) {
+    while (true) {
       const remaining = await this.receive();
       if (!remaining) break;
       yield remaining;
@@ -1027,8 +1036,7 @@ export class FilterAPI implements Disposable {
         throw new Error('Could not initialize filter contexts');
       }
 
-      // Rescale timestamps to filter's timeBase (FFmpeg's send_frame behavior)
-      // This matches ffmpeg_filter.c lines 3205-3207
+      // Rescale timestamps to filter's timeBase
       if (this.calculatedTimeBase) {
         const originalTimeBase = frame.timeBase;
         frame.pts = avRescaleQ(frame.pts, originalTimeBase, this.calculatedTimeBase);
@@ -1041,7 +1049,7 @@ export class FilterAPI implements Disposable {
       FFmpegError.throwIfError(addRet, 'Failed to add frame to filter');
 
       // Receive all available frames
-      while (!this.isClosed) {
+      while (true) {
         const buffered = this.receiveSync();
         if (!buffered) break;
         yield buffered;
@@ -1050,7 +1058,7 @@ export class FilterAPI implements Disposable {
 
     // Flush and get remaining frames
     this.flushSync();
-    while (!this.isClosed) {
+    while (true) {
       const remaining = this.receiveSync();
       if (!remaining) break;
       yield remaining;
@@ -1398,6 +1406,42 @@ export class FilterAPI implements Disposable {
   }
 
   /**
+   * Pipe decoded frames to a filter component or encoder.
+   *
+   * @param target - Filter to receive frames or encoder to encode frames
+   *
+   * @returns Scheduler for continued chaining
+   *
+   * @example
+   * ```typescript
+   * decoder.pipeTo(filter).pipeTo(encoder)
+   * ```
+   */
+  pipeTo(target: FilterAPI): Scheduler<Frame>;
+  pipeTo(target: Encoder): Scheduler<Frame>;
+  pipeTo(target: FilterAPI | Encoder): Scheduler<Frame> {
+    const t = target as unknown as SchedulableComponent<Frame>;
+
+    // Store reference to next component for flush propagation
+    this.nextComponent = t;
+
+    // Start worker if not already running
+    this.workerPromise ??= this.runWorker();
+
+    // Start pipe task: filter.outputQueue -> target.inputQueue (via target.send)
+    this.pipeToPromise = (async () => {
+      while (true) {
+        const frame = await this.receiveFrame();
+        if (!frame) break;
+        await t.sendToQueue(frame);
+      }
+    })();
+
+    // Return scheduler for chaining (target is now the last component)
+    return new Scheduler<Frame>(this as unknown as SchedulableComponent<Frame>, t);
+  }
+
+  /**
    * Free filter resources.
    *
    * Releases filter graph and contexts.
@@ -1417,12 +1461,138 @@ export class FilterAPI implements Disposable {
 
     this.isClosed = true;
 
+    // Close queues
+    this.inputQueue.close();
+    this.outputQueue.close();
+
     this.frame.free();
     this.graph.free();
     this.buffersrcCtx = null;
     this.buffersinkCtx = null;
 
     this.initialized = false;
+  }
+
+  /**
+   * Worker loop for push-based processing.
+   *
+   * @internal
+   */
+  private async runWorker(): Promise<void> {
+    try {
+      // Outer loop - receive frames
+      while (!this.inputQueue.isClosed) {
+        using frame = await this.inputQueue.receive();
+        if (!frame) break;
+
+        // Open filter if not already done
+        if (!this.initialized) {
+          await this.initialize(frame);
+        }
+
+        if (!this.initialized) {
+          continue;
+        }
+
+        if (!this.buffersrcCtx || !this.buffersinkCtx) {
+          throw new Error('Could not initialize filter contexts');
+        }
+
+        // Rescale timestamps to filter's timeBase
+        if (this.calculatedTimeBase) {
+          const originalTimeBase = frame.timeBase;
+          frame.pts = avRescaleQ(frame.pts, originalTimeBase, this.calculatedTimeBase);
+          frame.duration = avRescaleQ(frame.duration, originalTimeBase, this.calculatedTimeBase);
+          frame.timeBase = new Rational(this.calculatedTimeBase.num, this.calculatedTimeBase.den);
+        }
+
+        // Send frame to filter
+        const addRet = await this.buffersrcCtx.buffersrcAddFrame(frame, AV_BUFFERSRC_FLAG_PUSH);
+        FFmpegError.throwIfError(addRet, 'Failed to add frame to filter');
+
+        // Receive all available frames
+        while (!this.outputQueue.isClosed) {
+          const buffered = await this.receive();
+          if (!buffered) break;
+          await this.outputQueue.send(buffered);
+        }
+      }
+
+      // Flush filter at end
+      await this.flush();
+      while (!this.outputQueue.isClosed) {
+        const frame = await this.receive();
+        if (!frame) break;
+        await this.outputQueue.send(frame);
+      }
+    } catch {
+      // Ignore error ?
+    } finally {
+      // Close output queue when done
+      this.outputQueue?.close();
+    }
+  }
+
+  /**
+   * Send frame to input queue.
+   *
+   * @param frame - Frame to send
+   *
+   * @internal
+   */
+  private async sendToQueue(frame: Frame): Promise<void> {
+    await this.inputQueue.send(frame);
+  }
+
+  /**
+   * Receive frame from output queue.
+   *
+   * @returns Frame from output queue or null if closed
+   *
+   * @internal
+   */
+  private async receiveFrame(): Promise<Frame | null> {
+    return await this.outputQueue.receive();
+  }
+
+  /**
+   * Flush the entire filter pipeline.
+   *
+   * Propagates flush through worker, output queue, and next component.
+   *
+   * @internal
+   */
+  private async flushPipeline(): Promise<void> {
+    // Close input queue to signal end of stream to worker
+    this.inputQueue.close();
+
+    // Wait for worker to finish processing all frames (if exists)
+    if (this.workerPromise) {
+      await this.workerPromise;
+    }
+
+    // Flush filter at end (like FFmpeg does)
+    await this.flush();
+
+    // Send all flushed frames to output queue
+    while (true) {
+      const frame = await this.receive();
+      if (!frame) break;
+      await this.outputQueue.send(frame);
+    }
+
+    // Close output queue to signal end of stream to pipeTo() task
+    this.outputQueue.close();
+
+    // Wait for pipeTo() task to finish processing all frames (if exists)
+    if (this.pipeToPromise) {
+      await this.pipeToPromise;
+    }
+
+    // Then propagate flush to next component
+    if (this.nextComponent) {
+      await this.nextComponent.flushPipeline();
+    }
   }
 
   /**

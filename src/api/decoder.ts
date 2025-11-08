@@ -16,12 +16,18 @@ import { FFmpegError } from '../lib/error.js';
 import { Frame } from '../lib/frame.js';
 import { Rational } from '../lib/rational.js';
 import { avGcd, avInvQ, avMulQ, avRescaleDelta, avRescaleQ, avRescaleQRnd } from '../lib/utilities.js';
+import { FRAME_THREAD_QUEUE_SIZE, PACKET_THREAD_QUEUE_SIZE } from './constants.js';
+import { AsyncQueue } from './utilities/async-queue.js';
+import { Scheduler } from './utilities/scheduler.js';
 
 import type { AVCodecID, FFDecoderCodec } from '../constants/index.js';
 import type { Packet } from '../lib/packet.js';
 import type { Stream } from '../lib/stream.js';
 import type { IRational } from '../lib/types.js';
+import type { Encoder } from './encoder.js';
+import type { FilterAPI } from './filter.js';
 import type { DecoderOptions } from './types.js';
+import type { SchedulableComponent } from './utilities/scheduler.js';
 
 /**
  * High-level decoder for audio and video streams.
@@ -83,6 +89,13 @@ export class Decoder implements Disposable {
   private lastFrameSampleRate = 0;
   private lastFilterInRescaleDelta = AV_NOPTS_VALUE;
 
+  // Worker pattern for push-based processing
+  private inputQueue: AsyncQueue<Packet>;
+  private outputQueue: AsyncQueue<Frame>;
+  private workerPromise: Promise<void> | null = null;
+  private nextComponent: SchedulableComponent<Frame> | null = null;
+  private pipeToPromise: Promise<void> | null = null;
+
   /**
    * @param codecContext - Configured codec context
    *
@@ -104,6 +117,8 @@ export class Decoder implements Disposable {
     this.frame = new Frame();
     this.frame.alloc();
     this.lastFrameTb = new Rational(0, 1);
+    this.inputQueue = new AsyncQueue<Packet>(PACKET_THREAD_QUEUE_SIZE);
+    this.outputQueue = new AsyncQueue<Frame>(FRAME_THREAD_QUEUE_SIZE);
   }
 
   /**
@@ -278,7 +293,7 @@ export class Decoder implements Disposable {
     if (isHWDecoder && options.hardware) {
       const currentExtraFrames = codecContext.extraHWFrames;
       if (currentExtraFrames >= 0) {
-        codecContext.extraHWFrames = currentExtraFrames + 1; // DEFAULT_FRAME_THREAD_QUEUE_SIZE = 1
+        codecContext.extraHWFrames = currentExtraFrames + FRAME_THREAD_QUEUE_SIZE;
       } else {
         codecContext.extraHWFrames = 1;
       }
@@ -458,7 +473,7 @@ export class Decoder implements Disposable {
     if (isHWDecoder && options.hardware) {
       const currentExtraFrames = codecContext.extraHWFrames;
       if (currentExtraFrames >= 0) {
-        codecContext.extraHWFrames = currentExtraFrames + 1; // DEFAULT_FRAME_THREAD_QUEUE_SIZE = 1
+        codecContext.extraHWFrames = currentExtraFrames + FRAME_THREAD_QUEUE_SIZE;
       } else {
         codecContext.extraHWFrames = 1;
       }
@@ -615,7 +630,6 @@ export class Decoder implements Disposable {
       if (this.options.exitOnError) {
         FFmpegError.throwIfError(sendRet, 'Failed to send packet to decoder');
       }
-      // exitOnError=false: Continue to receive (like FFmpeg)
     }
 
     // Try to receive frame
@@ -765,7 +779,7 @@ export class Decoder implements Disposable {
 
     // Receive all available frames
     const frames: Frame[] = [];
-    while (!this.isClosed) {
+    while (true) {
       const remaining = await this.receive();
       if (!remaining) break;
       frames.push(remaining);
@@ -830,7 +844,7 @@ export class Decoder implements Disposable {
 
     // Receive all available frames
     const frames: Frame[] = [];
-    while (!this.isClosed) {
+    while (true) {
       const remaining = this.receiveSync();
       if (!remaining) break;
       frames.push(remaining);
@@ -923,7 +937,7 @@ export class Decoder implements Disposable {
 
         // Receive ALL available frames immediately
         // This ensures frames are yielded ASAP without latency
-        while (!this.isClosed) {
+        while (true) {
           const frame = await this.receive();
           if (!frame) break; // EAGAIN or EOF
           yield frame;
@@ -933,7 +947,7 @@ export class Decoder implements Disposable {
 
     // Flush decoder after all packets
     await this.flush();
-    while (!this.isClosed) {
+    while (true) {
       const remaining = await this.receive();
       if (!remaining) break;
       yield remaining;
@@ -998,7 +1012,7 @@ export class Decoder implements Disposable {
 
         // Receive ALL available frames immediately
         // This ensures frames are yielded ASAP without latency
-        while (!this.isClosed) {
+        while (true) {
           const frame = this.receiveSync();
           if (!frame) break; // EAGAIN or EOF
           yield frame;
@@ -1008,7 +1022,7 @@ export class Decoder implements Disposable {
 
     // Flush decoder after all packets
     this.flushSync();
-    while (!this.isClosed) {
+    while (true) {
       const remaining = this.receiveSync();
       if (!remaining) break;
       yield remaining;
@@ -1122,7 +1136,7 @@ export class Decoder implements Disposable {
     // Send flush signal
     await this.flush();
 
-    while (!this.isClosed) {
+    while (true) {
       const remaining = await this.receive();
       if (!remaining) break;
       yield remaining;
@@ -1157,7 +1171,7 @@ export class Decoder implements Disposable {
     // Send flush signal
     this.flushSync();
 
-    while (!this.isClosed) {
+    while (true) {
       const remaining = this.receiveSync();
       if (!remaining) break;
       yield remaining;
@@ -1202,10 +1216,6 @@ export class Decoder implements Disposable {
    * @see {@link receiveSync} For synchronous version
    */
   async receive(): Promise<Frame | null> {
-    if (this.isClosed) {
-      return null;
-    }
-
     // When exitOnError=false, continue on errors until we get a frame or EAGAIN/EOF
     while (!this.isClosed) {
       // Clear previous frame data
@@ -1293,10 +1303,6 @@ export class Decoder implements Disposable {
    * @see {@link receive} For async version
    */
   receiveSync(): Frame | null {
-    if (this.isClosed) {
-      return null;
-    }
-
     // When exitOnError=false, continue on errors until we get a frame or EAGAIN/EOF
     while (!this.isClosed) {
       // Clear previous frame data
@@ -1348,6 +1354,42 @@ export class Decoder implements Disposable {
   }
 
   /**
+   * Pipe decoded frames to a filter component or encoder.
+   *
+   * @param target - Filter to receive frames or encoder to encode frames
+   *
+   * @returns Scheduler for continued chaining
+   *
+   * @example
+   * ```typescript
+   * decoder.pipeTo(filter).pipeTo(encoder)
+   * ```
+   */
+  pipeTo(target: FilterAPI): Scheduler<Packet>;
+  pipeTo(target: Encoder): Scheduler<Packet>;
+  pipeTo(target: FilterAPI | Encoder): Scheduler<Packet> {
+    const t = target as unknown as SchedulableComponent<Frame>;
+
+    // Store reference to next component for flush propagation
+    this.nextComponent = t;
+
+    // Start worker if not already running
+    this.workerPromise ??= this.runWorker();
+
+    // Start pipe task: decoder.outputQueue -> target.inputQueue (via target.send)
+    this.pipeToPromise = (async () => {
+      while (true) {
+        const frame = await this.receiveFromQueue();
+        if (!frame) break;
+        await t.sendToQueue(frame);
+      }
+    })();
+
+    // Return scheduler for chaining (target is now the last component)
+    return new Scheduler<Packet>(this as unknown as SchedulableComponent<Packet>, t);
+  }
+
+  /**
    * Close decoder and free resources.
    *
    * Releases codec context and internal frame buffer.
@@ -1372,6 +1414,9 @@ export class Decoder implements Disposable {
     }
 
     this.isClosed = true;
+
+    this.inputQueue?.close();
+    this.outputQueue?.close();
 
     this.frame.free();
     this.codecContext.freeContext();
@@ -1426,6 +1471,128 @@ export class Decoder implements Disposable {
    */
   getCodecContext(): CodecContext | null {
     return !this.isClosed && this.initialized ? this.codecContext : null;
+  }
+
+  /**
+   * Worker loop for push-based processing.
+   *
+   * @internal
+   */
+  private async runWorker(): Promise<void> {
+    try {
+      // Outer loop - receive packets
+      while (!this.inputQueue.isClosed) {
+        using packet = await this.inputQueue.receive();
+        if (!packet) break;
+
+        // Skip packets for other streams
+        if (packet.streamIndex !== this.stream.index) {
+          continue;
+        }
+
+        if (packet.size === 0) {
+          continue;
+        }
+
+        // Send packet to decoder
+        const sendRet = await this.codecContext.sendPacket(packet);
+
+        // EAGAIN during send_packet is a decoder bug
+        // We read all decoded frames with receive() until done, so decoder should never be full
+        if (sendRet === AVERROR_EAGAIN) {
+          throw new Error('Decoder returned EAGAIN but no frame available');
+        }
+
+        if (sendRet < 0 && sendRet !== AVERROR_EOF) {
+          if (this.options.exitOnError) {
+            FFmpegError.throwIfError(sendRet, 'Failed to send packet');
+          }
+        }
+
+        // Receive ALL available frames immediately
+        // This ensures frames are yielded ASAP without latency
+        while (!this.outputQueue.isClosed) {
+          const frame = await this.receive();
+          if (!frame) break; // EAGAIN or EOF
+          await this.outputQueue.send(frame);
+        }
+      }
+
+      // Flush decoder at end
+      await this.flush();
+      while (!this.outputQueue.isClosed) {
+        const frame = await this.receive();
+        if (!frame) break;
+        await this.outputQueue.send(frame);
+      }
+    } catch {
+      // Ignore ?
+    } finally {
+      // Close output queue when done
+      this.outputQueue?.close();
+    }
+  }
+
+  /**
+   * Send packet to input queue.
+   *
+   * @param packet - Packet to send
+   *
+   * @internal
+   */
+  private async sendToQueue(packet: Packet): Promise<void> {
+    await this.inputQueue.send(packet);
+  }
+
+  /**
+   * Receive frame from output queue.
+   *
+   * @returns Frame from output queue or null if closed
+   *
+   * @internal
+   */
+  private async receiveFromQueue(): Promise<Frame | null> {
+    return await this.outputQueue.receive();
+  }
+
+  /**
+   * Flush the entire filter pipeline.
+   *
+   * Propagates flush through worker, output queue, and next component.
+   *
+   * @internal
+   */
+  private async flushPipeline(): Promise<void> {
+    // Close input queue to signal end of stream to worker
+    this.inputQueue.close();
+
+    // Wait for worker to finish processing all packets (if exists)
+    if (this.workerPromise) {
+      await this.workerPromise;
+    }
+
+    // Flush decoder at end
+    await this.flush();
+
+    // Send all flushed frames to output queue
+    while (true) {
+      const frame = await this.receive();
+      if (!frame) break;
+      await this.outputQueue.send(frame);
+    }
+
+    // Close output queue to signal end of stream to pipeTo() task
+    this.outputQueue.close();
+
+    // Wait for pipeTo() task to finish processing all frames (if exists)
+    if (this.pipeToPromise) {
+      await this.pipeToPromise;
+    }
+
+    // Then propagate flush to next component
+    if (this.nextComponent) {
+      await this.nextComponent.flushPipeline();
+    }
   }
 
   /**

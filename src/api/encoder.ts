@@ -20,11 +20,16 @@ import { FFmpegError } from '../lib/error.js';
 import { Packet } from '../lib/packet.js';
 import { Rational } from '../lib/rational.js';
 import { AudioFrameBuffer } from './audio-frame-buffer.js';
+import { FRAME_THREAD_QUEUE_SIZE, PACKET_THREAD_QUEUE_SIZE } from './constants.js';
+import { AsyncQueue } from './utilities/async-queue.js';
+import { SchedulerControl } from './utilities/scheduler.js';
 import { parseBitrate } from './utils.js';
 
 import type { AVCodecFlag, AVCodecID, AVPixelFormat, AVSampleFormat, FFEncoderCodec } from '../constants/index.js';
 import type { Frame } from '../lib/frame.js';
+import type { MediaOutput } from './media-output.js';
 import type { EncoderOptions } from './types.js';
+import type { SchedulableComponent } from './utilities/scheduler.js';
 
 /**
  * High-level encoder for audio and video streams.
@@ -94,6 +99,12 @@ export class Encoder implements Disposable {
   private options: EncoderOptions;
   private audioFrameBuffer?: AudioFrameBuffer;
 
+  // Worker pattern for push-based processing
+  private inputQueue: AsyncQueue<Frame>;
+  private outputQueue: AsyncQueue<Packet>;
+  private workerPromise: Promise<void> | null = null;
+  private pipeToPromise: Promise<void> | null = null;
+
   /**
    * @param codecContext - Configured codec context
    *
@@ -113,6 +124,8 @@ export class Encoder implements Disposable {
 
     this.packet = new Packet();
     this.packet.alloc();
+    this.inputQueue = new AsyncQueue<Frame>(FRAME_THREAD_QUEUE_SIZE);
+    this.outputQueue = new AsyncQueue<Packet>(PACKET_THREAD_QUEUE_SIZE);
   }
 
   /**
@@ -792,7 +805,7 @@ export class Encoder implements Disposable {
         }
 
         // Receive packets
-        while (!this.isClosed) {
+        while (true) {
           const packet = await this.receive();
           if (!packet) break;
           packets.push(packet);
@@ -816,7 +829,7 @@ export class Encoder implements Disposable {
 
     // Receive all available packets
     const packets: Packet[] = [];
-    while (!this.isClosed) {
+    while (true) {
       const packet = await this.receive();
       if (!packet) break;
       packets.push(packet);
@@ -904,7 +917,7 @@ export class Encoder implements Disposable {
         }
 
         // Receive packets
-        while (!this.isClosed) {
+        while (true) {
           const packet = this.receiveSync();
           if (!packet) break;
           packets.push(packet);
@@ -928,7 +941,7 @@ export class Encoder implements Disposable {
 
     // Receive all available packets
     const packets: Packet[] = [];
-    while (!this.isClosed) {
+    while (true) {
       const packet = this.receiveSync();
       if (!packet) break;
       packets.push(packet);
@@ -1028,7 +1041,7 @@ export class Encoder implements Disposable {
           }
 
           // Receive packets
-          while (!this.isClosed) {
+          while (true) {
             const packet = await this.receive();
             if (!packet) break;
             yield packet;
@@ -1046,7 +1059,7 @@ export class Encoder implements Disposable {
 
         // Receive ALL packets
         // A single frame can produce multiple packets (e.g., B-frames, lookahead)
-        while (!this.isClosed) {
+        while (true) {
           const packet = await this.receive();
           if (!packet) break;
           yield packet;
@@ -1056,7 +1069,7 @@ export class Encoder implements Disposable {
 
     // Flush encoder after all frames
     await this.flush();
-    while (!this.isClosed) {
+    while (true) {
       const remaining = await this.receive();
       if (!remaining) break;
       yield remaining;
@@ -1142,7 +1155,7 @@ export class Encoder implements Disposable {
           }
 
           // Receive packets
-          while (!this.isClosed) {
+          while (true) {
             const packet = this.receiveSync();
             if (!packet) break;
             yield packet;
@@ -1160,7 +1173,7 @@ export class Encoder implements Disposable {
 
         // Receive ALL packets
         // A single frame can produce multiple packets (e.g., B-frames, lookahead)
-        while (!this.isClosed) {
+        while (true) {
           const packet = this.receiveSync();
           if (!packet) break;
           yield packet;
@@ -1170,7 +1183,7 @@ export class Encoder implements Disposable {
 
     // Flush encoder after all frames
     this.flushSync();
-    while (!this.isClosed) {
+    while (true) {
       const remaining = this.receiveSync();
       if (!remaining) break;
       yield remaining;
@@ -1309,7 +1322,7 @@ export class Encoder implements Disposable {
     // Send flush signal
     await this.flush();
 
-    while (!this.isClosed) {
+    while (true) {
       const packet = await this.receive();
       if (!packet) break;
       yield packet;
@@ -1344,7 +1357,7 @@ export class Encoder implements Disposable {
     // Send flush signal
     this.flushSync();
 
-    while (!this.isClosed) {
+    while (true) {
       const packet = this.receiveSync();
       if (!packet) break;
       yield packet;
@@ -1489,6 +1502,37 @@ export class Encoder implements Disposable {
   }
 
   /**
+   * Pipe encoded packets to media output.
+   *
+   * @param target - Media output component to write packets to
+   *
+   * @param streamIndex - Stream index to write packets to
+   *
+   * @returns Scheduler for continued chaining
+   *
+   * @example
+   * ```typescript
+   * decoder.pipeTo(filter).pipeTo(encoder)
+   * ```
+   */
+  pipeTo(target: MediaOutput, streamIndex: number): SchedulerControl<Frame> {
+    // Start worker if not already running
+    this.workerPromise ??= this.runWorker();
+
+    // Start pipe task: encoder.outputQueue -> output
+    this.pipeToPromise = (async () => {
+      while (true) {
+        const packet = await this.receiveFromQueue();
+        if (!packet) break;
+        await target.writePacket(packet, streamIndex);
+      }
+    })();
+
+    // Return control without pipeTo (terminal stage)
+    return new SchedulerControl<Frame>(this as unknown as SchedulableComponent<Frame>);
+  }
+
+  /**
    * Close encoder and free resources.
    *
    * Releases codec context and internal packet buffer.
@@ -1513,6 +1557,10 @@ export class Encoder implements Disposable {
     }
 
     this.isClosed = true;
+
+    // Close queues
+    this.inputQueue.close();
+    this.outputQueue.close();
 
     this.packet.free();
     this.codecContext.freeContext();
@@ -1551,6 +1599,136 @@ export class Encoder implements Disposable {
    */
   getCodecContext(): CodecContext | null {
     return !this.isClosed && this.initialized ? this.codecContext : null;
+  }
+
+  /**
+   * Worker loop for push-based processing.
+   *
+   * @internal
+   */
+  private async runWorker(): Promise<void> {
+    try {
+      // Outer loop - receive frames
+      while (!this.inputQueue.isClosed) {
+        using frame = await this.inputQueue.receive();
+        if (!frame) break;
+
+        // Open encoder if not already done
+        if (!this.initialized) {
+          await this.initialize(frame);
+        }
+
+        // If audio encoder with fixed frame size, use AudioFrameBuffer
+        if (this.audioFrameBuffer) {
+          // Push frame into buffer
+          await this.audioFrameBuffer.push(frame);
+
+          // Pull and encode all available fixed-size frames
+          let _bufferedFrame;
+          while ((_bufferedFrame = await this.audioFrameBuffer.pull()) !== null) {
+            using bufferedFrame = _bufferedFrame;
+
+            // Prepare buffered frame for encoding (set quality, validate channel count)
+            this.prepareFrameForEncoding(bufferedFrame);
+
+            // Send buffered frame to encoder
+            const sendRet = await this.codecContext.sendFrame(bufferedFrame);
+            if (sendRet < 0 && sendRet !== AVERROR_EOF && sendRet !== AVERROR_EAGAIN) {
+              FFmpegError.throwIfError(sendRet, 'Failed to send frame');
+            }
+
+            // Receive packets
+            while (true) {
+              const packet = await this.receive();
+              if (!packet) break;
+              await this.outputQueue.send(packet);
+            }
+          }
+        } else {
+          // Prepare frame for encoding (set quality, validate channel count)
+          this.prepareFrameForEncoding(frame);
+
+          // Send frame to encoder
+          const sendRet = await this.codecContext.sendFrame(frame);
+          if (sendRet < 0 && sendRet !== AVERROR_EOF && sendRet !== AVERROR_EAGAIN) {
+            FFmpegError.throwIfError(sendRet, 'Failed to send frame');
+          }
+
+          // Receive ALL packets
+          // A single frame can produce multiple packets (e.g., B-frames, lookahead)
+          while (!this.outputQueue.isClosed) {
+            const packet = await this.receive();
+            if (!packet) break;
+            await this.outputQueue.send(packet);
+          }
+        }
+      }
+
+      // Flush encoder at end
+      await this.flush();
+      while (!this.outputQueue.isClosed) {
+        const packet = await this.receive();
+        if (!packet) break;
+        await this.outputQueue.send(packet);
+      }
+    } catch {
+      // Ignore error ?
+    } finally {
+      // Close output queue when done
+      this.outputQueue?.close();
+    }
+  }
+
+  /**
+   * Send frame to input queue.
+   *
+   * @param frame - Frame to send
+   *
+   * @internal
+   */
+  private async sendToQueue(frame: Frame): Promise<void> {
+    await this.inputQueue.send(frame);
+  }
+
+  /**
+   * Receive packet from output queue.
+   *
+   * @returns Packet from output queue
+   *
+   * @internal
+   */
+  private async receiveFromQueue(): Promise<Packet | null> {
+    return await this.outputQueue.receive();
+  }
+
+  /**
+   * Flush the entire filter pipeline.
+   *
+   * Propagates flush through worker, output queue, and next component.
+   *
+   * @internal
+   */
+  private async flushPipeline(): Promise<void> {
+    // Close input queue to signal end of stream to worker
+    this.inputQueue.close();
+
+    // Wait for worker to finish processing all frames (if exists)
+    if (this.workerPromise) {
+      await this.workerPromise;
+    }
+
+    // Flush encoder at end
+    await this.flush();
+
+    while (true) {
+      const packet = await this.receive();
+      if (!packet) break;
+      await this.outputQueue.send(packet);
+    }
+
+    if (this.pipeToPromise) {
+      await this.pipeToPromise;
+    }
   }
 
   /**
@@ -1823,7 +2001,7 @@ export class Encoder implements Disposable {
    */
   private prepareFrameForEncoding(frame: Frame): void {
     if (this.codecContext.codecType === AVMEDIA_TYPE_VIDEO) {
-      // Video: Set frame quality from encoder's global quality (FFmpeg's -qscale option)
+      // Video: Set frame quality from encoder's global quality
       // Only set if encoder has globalQuality configured and frame doesn't already have quality set
       if (this.codecContext.globalQuality > 0 && frame.quality <= 0) {
         frame.quality = this.codecContext.globalQuality;
