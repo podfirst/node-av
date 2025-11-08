@@ -24,3 +24,6 @@ export { StreamingUtils } from './streaming.js';
 
 // AsyncQueue
 export { AsyncQueue } from './async-queue.js';
+
+// Scheduler
+export { Scheduler } from './scheduler.js';
