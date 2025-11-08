@@ -56,7 +56,7 @@ const fragIndex = args.indexOf('--frag');
 const fragDuration = fragIndex !== -1 ? parseInt(args[fragIndex + 1]) : 1000000;
 
 const bufferIndex = args.indexOf('--buffer');
-const bufferSize = bufferIndex !== -1 ? parseInt(args[bufferIndex + 1]) : 4096;
+const bufferSize = bufferIndex !== -1 ? parseInt(args[bufferIndex + 1]) : undefined;
 
 const chunkMode = args.includes('--chunk-mode');
 const boxMode = !chunkMode || args.includes('--box-mode'); // Default to box mode
@@ -97,7 +97,6 @@ console.log('='.repeat(60));
 let stop = false;
 let boxCount = 0;
 let chunkCount = 0;
-let totalBytes = 0;
 let ftypReceived = false;
 let moovReceived = false;
 
@@ -105,8 +104,6 @@ console.log('\nCreating fMP4 stream...');
 
 const onData = (data: Buffer, info: FMP4Data) => {
   if (stop) return;
-
-  totalBytes += data.length;
 
   if (info.isComplete) {
     // Box mode: data contains complete boxes
@@ -141,9 +138,7 @@ const onData = (data: Buffer, info: FMP4Data) => {
   } else {
     // Chunk mode: data contains raw chunks
     chunkCount++;
-    if (chunkCount % 10 === 0) {
-      console.log(`Received ${chunkCount} chunks, total ${totalBytes} bytes`);
-    }
+    console.log(`Received chunk #${chunkCount} of size ${data.length} bytes`);
   }
 };
 
