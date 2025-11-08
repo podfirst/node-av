@@ -3,6 +3,7 @@ import { isRtcp, RtpPacket } from 'werift';
 import { AV_HWDEVICE_TYPE_NONE } from '../constants/constants.js';
 import { FF_ENCODER_LIBOPUS, FF_ENCODER_LIBX264, FF_ENCODER_LIBX265 } from '../constants/encoders.js';
 import { Codec } from '../lib/codec.js';
+import { MAX_PACKET_SIZE } from './constants.js';
 import { Decoder } from './decoder.js';
 import { Encoder } from './encoder.js';
 import { FilterPreset } from './filter-presets.js';
@@ -90,6 +91,7 @@ export interface RTPStreamOptions {
     ssrc?: number;
     payloadType?: number;
     mtu?: number;
+    sampleFormat?: AVSampleFormat;
     sampleRate?: number;
     channels?: number;
     encoderOptions?: EncoderOptions['options'];
@@ -188,17 +190,18 @@ export class RTPStream {
       video: {
         ssrc: options.video?.ssrc,
         payloadType: options.video?.payloadType,
-        mtu: options.video?.mtu ?? 1200,
+        mtu: options.video?.mtu ?? MAX_PACKET_SIZE,
         fps: options.video?.fps ?? 20,
         encoderOptions: options.video?.encoderOptions ?? {},
       },
       audio: {
         ssrc: options.audio?.ssrc,
         payloadType: options.audio?.payloadType,
-        mtu: options.audio?.mtu ?? 1200,
+        mtu: options.audio?.mtu ?? MAX_PACKET_SIZE,
         sampleRate: options.audio?.sampleRate,
         channels: options.audio?.channels,
         encoderOptions: options.audio?.encoderOptions,
+        sampleFormat: options.audio?.sampleFormat,
       },
     };
   }
@@ -348,6 +351,7 @@ export class RTPStream {
       };
 
       this.videoEncoder = await Encoder.create(encoderCodec, {
+        decoder: this.videoDecoder,
         maxBFrames: 0,
         options: encoderOptions,
       });
@@ -407,8 +411,12 @@ export class RTPStream {
         },
       },
       {
+        input: this.input,
+        copyInitialNonkeyframes: true,
+        useSyncQueue: false,
+        useAsyncWrite: false,
         format: 'rtp',
-        bufferSize: this.options.video.mtu,
+        maxPacketSize: this.options.video.mtu,
         options: {
           pkt_size: this.options.video.mtu,
         },
@@ -439,7 +447,7 @@ export class RTPStream {
       }
 
       // Determine target audio parameters from options
-      const desiredSampleFormat = audioStream.codecpar.format as AVSampleFormat;
+      const desiredSampleFormat = this.options.audio?.sampleFormat ?? (audioStream.codecpar.format as AVSampleFormat);
       const desiredSampleRate = this.options.audio?.sampleRate ?? (audioStream.codecpar.sampleRate > 0 ? audioStream.codecpar.sampleRate : 48000);
       const desiredChannels = this.options.audio?.channels ?? (audioStream.codecpar.channels > 0 ? audioStream.codecpar.channels : 2);
 
@@ -452,7 +460,7 @@ export class RTPStream {
       const filterChain = FilterPreset.chain().aformat(targetSampleFormat, targetSampleRate, channelLayoutStr).build();
 
       // FilterAPI now auto-calculates timeBase from first frame (FFmpeg behavior)
-      this.audioFilter = FilterAPI.create(filterChain, {});
+      this.audioFilter = FilterAPI.create(filterChain);
 
       let encoderOptions: EncoderOptions['options'] = {};
       if (encoderCodec.name === FF_ENCODER_LIBOPUS) {
@@ -466,6 +474,8 @@ export class RTPStream {
       };
 
       this.audioEncoder = await Encoder.create(encoderCodec, {
+        decoder: this.audioDecoder,
+        filter: this.audioFilter,
         options: encoderOptions,
       });
     }
@@ -501,8 +511,12 @@ export class RTPStream {
           },
         },
         {
+          input: this.input,
+          copyInitialNonkeyframes: true,
+          useSyncQueue: false,
+          useAsyncWrite: false,
           format: 'rtp',
-          bufferSize: this.options.audio.mtu,
+          maxPacketSize: this.options.audio.mtu,
           options: {
             pkt_size: this.options.audio.mtu,
           },
@@ -538,10 +552,7 @@ export class RTPStream {
 
     if (hasAudio && hasVideo) {
       this.pipeline = pipeline(
-        {
-          video: this.input,
-          audio: this.input,
-        },
+        this.input,
         {
           video: [this.videoDecoder, this.videoEncoder],
           audio: [this.audioDecoder, this.audioFilter, this.audioEncoder],
@@ -552,29 +563,9 @@ export class RTPStream {
         },
       );
     } else if (hasVideo) {
-      this.pipeline = pipeline(
-        {
-          video: this.input,
-        },
-        {
-          video: [this.videoDecoder, this.videoEncoder],
-        },
-        {
-          video: this.videoOutput!,
-        },
-      );
+      this.pipeline = pipeline(this.input, this.videoDecoder!, this.videoEncoder!, this.videoOutput!);
     } else if (hasAudio) {
-      this.pipeline = pipeline(
-        {
-          audio: this.input,
-        },
-        {
-          audio: [this.audioDecoder, this.audioFilter, this.audioEncoder],
-        },
-        {
-          audio: this.audioOutput!,
-        },
-      );
+      this.pipeline = pipeline(this.input, this.audioDecoder!, this.audioFilter!, this.audioEncoder!, this.audioOutput!);
     } else {
       throw new Error('No audio or video streams found in input');
     }
@@ -755,6 +746,7 @@ export class RTPStream {
         bestSampleRate = rate;
       }
     }
+
     return bestSampleRate;
   }
 
@@ -792,6 +784,7 @@ export class RTPStream {
     const firstLayout = supportedLayouts[0];
     if (firstLayout.nbChannels === 1) return 'mono';
     if (firstLayout.nbChannels === 2) return 'stereo';
+
     return firstLayout.mask.toString();
   }
 }
