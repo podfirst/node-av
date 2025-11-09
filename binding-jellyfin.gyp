@@ -75,7 +75,6 @@
                     {
                         "include_dirs": [
                             "/opt/ffbuild/prefix/include",
-                            "<(module_root_dir)/externals/jellyfin-ffmpeg",
                         ],
                         "library_dirs": ["/opt/ffbuild/prefix/lib"],
                         "libraries": [
@@ -167,7 +166,6 @@
                     {
                         "include_dirs": [
                             "/opt/ffbuild/prefix/include",
-                            "<(module_root_dir)/externals/jellyfin-ffmpeg",
                         ],
                         "library_dirs": ["/opt/ffbuild/prefix/lib"],
                         "libraries": [
@@ -301,7 +299,6 @@
                                 {
                                     "include_dirs": [
                                         "/clang64/ffbuild/include",
-                                        "<(module_root_dir)/externals/jellyfin-ffmpeg",
                                     ],
                                     "library_dirs": ["/clang64/ffbuild/lib"],
                                     "libraries": ["-l:libvpl.a"],
@@ -312,7 +309,6 @@
                                 {
                                     "include_dirs": [
                                         "/clangarm64/ffbuild/include",
-                                        "<(module_root_dir)/externals/jellyfin-ffmpeg",
                                     ],
                                     "library_dirs": ["/clangarm64/ffbuild/lib"],
                                 },

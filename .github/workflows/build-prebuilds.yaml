@@ -6,7 +6,7 @@ concurrency:
 
 env:
   CACHE_VERSION_WINDOWS: "v14"
-  CACHE_VERSION_LINUX: "v29"
+  CACHE_VERSION_LINUX: "v30"
   CACHE_VERSION_MACOS: "v12"
   # JELLYFIN_FFMPEG_HASH: "21198ee5630df2b0dabe4bb416e6c9c4a32522ed"
 
@@ -519,7 +519,9 @@ jobs:
         id: cache-ffmpeg
         uses: actions/cache@v4
         with:
-          path: /opt/ffbuild/prefix
+          path: |
+            /opt/ffbuild/prefix
+            externals/jellyfin-ffmpeg/config*.h
           key: ffmpeg-linux-${{ matrix.arch }}-${{ env.CACHE_VERSION_LINUX }}-${{ steps.ffmpeg-hash.outputs.hash }}
           restore-keys: |
             ffmpeg-linux-${{ matrix.arch }}-${{ env.CACHE_VERSION_LINUX }}-${{ steps.ffmpeg-hash.outputs.hash }}
@@ -567,7 +569,28 @@ jobs:
           if [ -d ffbuild/prefix ]; then
             sudo mkdir -p /opt/ffbuild/prefix
             sudo cp -r ffbuild/prefix/* /opt/ffbuild/prefix/
-            
+
+            # Copy all config*.h files from FFmpeg build directory (required for internal headers)
+            echo "Copying config files from FFmpeg build directory..."
+            for config_file in ffbuild/ffmpeg/config*.h; do
+              if [ -f "$config_file" ]; then
+                filename=$(basename "$config_file")
+                sudo cp "$config_file" "../$filename"
+                echo "✓ Copied $filename"
+              fi
+            done
+
+            # Verify
+            if [ ! -f ../config.h ]; then
+              echo "Error: config.h not found in FFmpeg build directory!"
+              exit 1
+            fi
+
+            if [ ! -f ../config_components.h ]; then
+              echo "Error: config_components.h not found in FFmpeg build directory!"
+              exit 1
+            fi
+
             # Also check if codec libraries are in /opt/ffbuild inside container
             # We might need to extract them from our Docker image
             CONTAINER_ID=$(docker create "ghcr.io/seydx/jellyfin-ffmpeg/${TARGET}-gpl:latest")
@@ -581,10 +604,10 @@ jobs:
               rm -rf /tmp/codec-includes
             }
             docker rm "${CONTAINER_ID}"
-            
+
             # Clean up the preserved ffbuild directory now
             rm -rf ffbuild
-            
+
             sudo chown -R $USER:$USER /opt/ffbuild
           else
             echo "Error: ffbuild/prefix not found!"
@@ -597,7 +620,9 @@ jobs:
         if: steps.cache-ffmpeg.outputs.cache-hit != 'true' && steps.build-ffmpeg.outcome == 'success'
         uses: actions/cache/save@v4
         with:
-          path: /opt/ffbuild/prefix
+          path: |
+            /opt/ffbuild/prefix
+            externals/jellyfin-ffmpeg/config*.h
           key: ffmpeg-linux-${{ matrix.arch }}-${{ env.CACHE_VERSION_LINUX }}-${{ steps.ffmpeg-hash.outputs.hash }}
 
       - name: Upload FFmpeg cache as artifact
