@@ -5,9 +5,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VERSION_WINDOWS: "v14"
+  CACHE_VERSION_WINDOWS: "v15"
   CACHE_VERSION_LINUX: "v30"
-  CACHE_VERSION_MACOS: "v12"
+  CACHE_VERSION_MACOS: "v13"
   # JELLYFIN_FFMPEG_HASH: "21198ee5630df2b0dabe4bb416e6c9c4a32522ed"
 
 on:
@@ -119,7 +119,9 @@ jobs:
         id: cache-ffmpeg
         uses: actions/cache@v4
         with:
-          path: C:\ffmpeg-cache-${{ matrix.os.arch }}
+          path: |
+            C:\ffmpeg-cache-${{ matrix.os.arch }}
+            externals/jellyfin-ffmpeg/config*.h
           key: ffmpeg-windows-${{ matrix.os.arch }}-${{ env.CACHE_VERSION_WINDOWS }}-${{ steps.ffmpeg-hash.outputs.hash }}
           restore-keys: |
             ffmpeg-windows-${{ matrix.os.arch }}-${{ env.CACHE_VERSION_WINDOWS }}-${{ steps.ffmpeg-hash.outputs.hash }}
@@ -173,11 +175,30 @@ jobs:
           if [ -d "${PREFIX}/jellyfin-ffmpeg/lib" ]; then
             cp ${PREFIX}/jellyfin-ffmpeg/lib/*.a ${PREFIX}/lib/ 2>/dev/null || true
             cp -r ${PREFIX}/jellyfin-ffmpeg/include/* ${PREFIX}/include/ 2>/dev/null || true
-            
+
             if [ -d "${PREFIX}/jellyfin-ffmpeg/lib/pkgconfig" ]; then
               mkdir -p ${PREFIX}/lib/pkgconfig
               cp ${PREFIX}/jellyfin-ffmpeg/lib/pkgconfig/*.pc ${PREFIX}/lib/pkgconfig/ 2>/dev/null || true
             fi
+          fi
+
+          # Copy all config*.h files from FFmpeg build directory (required for internal headers)
+          echo "Copying config files from FFmpeg build directory..."
+          for config_file in config*.h; do
+            if [ -f "$config_file" ]; then
+              cp "$config_file" externals/jellyfin-ffmpeg/
+              echo "✓ Copied $config_file to externals/jellyfin-ffmpeg/"
+            fi
+          done
+
+          if [ ! -f config.h ]; then
+            echo "Error: config.h not found in FFmpeg build directory!"
+            exit 1
+          fi
+
+          if [ ! -f config_components.h ]; then
+            echo "Error: config_components.h not found in FFmpeg build directory!"
+            exit 1
           fi
 
       - name: Copy FFmpeg build to cache-friendly location
@@ -201,7 +222,9 @@ jobs:
         if: steps.cache-ffmpeg.outputs.cache-hit != 'true' && steps.build-ffmpeg.outcome == 'success'
         uses: actions/cache/save@v4
         with:
-          path: C:\ffmpeg-cache-${{ matrix.os.arch }}
+          path: |
+            C:\ffmpeg-cache-${{ matrix.os.arch }}
+            externals/jellyfin-ffmpeg/config*.h
           key: ffmpeg-windows-${{ matrix.os.arch }}-${{ env.CACHE_VERSION_WINDOWS }}-${{ steps.ffmpeg-hash.outputs.hash }}
 
       - name: Upload FFmpeg cache as artifact
@@ -580,7 +603,6 @@ jobs:
               fi
             done
 
-            # Verify
             if [ ! -f ../config.h ]; then
               echo "Error: config.h not found in FFmpeg build directory!"
               exit 1
@@ -783,7 +805,9 @@ jobs:
         id: cache-ffmpeg
         uses: actions/cache@v4
         with:
-          path: /opt/ffbuild/prefix
+          path: |
+            /opt/ffbuild/prefix
+            externals/jellyfin-ffmpeg/config*.h
           key: ffmpeg-macos-${{ matrix.arch }}-${{ env.CACHE_VERSION_MACOS }}-${{ steps.ffmpeg-hash.outputs.hash }}
           restore-keys: |
             ffmpeg-macos-${{ matrix.arch }}-${{ env.CACHE_VERSION_MACOS }}-${{ steps.ffmpeg-hash.outputs.hash }}
@@ -815,6 +839,25 @@ jobs:
           cd ..
           make install DESTDIR="" prefix="/opt/ffbuild/prefix"
 
+          # Copy all config*.h files from FFmpeg build directory (required for internal headers)
+          echo "Copying config files from FFmpeg build directory..."
+          for config_file in config*.h; do
+            if [ -f "$config_file" ]; then
+              cp "$config_file" externals/jellyfin-ffmpeg/
+              echo "✓ Copied $config_file to externals/jellyfin-ffmpeg/"
+            fi
+          done
+
+          if [ ! -f config.h ]; then
+            echo "Error: config.h not found in FFmpeg build directory!"
+            exit 1
+          fi
+
+          if [ ! -f config_components.h ]; then
+            echo "Error: config_components.h not found in FFmpeg build directory!"
+            exit 1
+          fi
+
           # Fix permissions before caching
           sudo chown -R $USER:staff /opt/ffbuild
 
@@ -824,7 +867,9 @@ jobs:
         if: steps.cache-ffmpeg.outputs.cache-hit != 'true' && steps.build-ffmpeg.outcome == 'success'
         uses: actions/cache/save@v4
         with:
-          path: /opt/ffbuild/prefix
+          path: |
+            /opt/ffbuild/prefix
+            externals/jellyfin-ffmpeg/config*.h
           key: ffmpeg-macos-${{ matrix.arch }}-${{ env.CACHE_VERSION_MACOS }}-${{ steps.ffmpeg-hash.outputs.hash }}
 
       - name: Upload FFmpeg cache as artifact
