@@ -182,15 +182,7 @@ jobs:
             fi
           fi
 
-          # Copy all config*.h files from FFmpeg build directory (required for internal headers)
-          echo "Copying config files from FFmpeg build directory..."
-          for config_file in config*.h; do
-            if [ -f "$config_file" ]; then
-              cp "$config_file" externals/jellyfin-ffmpeg/
-              echo "✓ Copied $config_file to externals/jellyfin-ffmpeg/"
-            fi
-          done
-
+          echo "Verifying config files from FFmpeg build..."
           if [ ! -f config.h ]; then
             echo "Error: config.h not found in FFmpeg build directory!"
             exit 1
@@ -200,6 +192,10 @@ jobs:
             echo "Error: config_components.h not found in FFmpeg build directory!"
             exit 1
           fi
+
+          # List all config files for debugging
+          ls -la config*.h || true
+          echo "✓ Config files verified in externals/jellyfin-ffmpeg/"
 
       - name: Copy FFmpeg build to cache-friendly location
         if: steps.cache-ffmpeg.outputs.cache-hit != 'true' && steps.build-ffmpeg.outcome == 'success'
@@ -839,15 +835,7 @@ jobs:
           cd ..
           make install DESTDIR="" prefix="/opt/ffbuild/prefix"
 
-          # Copy all config*.h files from FFmpeg build directory (required for internal headers)
-          echo "Copying config files from FFmpeg build directory..."
-          for config_file in config*.h; do
-            if [ -f "$config_file" ]; then
-              cp "$config_file" externals/jellyfin-ffmpeg/
-              echo "✓ Copied $config_file to externals/jellyfin-ffmpeg/"
-            fi
-          done
-
+          echo "Verifying config files from FFmpeg build..."
           if [ ! -f config.h ]; then
             echo "Error: config.h not found in FFmpeg build directory!"
             exit 1
@@ -857,6 +845,10 @@ jobs:
             echo "Error: config_components.h not found in FFmpeg build directory!"
             exit 1
           fi
+
+          # List all config files for debugging
+          ls -la config*.h || true
+          echo "✓ Config files verified in externals/jellyfin-ffmpeg/"
 
           # Fix permissions before caching
           sudo chown -R $USER:staff /opt/ffbuild
