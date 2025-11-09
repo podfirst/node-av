@@ -113,22 +113,29 @@ export class SyncQueue implements Disposable, NativeWrapper<NativeSyncQueue> {
    *
    * The packet is cloned internally, so the original can be reused/freed.
    *
+   * To signal EOF for a stream, pass null as the packet.
+   * This tells the sync queue that no more packets will be sent for this stream.
+   *
    * @param streamIdx - Stream index returned from addStream()
    *
-   * @param packet - Packet to send
+   * @param packet - Packet to send, or null to signal EOF
    *
    * @returns 0 on success, AVERROR_EOF if EOF, negative on error
    *
    * @example
    * ```typescript
+   * // Send normal packet
    * const ret = sq.send(videoIdx, packet);
    * if (ret === AVERROR_EOF) {
    *   console.log('Stream finished');
    * }
+   *
+   * // Signal EOF for stream
+   * sq.send(videoIdx, null);
    * ```
    */
-  send(streamIdx: number, packet: Packet): number {
-    return this.native.send(streamIdx, packet.getNative());
+  send(streamIdx: number, packet: Packet | null): number {
+    return this.native.send(streamIdx, packet?.getNative() ?? null);
   }
 
   /**

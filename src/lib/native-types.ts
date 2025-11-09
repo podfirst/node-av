@@ -979,7 +979,7 @@ export interface NativeOption {
  */
 export interface NativeSyncQueue extends Disposable {
   addStream(limiting: number): number;
-  send(streamIdx: number, packet: NativePacket): number;
+  send(streamIdx: number, packet: NativePacket | null): number;
   receive(streamIdx: number, packet: NativePacket): number;
   free(): void;
 }

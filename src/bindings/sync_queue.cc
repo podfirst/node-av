@@ -123,37 +123,46 @@ Napi::Value SyncQueue::Send(const Napi::CallbackInfo& info) {
         return Napi::Number::New(env, AVERROR(EINVAL));
     }
 
-    // Get the packet object
-    if (!info[1].IsObject()) {
-        Napi::TypeError::New(env, "packet must be an object").ThrowAsJavaScriptException();
-        return env.Null();
-    }
-
-    Packet* packet = UnwrapNativeObject<Packet>(env, info[1].As<Napi::Object>(), "Packet");
-    if (!packet) {
-        Napi::TypeError::New(env, "Invalid packet object").ThrowAsJavaScriptException();
-        return env.Null();
-    }
-
-    AVPacket* pkt = packet->Get();
-    if (!pkt) {
-        Napi::Error::New(env, "Packet is null").ThrowAsJavaScriptException();
-        return env.Null();
-    }
-
-    // Create SyncQueueFrame for the packet
+    // Check if packet is null/undefined (EOF signal)
     ::SyncQueueFrame sqframe;
     sqframe.f = nullptr;
-    sqframe.p = av_packet_clone(pkt);  // Clone the packet for the queue
 
-    if (!sqframe.p) {
-        Napi::Error::New(env, "Failed to clone packet").ThrowAsJavaScriptException();
-        return env.Null();
+    if (info[1].IsNull() || info[1].IsUndefined()) {
+        // Send EOF signal (NULL packet)
+        sqframe.p = nullptr;
+    } else {
+        // Get the packet object
+        if (!info[1].IsObject()) {
+            Napi::TypeError::New(env, "packet must be an object, null, or undefined").ThrowAsJavaScriptException();
+            return env.Null();
+        }
+
+        Packet* packet = UnwrapNativeObject<Packet>(env, info[1].As<Napi::Object>(), "Packet");
+        if (!packet) {
+            Napi::TypeError::New(env, "Invalid packet object").ThrowAsJavaScriptException();
+            return env.Null();
+        }
+
+        AVPacket* pkt = packet->Get();
+        if (!pkt) {
+            Napi::Error::New(env, "Packet is null").ThrowAsJavaScriptException();
+            return env.Null();
+        }
+
+        // Clone the packet for the queue
+        sqframe.p = av_packet_clone(pkt);
+        if (!sqframe.p) {
+            Napi::Error::New(env, "Failed to clone packet").ThrowAsJavaScriptException();
+            return env.Null();
+        }
     }
 
     int ret = sq_send(queue_, streamIdx, sqframe);
     if (ret < 0) {
-        av_packet_free(&sqframe.p);
+        // Only free packet if it's not NULL (we own it if clone succeeded)
+        if (sqframe.p) {
+            av_packet_free(&sqframe.p);
+        }
         if (ret == AVERROR_EOF) {
             return Napi::Number::New(env, ret);
         }
