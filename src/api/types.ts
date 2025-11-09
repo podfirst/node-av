@@ -340,8 +340,18 @@ export interface MediaOutputOptions {
   /**
    * Use synchronous packet queue for interleaving.
    *
-   * When true, enables sync queue for proper interleaving of packets
-   * across multiple streams based on timestamps.
+   * When true and there are stream copy streams present, enables FFmpeg's
+   * sync queue for proper interleaving of packets based on timestamps.
+   *
+   * The sync queue is only activated when both conditions are met:
+   * - `useSyncQueue` is `true`
+   * - Output contains at least one stream copy stream
+   *
+   * This includes scenarios with:
+   * - Only stream copy streams (e.g., 1 streamcopy stream)
+   * - Mixed streams (e.g., 1 streamcopy + 1 encoded stream)
+   *
+   * For outputs with only encoded streams, the sync queue is not used.
    *
    * @default true
    */
@@ -350,11 +360,19 @@ export interface MediaOutputOptions {
   /**
    * Use asynchronous write queue to prevent race conditions.
    *
-   * When true, all write operations are serialized through an async queue,
-   * preventing concurrent access to AVFormatContext which can cause
-   * "Packet duration out of range" errors with parallel encoding.
+   * When true and there are multiple streams (> 1), all write operations
+   * are serialized through an async queue, preventing concurrent access
+   * to AVFormatContext which can cause "Packet duration out of range"
+   * errors with parallel encoding.
    *
-   * @default false
+   * The async queue is only activated when both conditions are met:
+   * - `useAsyncWrite` is `true`
+   * - Output has more than one stream
+   *
+   * For single-stream outputs, writes are performed directly without
+   * queuing, regardless of this setting.
+   *
+   * @default true
    */
   useAsyncWrite?: boolean;
 

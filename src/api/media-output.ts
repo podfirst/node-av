@@ -137,16 +137,11 @@ export class MediaOutput implements AsyncDisposable, Disposable {
       copyInitialNonkeyframes: false,
       exitOnError: true,
       useSyncQueue: true,
-      useAsyncWrite: false,
+      useAsyncWrite: true,
       ...options,
     };
 
     this.formatContext = new FormatContext();
-
-    if (this.options.useAsyncWrite) {
-      this.writeQueue = new AsyncQueue<WriteJob>(1); // size=1 for strict serialization
-      this.startWriteWorker();
-    }
   }
 
   /**
@@ -1072,6 +1067,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
     // Automatically write header if not written yet
     if (!this.headerWritten) {
       this.headerWritePromise ??= (async () => {
+        this.startWriteWorker();
         this.setupSyncQueues();
         this.updateDefaultDisposition();
         this.copyContainerMetadata();
@@ -1739,7 +1735,13 @@ export class MediaOutput implements AsyncDisposable, Disposable {
    * @internal
    */
   private startWriteWorker(): void {
-    this.writeWorkerPromise = (async () => {
+    if (!this.options.useAsyncWrite || this._streams.size <= 1) {
+      return;
+    }
+
+    this.writeQueue ??= new AsyncQueue<WriteJob>(1); // size=1 for strict serialization
+
+    this.writeWorkerPromise ??= (async () => {
       while (true) {
         const job = await this.writeQueue!.receive();
         if (!job) break; // Queue closed
