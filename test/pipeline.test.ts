@@ -69,13 +69,15 @@ describe('Pipeline - Comprehensive Tests', () => {
 
       try {
         await using input = await MediaInput.open(inputFile);
-        await using output = await MediaOutput.open(outputFile);
+        const output = await MediaOutput.open(outputFile);
 
         // Simple stream copy
         const control = pipeline(input, output);
 
         // Wait for completion
         await control.completion;
+
+        await output.close();
 
         // Verify output file exists
         assert.ok(existsSync(outputFile), 'Output file should exist');
@@ -94,7 +96,7 @@ describe('Pipeline - Comprehensive Tests', () => {
 
       try {
         await using input = await MediaInput.open(inputFile);
-        await using output = await MediaOutput.open(outputFile);
+        const output = await MediaOutput.open(outputFile);
 
         const control = pipeline(input, output);
 
@@ -104,6 +106,8 @@ describe('Pipeline - Comprehensive Tests', () => {
 
         // Wait for completion
         await control.completion;
+
+        await output.close();
 
         // File might exist but should be incomplete
       } finally {
@@ -118,7 +122,7 @@ describe('Pipeline - Comprehensive Tests', () => {
 
       try {
         await using input = await MediaInput.open(inputFile);
-        await using output = await MediaOutput.open(outputFile);
+        const output = await MediaOutput.open(outputFile);
 
         const videoStream = input.video();
         if (!videoStream) {
@@ -135,6 +139,8 @@ describe('Pipeline - Comprehensive Tests', () => {
 
         const control = pipeline(input, decoder, encoder, output);
         await control.completion;
+
+        await output.close();
 
         // Verify output
         assert.ok(existsSync(outputFile), 'Output file should exist');
@@ -154,7 +160,7 @@ describe('Pipeline - Comprehensive Tests', () => {
 
       try {
         await using input = await MediaInput.open(inputFile);
-        await using output = await MediaOutput.open(outputFile);
+        const output = await MediaOutput.open(outputFile);
 
         const videoStream = input.video();
         if (!videoStream) {
@@ -176,6 +182,8 @@ describe('Pipeline - Comprehensive Tests', () => {
 
         const control = pipeline(input, decoder, filter, encoder, output);
         await control.completion;
+
+        await output.close();
 
         // Verify output
         assert.ok(existsSync(outputFile), 'Output file should exist');
@@ -204,13 +212,15 @@ describe('Pipeline - Comprehensive Tests', () => {
           return;
         }
 
-        await using output = await MediaOutput.open(outputFile);
+        const output = await MediaOutput.open(outputFile);
 
         // Create h264_mp4toannexb filter for the video stream
         using bsf = BitStreamFilterAPI.create('h264_mp4toannexb', videoStream);
 
         const control = pipeline(input, bsf, output);
         await control.completion;
+
+        await output.close();
 
         // Verify output exists
         assert.ok(existsSync(outputFile), 'Output file should exist');
@@ -224,7 +234,7 @@ describe('Pipeline - Comprehensive Tests', () => {
 
       try {
         await using input = await MediaInput.open(inputFile);
-        await using output = await MediaOutput.open(outputFile);
+        const output = await MediaOutput.open(outputFile);
 
         const videoStream = input.video();
         if (!videoStream) {
@@ -245,6 +255,8 @@ describe('Pipeline - Comprehensive Tests', () => {
         const control = pipeline(input, decoder, encoder, bsf, output);
         await control.completion;
 
+        await output.close();
+
         assert.ok(existsSync(outputFile), 'Output file should exist');
       } finally {
         cleanupTestFile(outputFile);
@@ -259,7 +271,7 @@ describe('Pipeline - Comprehensive Tests', () => {
       try {
         await using videoInput = await MediaInput.open(inputFile);
         await using audioInput = await MediaInput.open(inputFile);
-        await using output = await MediaOutput.open(outputFile);
+        const output = await MediaOutput.open(outputFile);
 
         const videoStream = videoInput.video();
         const audioStream = audioInput.audio();
@@ -293,6 +305,8 @@ describe('Pipeline - Comprehensive Tests', () => {
         );
 
         await control.completion;
+
+        await output.close();
 
         // Verify output
         assert.ok(existsSync(outputFile), 'Output file should exist');
@@ -337,6 +351,8 @@ describe('Pipeline - Comprehensive Tests', () => {
 
         await control.completion;
 
+        await output.close();
+
         // Verify output
         assert.ok(existsSync(outputFile), 'Output file should exist');
 
@@ -363,7 +379,7 @@ describe('Pipeline - Comprehensive Tests', () => {
 
       try {
         await using input = await MediaInput.open(inputFile);
-        await using output = await MediaOutput.open(outputFile);
+        const output = await MediaOutput.open(outputFile);
 
         const videoStream = input.video();
         if (!videoStream) {
@@ -386,6 +402,8 @@ describe('Pipeline - Comprehensive Tests', () => {
 
         await control.completion;
 
+        await output.close();
+
         assert.ok(existsSync(outputFile), 'Output file should exist');
       } finally {
         cleanupTestFile(outputFile);
@@ -397,7 +415,7 @@ describe('Pipeline - Comprehensive Tests', () => {
 
       try {
         await using input = await MediaInput.open(inputFile);
-        await using output = await MediaOutput.open(outputFile);
+        const output = await MediaOutput.open(outputFile);
 
         const videoStream = input.video();
         const audioStream = input.audio();
@@ -431,6 +449,8 @@ describe('Pipeline - Comprehensive Tests', () => {
 
         await control.completion;
 
+        await output.close();
+
         // Verify output
         assert.ok(existsSync(outputFile), 'Output file should exist');
 
@@ -443,13 +463,13 @@ describe('Pipeline - Comprehensive Tests', () => {
     });
 
     it('should process with shared input - multiple outputs', async () => {
-      const videoOutputFile = getTestOutputPath('named-shared-video.mp4');
-      const audioOutputFile = getTestOutputPath('named-shared-audio.mp4');
+      const videoOutputFile = getTestOutputPath('named-shared-video.mkv');
+      const audioOutputFile = getTestOutputPath('named-shared-audio.mkv');
 
       try {
         await using input = await MediaInput.open(inputFile);
-        await using videoOutput = await MediaOutput.open(videoOutputFile);
-        await using audioOutput = await MediaOutput.open(audioOutputFile);
+        const videoOutput = await MediaOutput.open(videoOutputFile);
+        const audioOutput = await MediaOutput.open(audioOutputFile);
 
         const videoStream = input.video();
         const audioStream = input.audio();
@@ -482,6 +502,9 @@ describe('Pipeline - Comprehensive Tests', () => {
 
         await control.completion;
 
+        await videoOutput.close();
+        await audioOutput.close();
+
         // Verify video output
         assert.ok(existsSync(videoOutputFile), 'Video output file should exist');
         await using verifyVideoInput = await MediaInput.open(videoOutputFile);
@@ -502,7 +525,7 @@ describe('Pipeline - Comprehensive Tests', () => {
 
       try {
         await using input = await MediaInput.open(inputFile);
-        await using output = await MediaOutput.open(outputFile);
+        const output = await MediaOutput.open(outputFile);
 
         const videoStream = input.video();
         const audioStream = input.audio();
@@ -529,6 +552,8 @@ describe('Pipeline - Comprehensive Tests', () => {
         );
 
         await control.completion;
+
+        await output.close();
 
         // Verify output
         assert.ok(existsSync(outputFile), 'Output file should exist');
@@ -682,7 +707,7 @@ describe('Pipeline - Comprehensive Tests', () => {
 
       try {
         await using input = await MediaInput.open(inputFile);
-        await using output = await MediaOutput.open(outputFile);
+        const output = await MediaOutput.open(outputFile);
 
         const videoStream = input.video();
         if (!videoStream) {
@@ -708,6 +733,8 @@ describe('Pipeline - Comprehensive Tests', () => {
         const control = pipeline(input, decoder, scaleFilter, rotateFilter, encoder, output);
         await control.completion;
 
+        await output.close();
+
         assert.ok(existsSync(outputFile), 'Output file should exist');
       } finally {
         cleanupTestFile(outputFile);
@@ -719,7 +746,7 @@ describe('Pipeline - Comprehensive Tests', () => {
 
       try {
         await using input = await MediaInput.open(inputFile);
-        await using output = await MediaOutput.open(outputFile);
+        const output = await MediaOutput.open(outputFile);
 
         const videoStream = input.video();
         if (!videoStream) {
@@ -748,6 +775,8 @@ describe('Pipeline - Comprehensive Tests', () => {
         const control = pipeline(input, decoder, filters, encoder, output);
         await control.completion;
 
+        await output.close();
+
         // Cleanup filters
         for (const f of filters) {
           f[Symbol.dispose]();
@@ -763,7 +792,7 @@ describe('Pipeline - Comprehensive Tests', () => {
       const outputFile = getTestOutputPath('frames-source.mp4');
 
       try {
-        await using output = await MediaOutput.open(outputFile);
+        const output = await MediaOutput.open(outputFile);
 
         // Create a simple frame generator
         async function* generateFrames() {
@@ -795,6 +824,8 @@ describe('Pipeline - Comprehensive Tests', () => {
 
         const control = pipeline(generateFrames(), encoder, output);
         await control.completion;
+
+        await output.close();
 
         assert.ok(existsSync(outputFile), 'Output file should exist');
       } finally {
@@ -843,7 +874,7 @@ describe('Pipeline - Comprehensive Tests', () => {
 
       try {
         await using input = await MediaInput.open(inputFile2);
-        await using output = await MediaOutput.open(outputFile);
+        const output = await MediaOutput.open(outputFile);
 
         const videoStream = input.video();
         if (!videoStream) {
@@ -865,6 +896,8 @@ describe('Pipeline - Comprehensive Tests', () => {
         const control = pipeline(input, decoder, filter, encoder, output);
         await control.completion;
 
+        await output.close();
+
         assert.ok(existsSync(outputFile), 'Output file should exist');
       } finally {
         cleanupTestFile(outputFile);
@@ -885,7 +918,7 @@ describe('Pipeline - Comprehensive Tests', () => {
             assert.fail('No video stream found');
           }
 
-          await using output = await MediaOutput.open(outputFile);
+          const output = await MediaOutput.open(outputFile);
 
           // Create BSF for the stream
           using bsf = BitStreamFilterAPI.create('null', videoStream);
@@ -893,6 +926,8 @@ describe('Pipeline - Comprehensive Tests', () => {
           // Stream copy with BSF: input → bsf → output
           const control = pipeline(input, bsf, output);
           await control.completion;
+
+          await output.close();
 
           assert.ok(existsSync(outputFile), 'Output file should exist');
         } finally {
@@ -904,7 +939,7 @@ describe('Pipeline - Comprehensive Tests', () => {
         const outputFile = getTestOutputPath('frames-filter-encode.mp4');
 
         try {
-          await using output = await MediaOutput.open(outputFile);
+          const output = await MediaOutput.open(outputFile);
 
           // Create a frame generator
           async function* generateFrames() {
@@ -939,6 +974,8 @@ describe('Pipeline - Comprehensive Tests', () => {
           // Pipeline: frames → filter → encoder → output
           const control = pipeline(generateFrames(), filter, encoder, output);
           await control.completion;
+
+          await output.close();
 
           assert.ok(existsSync(outputFile), 'Output file should exist');
         } finally {
@@ -1118,12 +1155,12 @@ describe('Pipeline - Comprehensive Tests', () => {
 
           await control.completion;
 
+          await videoOutput.close();
+          await audioOutput.close();
+
           assert.ok(existsSync(videoOutputFile), 'Video output file should exist');
           assert.ok(existsSync(audioOutputFile), 'Audio output file should exist');
 
-          // Close outputs manually since they're not in using statements
-          await videoOutput.close();
-          await audioOutput.close();
           videoDecoder.close();
           audioDecoder.close();
           videoEncoder.close();
@@ -1139,7 +1176,7 @@ describe('Pipeline - Comprehensive Tests', () => {
 
         try {
           await using input = await MediaInput.open(inputFile);
-          await using output = await MediaOutput.open(outputFile);
+          const output = await MediaOutput.open(outputFile);
 
           const videoStream = input.video();
           if (!videoStream) {
@@ -1158,6 +1195,8 @@ describe('Pipeline - Comprehensive Tests', () => {
           control.stop();
 
           await control.completion;
+
+          await output.close();
 
           assert.ok(control.isStopped(), 'Pipeline should be stopped');
 
@@ -1199,7 +1238,7 @@ describe('Pipeline - Comprehensive Tests', () => {
         const outputFile = getTestOutputPath('large-frames.mp4');
 
         try {
-          await using output = await MediaOutput.open(outputFile);
+          const output = await MediaOutput.open(outputFile);
 
           // Generate many frames
           async function* generateManyFrames() {
@@ -1229,6 +1268,8 @@ describe('Pipeline - Comprehensive Tests', () => {
 
           const control = pipeline(generateManyFrames(), encoder, output);
           await control.completion;
+
+          await output.close();
 
           assert.ok(existsSync(outputFile), 'Output file should exist');
 
