@@ -391,6 +391,165 @@ describe('Pipeline - Comprehensive Tests', () => {
         cleanupTestFile(outputFile);
       }
     });
+
+    it('should process with shared input - single output', async () => {
+      const outputFile = getTestOutputPath('named-shared-single.mp4');
+
+      try {
+        await using input = await MediaInput.open(inputFile);
+        await using output = await MediaOutput.open(outputFile);
+
+        const videoStream = input.video();
+        const audioStream = input.audio();
+
+        if (!videoStream || !audioStream) {
+          assert.fail('Missing video or audio stream');
+        }
+
+        // Create processing stages
+        using videoDecoder = await Decoder.create(videoStream);
+        using videoEncoder = await Encoder.create(FF_ENCODER_LIBX264, {
+          decoder: videoDecoder,
+          bitrate: '1M',
+        });
+
+        using audioDecoder = await Decoder.create(audioStream);
+        using audioEncoder = await Encoder.create(FF_ENCODER_AAC, {
+          decoder: audioDecoder,
+          bitrate: '128k',
+        });
+
+        // Named pipeline with shared input (new API)
+        const control = pipeline(
+          input, // Shared input for both streams
+          {
+            video: [videoDecoder, videoEncoder],
+            audio: [audioDecoder, audioEncoder],
+          },
+          output,
+        );
+
+        await control.completion;
+
+        // Verify output
+        assert.ok(existsSync(outputFile), 'Output file should exist');
+
+        await using verifyInput = await MediaInput.open(outputFile);
+        assert.ok(verifyInput.video(), 'Output should have video stream');
+        assert.ok(verifyInput.audio(), 'Output should have audio stream');
+      } finally {
+        cleanupTestFile(outputFile);
+      }
+    });
+
+    it('should process with shared input - multiple outputs', async () => {
+      const videoOutputFile = getTestOutputPath('named-shared-video.mp4');
+      const audioOutputFile = getTestOutputPath('named-shared-audio.mp4');
+
+      try {
+        await using input = await MediaInput.open(inputFile);
+        await using videoOutput = await MediaOutput.open(videoOutputFile);
+        await using audioOutput = await MediaOutput.open(audioOutputFile);
+
+        const videoStream = input.video();
+        const audioStream = input.audio();
+
+        if (!videoStream || !audioStream) {
+          assert.fail('Missing video or audio stream');
+        }
+
+        // Create processing stages
+        using videoDecoder = await Decoder.create(videoStream);
+        using videoEncoder = await Encoder.create(FF_ENCODER_LIBX264, {
+          decoder: videoDecoder,
+          bitrate: '500k',
+        });
+
+        using audioDecoder = await Decoder.create(audioStream);
+        using audioEncoder = await Encoder.create(FF_ENCODER_AAC, {
+          bitrate: '128k',
+        });
+
+        // Named pipeline with shared input and multiple outputs (new API)
+        const control = pipeline(
+          input, // Shared input for both streams
+          {
+            video: [videoDecoder, videoEncoder],
+            audio: [audioDecoder, audioEncoder],
+          },
+          { video: videoOutput, audio: audioOutput },
+        );
+
+        await control.completion;
+
+        // Verify video output
+        assert.ok(existsSync(videoOutputFile), 'Video output file should exist');
+        await using verifyVideoInput = await MediaInput.open(videoOutputFile);
+        assert.ok(verifyVideoInput.video(), 'Video output should have video stream');
+
+        // Verify audio output
+        assert.ok(existsSync(audioOutputFile), 'Audio output file should exist');
+        await using verifyAudioInput = await MediaInput.open(audioOutputFile);
+        assert.ok(verifyAudioInput.audio(), 'Audio output should have audio stream');
+      } finally {
+        cleanupTestFile(videoOutputFile);
+        cleanupTestFile(audioOutputFile);
+      }
+    });
+
+    it('should support passthrough with shared input', async () => {
+      const outputFile = getTestOutputPath('named-shared-passthrough.mp4');
+
+      try {
+        await using input = await MediaInput.open(inputFile);
+        await using output = await MediaOutput.open(outputFile);
+
+        const videoStream = input.video();
+        const audioStream = input.audio();
+
+        if (!videoStream || !audioStream) {
+          assert.fail('Missing video or audio stream');
+        }
+
+        // Process video, passthrough audio
+        using videoDecoder = await Decoder.create(videoStream);
+        using videoEncoder = await Encoder.create(FF_ENCODER_LIBX264, {
+          decoder: videoDecoder,
+          bitrate: '500k',
+        });
+
+        // Named pipeline with shared input (new API)
+        const control = pipeline(
+          input, // Shared input
+          {
+            video: [videoDecoder, videoEncoder],
+            audio: 'passthrough',
+          },
+          output,
+        );
+
+        await control.completion;
+
+        // Verify output
+        assert.ok(existsSync(outputFile), 'Output file should exist');
+
+        await using verifyInput = await MediaInput.open(outputFile);
+        const verifyVideo = verifyInput.video();
+        const verifyAudio = verifyInput.audio();
+
+        assert.ok(verifyVideo, 'Output should have video stream');
+        assert.ok(verifyAudio, 'Output should have audio stream');
+
+        // Video should be reencoded
+        assert.equal(verifyVideo.codecpar.width, 320, 'Video width should be 320');
+        assert.equal(verifyVideo.codecpar.height, 240, 'Video height should be 240');
+
+        // Audio should have same codec as input (passthrough)
+        assert.equal(verifyAudio.codecpar.codecId, audioStream.codecpar.codecId, 'Audio codec should be unchanged');
+      } finally {
+        cleanupTestFile(outputFile);
+      }
+    });
   });
 
   describe('Partial Pipelines', () => {
