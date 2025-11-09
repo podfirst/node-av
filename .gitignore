@@ -74,6 +74,7 @@ ffmpeg_examples
 /caches
 /crash-dumps
 /examples/tests
+/examples/internal
 /*.pdf
 /test_internal
 /analysis
