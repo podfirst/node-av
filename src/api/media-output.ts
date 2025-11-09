@@ -51,8 +51,8 @@ interface StreamDescription {
   sourceTimeBase?: IRational;
   isStreamCopy: boolean;
   sqIdxMux: number; // Index in sync queue, -1 if not using sync queue
-  bufferedPackets: Packet[]; // Used only during initialization phase before header is written
-  bufferedDataSize: number;
+  preMuxQueue: Packet[]; // PreMuxQueue: Buffered packets before muxer starts (per-stream FIFO with size limits)
+  preMuxQueueDataSize: number;
   lastMuxDts: bigint;
   tsRescaleDeltaLast: { value: bigint }; // For av_rescale_delta (audio streamcopy)
   streamcopyStarted: boolean; // Track if streamcopy has started for this stream
@@ -726,8 +726,8 @@ export class MediaOutput implements AsyncDisposable, Disposable {
         sourceTimeBase,
         isStreamCopy: true,
         sqIdxMux: -1, // Will be set if sync queue is needed
-        bufferedPackets: [],
-        bufferedDataSize: 0,
+        preMuxQueue: [],
+        preMuxQueueDataSize: 0,
         lastMuxDts: AV_NOPTS_VALUE,
         tsRescaleDeltaLast: { value: AV_NOPTS_VALUE },
         streamcopyStarted: false,
@@ -745,8 +745,8 @@ export class MediaOutput implements AsyncDisposable, Disposable {
         sourceTimeBase: undefined, // Will be set on initialization
         isStreamCopy: false,
         sqIdxMux: -1, // Will be set if sync queue is needed
-        bufferedPackets: [],
-        bufferedDataSize: 0,
+        preMuxQueue: [],
+        preMuxQueueDataSize: 0,
         lastMuxDts: AV_NOPTS_VALUE,
         tsRescaleDeltaLast: { value: AV_NOPTS_VALUE },
         streamcopyStarted: false,
@@ -1005,11 +1005,18 @@ export class MediaOutput implements AsyncDisposable, Disposable {
 
     const streamInfo = this._streams.get(streamIndex)!;
 
+    // Clone packet immediately - we will modify it and caller retains ownership
+    const clonedPacket = packet.clone();
+    if (!clonedPacket) {
+      throw new Error('Failed to clone packet for writing');
+    }
+
     // Apply streamcopy filtering BEFORE buffering
     // This ensures rejected packets never enter the queue/buffer
     if (streamInfo.isStreamCopy) {
-      const shouldWrite = this.ofStreamcopy(packet, streamInfo, streamIndex);
+      const shouldWrite = this.ofStreamcopy(clonedPacket, streamInfo, streamIndex);
       if (!shouldWrite) {
+        clonedPacket.free(); // Free the clone since we won't use it
         return;
       }
     }
@@ -1017,50 +1024,33 @@ export class MediaOutput implements AsyncDisposable, Disposable {
     // Check if any streams are still uninitialized or header is being written
     const uninitialized = Array.from(this._streams.values()).some((s) => !s.initialized);
 
-    // Before header write, buffer packets:
-    // - WITH SyncQueue: Send directly to sq_send() (SyncQueue buffers internally)
-    // - WITHOUT SyncQueue: Buffer in bufferedPackets[] array
-    const usingSyncQueue = this.syncQueue && streamInfo.sqIdxMux >= 0;
-
-    // Buffer packets before header write (not ready yet)
+    // PHASE 1: Before header write - ALWAYS buffer in PreMuxQueue
+    // PreMuxQueue is used during initialization phase ONLY (regardless of SyncQueue presence)
+    // After header write, PreMuxQueue is flushed in DTS-sorted order
     if (uninitialized || this.headerWritePromise) {
-      // Check buffering limits (applies
+      // Check PreMuxQueue limits
       const maxPackets = this.options.maxMuxingQueueSize ?? MAX_MUXING_QUEUE_SIZE;
       const dataThreshold = this.options.muxingQueueDataThreshold ?? MUXING_QUEUE_DATA_THRESHOLD;
 
-      const currentPackets = streamInfo.bufferedPackets.length;
-      const currentBytes = streamInfo.bufferedDataSize;
-      const packetSize = packet.size;
+      const currentPackets = streamInfo.preMuxQueue.length;
+      const currentBytes = streamInfo.preMuxQueueDataSize;
+      const packetSize = clonedPacket.size;
 
       const thresholdReached = currentBytes + packetSize > dataThreshold;
       const effectiveMaxPackets = thresholdReached ? maxPackets : Number.MAX_SAFE_INTEGER;
 
       // Check if we would exceed packet limit (only if threshold reached)
       if (currentPackets >= effectiveMaxPackets) {
+        clonedPacket.free(); // Free the clone since we can't buffer it
         throw new Error(
           // eslint-disable-next-line @stylistic/max-len
           `Too many packets buffered for output stream ${streamIndex} (packets: ${currentPackets}, bytes: ${currentBytes}, threshold: ${dataThreshold}, max: ${maxPackets})`,
         );
       }
 
-      if (usingSyncQueue) {
-        // Path 1: Send to SyncQueue (buffers internally)
-        // Set packet timeBase from stream
-        packet.timeBase = streamInfo.stream.timeBase;
-
-        const ret = this.syncQueue!.send(streamInfo.sqIdxMux, packet);
-        FFmpegError.throwIfError(ret, 'Failed to send packet to sync queue');
-
-        // Track buffered data size for limit checking (even though SyncQueue holds the actual packets)
-        streamInfo.bufferedDataSize += packetSize;
-      } else {
-        // Path 2: Buffer in bufferedPackets[] array
-        const clonedPacket = packet.clone();
-        if (clonedPacket) {
-          streamInfo.bufferedPackets.push(clonedPacket);
-          streamInfo.bufferedDataSize += packetSize;
-        }
-      }
+      // Buffer in PreMuxQueue (per-stream FIFO)
+      streamInfo.preMuxQueue.push(clonedPacket);
+      streamInfo.preMuxQueueDataSize += packetSize;
 
       return; // Don't proceed to header write yet
     }
@@ -1076,6 +1066,10 @@ export class MediaOutput implements AsyncDisposable, Disposable {
         FFmpegError.throwIfError(ret, 'Failed to write header');
 
         this.headerWritten = true;
+
+        // PHASE 2: Flush PreMuxQueue in DTS-sorted order (once after header write)
+        // Packets go: PreMuxQueue → SyncQueue (if present) → Muxer
+        await this.flushPreMuxQueues();
       })();
 
       await this.headerWritePromise;
@@ -1085,14 +1079,14 @@ export class MediaOutput implements AsyncDisposable, Disposable {
       }
     }
 
-    // Write packet - different strategy based on sync queue usage
+    // PHASE 3: Write packet - normal muxing after header
     if (this.syncQueue && streamInfo.sqIdxMux >= 0) {
       // Use SyncQueue for packet interleaving
       // Set packet timeBase from stream
-      packet.timeBase = streamInfo.stream.timeBase;
+      clonedPacket.timeBase = streamInfo.stream.timeBase;
 
       // Send packet to sync queue
-      const ret = this.syncQueue.send(streamInfo.sqIdxMux, packet);
+      const ret = this.syncQueue.send(streamInfo.sqIdxMux, clonedPacket);
 
       // Handle errors from sq_send
       if (ret < 0) {
@@ -1133,23 +1127,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
         }
       }
     } else {
-      // No sync queue needed
-      // Flush buffered packets
-      if (streamInfo.bufferedPackets.length > 0) {
-        for (const pkt of streamInfo.bufferedPackets) {
-          pkt.streamIndex = streamIndex;
-          await this.write(pkt, streamInfo, streamIndex);
-        }
-        streamInfo.bufferedPackets = [];
-        streamInfo.bufferedDataSize = 0;
-      }
-
-      // Write current packet directly
-      // Clone packet since caller still owns it
-      const clonedPacket = packet.clone();
-      if (!clonedPacket) {
-        throw new Error('Failed to clone packet for writing');
-      }
+      // No sync queue needed - write directly
       clonedPacket.streamIndex = streamIndex;
       await this.write(clonedPacket, streamInfo, streamIndex);
     }
@@ -1284,11 +1262,18 @@ export class MediaOutput implements AsyncDisposable, Disposable {
 
     const streamInfo = this._streams.get(streamIndex)!;
 
+    // Clone packet immediately - we will modify it and caller retains ownership
+    const clonedPacket = packet.clone();
+    if (!clonedPacket) {
+      throw new Error('Failed to clone packet for writing');
+    }
+
     // Apply streamcopy filtering BEFORE buffering
     // This ensures rejected packets never enter the queue/buffer
     if (streamInfo.isStreamCopy) {
-      const shouldWrite = this.ofStreamcopy(packet, streamInfo, streamIndex);
+      const shouldWrite = this.ofStreamcopy(clonedPacket, streamInfo, streamIndex);
       if (!shouldWrite) {
+        clonedPacket.free(); // Free the clone since we won't use it
         return;
       }
     }
@@ -1296,50 +1281,33 @@ export class MediaOutput implements AsyncDisposable, Disposable {
     // Check if any streams are still uninitialized
     const uninitialized = Array.from(this._streams.values()).some((s) => !s.initialized);
 
-    // Before header write, buffer packets:
-    // - WITH SyncQueue: Send directly to sq_send() (SyncQueue buffers internally)
-    // - WITHOUT SyncQueue: Buffer in bufferedPackets[] array
-    const usingSyncQueue = this.syncQueue && streamInfo.sqIdxMux >= 0;
-
-    // Buffer packets before header write (not ready yet)
+    // PHASE 1: Before header write - ALWAYS buffer in PreMuxQueue
+    // PreMuxQueue is used during initialization phase ONLY (regardless of SyncQueue presence)
+    // After header write, PreMuxQueue is flushed in DTS-sorted order
     if (uninitialized) {
-      // Check buffering limits
+      // Check PreMuxQueue limits
       const maxPackets = this.options.maxMuxingQueueSize ?? MAX_MUXING_QUEUE_SIZE;
       const dataThreshold = this.options.muxingQueueDataThreshold ?? MUXING_QUEUE_DATA_THRESHOLD;
 
-      const currentPackets = streamInfo.bufferedPackets.length;
-      const currentBytes = streamInfo.bufferedDataSize;
-      const packetSize = packet.size;
+      const currentPackets = streamInfo.preMuxQueue.length;
+      const currentBytes = streamInfo.preMuxQueueDataSize;
+      const packetSize = clonedPacket.size;
 
       const thresholdReached = currentBytes + packetSize > dataThreshold;
       const effectiveMaxPackets = thresholdReached ? maxPackets : Number.MAX_SAFE_INTEGER;
 
       // Check if we would exceed packet limit (only if threshold reached)
       if (currentPackets >= effectiveMaxPackets) {
+        clonedPacket.free(); // Free the clone since we can't buffer it
         throw new Error(
           // eslint-disable-next-line @stylistic/max-len
           `Too many packets buffered for output stream ${streamIndex} (packets: ${currentPackets}, bytes: ${currentBytes}, threshold: ${dataThreshold}, max: ${maxPackets})`,
         );
       }
 
-      if (usingSyncQueue) {
-        // Path 1: Send to SyncQueue (buffers internally)
-        // Set packet timeBase from stream
-        packet.timeBase = streamInfo.stream.timeBase;
-
-        const ret = this.syncQueue!.send(streamInfo.sqIdxMux, packet);
-        FFmpegError.throwIfError(ret, 'Failed to send packet to sync queue');
-
-        // Track buffered data size for limit checking (even though SyncQueue holds the actual packets)
-        streamInfo.bufferedDataSize += packetSize;
-      } else {
-        // Path 2: Buffer in bufferedPackets[] array
-        const clonedPacket = packet.clone();
-        if (clonedPacket) {
-          streamInfo.bufferedPackets.push(clonedPacket);
-          streamInfo.bufferedDataSize += packetSize;
-        }
-      }
+      // Buffer in PreMuxQueue (per-stream FIFO)
+      streamInfo.preMuxQueue.push(clonedPacket);
+      streamInfo.preMuxQueueDataSize += packetSize;
 
       return; // Don't proceed to header write yet
     }
@@ -1353,16 +1321,20 @@ export class MediaOutput implements AsyncDisposable, Disposable {
       const ret = this.formatContext.writeHeaderSync();
       FFmpegError.throwIfError(ret, 'Failed to write header');
       this.headerWritten = true;
+
+      // PHASE 2: Flush PreMuxQueue in DTS-sorted order (once after header write)
+      // Packets go: PreMuxQueue → SyncQueue (if present) → Muxer
+      this.flushPreMuxQueuesSync();
     }
 
-    // Write packet - different strategy based on sync queue usage
+    // PHASE 3: Write packet - normal muxing after header
     if (this.syncQueue && streamInfo.sqIdxMux >= 0) {
       // Use SyncQueue for packet interleaving
       // Set packet timeBase from stream
-      packet.timeBase = streamInfo.stream.timeBase;
+      clonedPacket.timeBase = streamInfo.stream.timeBase;
 
       // Send packet to sync queue
-      const ret = this.syncQueue.send(streamInfo.sqIdxMux, packet);
+      const ret = this.syncQueue.send(streamInfo.sqIdxMux, clonedPacket);
 
       // Handle errors from sq_send
       if (ret < 0) {
@@ -1403,23 +1375,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
         }
       }
     } else {
-      // No sync queue needed
-      // Flush buffered packets
-      if (streamInfo.bufferedPackets.length > 0) {
-        for (const pkt of streamInfo.bufferedPackets) {
-          pkt.streamIndex = streamIndex;
-          this.writeSync(pkt, streamInfo, streamIndex);
-        }
-        streamInfo.bufferedPackets = [];
-        streamInfo.bufferedDataSize = 0;
-      }
-
-      // Write current packet directly
-      // Clone packet since caller still owns it
-      const clonedPacket = packet.clone();
-      if (!clonedPacket) {
-        throw new Error('Failed to clone packet for writing');
-      }
+      // No sync queue needed - write directly
       clonedPacket.streamIndex = streamIndex;
       this.writeSync(clonedPacket, streamInfo, streamIndex);
     }
@@ -1458,13 +1414,13 @@ export class MediaOutput implements AsyncDisposable, Disposable {
       await this.writeWorkerPromise;
     }
 
-    // Free any buffered packets
+    // Free PreMuxQueue packets
     for (const streamInfo of this._streams.values()) {
-      // Free any buffered packets
-      for (const pkt of streamInfo.bufferedPackets) {
+      // Free any packets in PreMuxQueue
+      for (const pkt of streamInfo.preMuxQueue) {
         pkt.free();
       }
-      streamInfo.bufferedPackets = [];
+      streamInfo.preMuxQueue = [];
     }
 
     // Free sync queue resources
@@ -1552,13 +1508,13 @@ export class MediaOutput implements AsyncDisposable, Disposable {
 
     this.isClosed = true;
 
-    // Free any buffered packets
+    // Free PreMuxQueue packets
     for (const streamInfo of this._streams.values()) {
-      // Free any buffered packets
-      for (const pkt of streamInfo.bufferedPackets) {
+      // Free any packets in PreMuxQueue
+      for (const pkt of streamInfo.preMuxQueue) {
         pkt.free();
       }
-      streamInfo.bufferedPackets = [];
+      streamInfo.preMuxQueue = [];
     }
 
     // Free sync queue resources
@@ -1675,6 +1631,218 @@ export class MediaOutput implements AsyncDisposable, Disposable {
       // Reset all sqIdxMux to -1
       for (const streamInfo of this._streams.values()) {
         streamInfo.sqIdxMux = -1;
+      }
+    }
+  }
+
+  /**
+   * Compare two timestamps with different timebases.
+   *
+   * Equivalent to FFmpeg's av_compare_ts().
+   * Returns:
+   *   < 0 if ts1 < ts2
+   *   = 0 if ts1 = ts2
+   *   > 0 if ts1 > ts2
+   *
+   * @param ts1 - First timestamp
+   *
+   * @param tb1 - First timebase
+   *
+   * @param ts2 - Second timestamp
+   *
+   * @param tb2 - Second timebase
+   *
+   * @returns Comparison result
+   *
+   * @internal
+   */
+  private compareTs(ts1: bigint, tb1: IRational, ts2: bigint, tb2: IRational): number {
+    // av_compare_ts formula: (ts1 * tb1.num * tb2.den) compared to (ts2 * tb2.num * tb1.den)
+    const a = ts1 * BigInt(tb1.num) * BigInt(tb2.den);
+    const b = ts2 * BigInt(tb2.num) * BigInt(tb1.den);
+    return a < b ? -1 : a > b ? 1 : 0;
+  }
+
+  /**
+   * Flush all PreMuxQueues in DTS-sorted order.
+   *
+   * Implements FFmpeg's PreMuxQueue flush algorithm from mux_task_start().
+   * Repeatedly finds the stream with the earliest DTS packet and sends it:
+   * - WITH SyncQueue: Sends to SyncQueue for interleaving
+   * - WITHOUT SyncQueue: Writes directly to muxer
+   * Packets with AV_NOPTS_VALUE have priority (sent first).
+   *
+   * @internal
+   */
+  private async flushPreMuxQueues(): Promise<void> {
+    while (true) {
+      let minStreamInfo: StreamDescription | null = null;
+      let minStreamIndex = -1;
+      let minDts = AV_NOPTS_VALUE;
+      let minTimeBase: IRational = { num: 1, den: 1 };
+
+      // 1. Find stream with earliest DTS across all PreMuxQueues
+      for (const [streamIndex, streamInfo] of this._streams) {
+        if (streamInfo.preMuxQueue.length === 0) continue;
+
+        const pkt = streamInfo.preMuxQueue[0]; // Peek at first packet
+
+        // Packets with AV_NOPTS_VALUE have priority
+        if (pkt.dts === AV_NOPTS_VALUE) {
+          minStreamInfo = streamInfo;
+          minStreamIndex = streamIndex;
+          break;
+        }
+
+        // Compare DTS with current minimum
+        if (minDts === AV_NOPTS_VALUE || this.compareTs(pkt.dts, pkt.timeBase, minDts, minTimeBase) < 0) {
+          minStreamInfo = streamInfo;
+          minStreamIndex = streamIndex;
+          minDts = pkt.dts;
+          minTimeBase = pkt.timeBase;
+        }
+      }
+
+      // 2. No more packets - all queues empty
+      if (!minStreamInfo) break;
+
+      // 3. Take packet from stream with earliest DTS
+      const pkt = minStreamInfo.preMuxQueue.shift()!;
+      minStreamInfo.preMuxQueueDataSize -= pkt.size;
+
+      // 4. Send to SyncQueue or write directly
+      pkt.streamIndex = minStreamIndex;
+      if (this.syncQueue && minStreamInfo.sqIdxMux >= 0) {
+        // Send to SyncQueue for interleaving
+        pkt.timeBase = minStreamInfo.stream.timeBase;
+        const ret = this.syncQueue.send(minStreamInfo.sqIdxMux, pkt);
+        if (ret < 0 && ret !== AVERROR_EOF) {
+          if (this.options.exitOnError) {
+            FFmpegError.throwIfError(ret, 'Failed to send packet to sync queue during PreMuxQueue flush');
+          }
+        }
+      } else {
+        // Write directly to muxer
+        await this.write(pkt, minStreamInfo, minStreamIndex);
+      }
+    }
+
+    // If using SyncQueue, receive and write all interleaved packets
+    if (this.syncQueue) {
+      while (!this.isClosed) {
+        const recvRet = this.syncQueue.receive(-1, this.sqPacket!);
+        if (recvRet === AVERROR_EAGAIN) {
+          break; // No more packets ready
+        }
+        if (recvRet === AVERROR_EOF) {
+          break; // All streams finished
+        }
+        if (recvRet >= 0) {
+          // recvRet is the stream index
+          const recvStreamInfo = this._streams.get(recvRet)!;
+
+          // Clone packet before writing (muxer takes ownership and will unref it)
+          const pkt = this.sqPacket!.clone();
+          if (!pkt) {
+            throw new Error('Failed to clone packet from sync queue during PreMuxQueue flush');
+          }
+          pkt.streamIndex = recvRet;
+
+          // Write packet (muxer takes ownership)
+          await this.write(pkt, recvStreamInfo, recvRet);
+        }
+      }
+    }
+  }
+
+  /**
+   * Flush all PreMuxQueues in DTS-sorted order (synchronous version).
+   *
+   * Implements FFmpeg's PreMuxQueue flush algorithm from mux_task_start().
+   * Repeatedly finds the stream with the earliest DTS packet and sends it:
+   * - WITH SyncQueue: Sends to SyncQueue for interleaving
+   * - WITHOUT SyncQueue: Writes directly to muxer
+   * Packets with AV_NOPTS_VALUE have priority (sent first).
+   *
+   * @internal
+   */
+  private flushPreMuxQueuesSync(): void {
+    while (true) {
+      let minStreamInfo: StreamDescription | null = null;
+      let minStreamIndex = -1;
+      let minDts = AV_NOPTS_VALUE;
+      let minTimeBase: IRational = { num: 1, den: 1 };
+
+      // 1. Find stream with earliest DTS across all PreMuxQueues
+      for (const [streamIndex, streamInfo] of this._streams) {
+        if (streamInfo.preMuxQueue.length === 0) continue;
+
+        const pkt = streamInfo.preMuxQueue[0]; // Peek at first packet
+
+        // Packets with AV_NOPTS_VALUE have priority
+        if (pkt.dts === AV_NOPTS_VALUE) {
+          minStreamInfo = streamInfo;
+          minStreamIndex = streamIndex;
+          break;
+        }
+
+        // Compare DTS with current minimum
+        if (minDts === AV_NOPTS_VALUE || this.compareTs(pkt.dts, pkt.timeBase, minDts, minTimeBase) < 0) {
+          minStreamInfo = streamInfo;
+          minStreamIndex = streamIndex;
+          minDts = pkt.dts;
+          minTimeBase = pkt.timeBase;
+        }
+      }
+
+      // 2. No more packets - all queues empty
+      if (!minStreamInfo) break;
+
+      // 3. Take packet from stream with earliest DTS
+      const pkt = minStreamInfo.preMuxQueue.shift()!;
+      minStreamInfo.preMuxQueueDataSize -= pkt.size;
+
+      // 4. Send to SyncQueue or write directly
+      pkt.streamIndex = minStreamIndex;
+      if (this.syncQueue && minStreamInfo.sqIdxMux >= 0) {
+        // Send to SyncQueue for interleaving
+        pkt.timeBase = minStreamInfo.stream.timeBase;
+        const ret = this.syncQueue.send(minStreamInfo.sqIdxMux, pkt);
+        if (ret < 0 && ret !== AVERROR_EOF) {
+          if (this.options.exitOnError) {
+            FFmpegError.throwIfError(ret, 'Failed to send packet to sync queue during PreMuxQueue flush');
+          }
+        }
+      } else {
+        // Write directly to muxer
+        this.writeSync(pkt, minStreamInfo, minStreamIndex);
+      }
+    }
+
+    // If using SyncQueue, receive and write all interleaved packets
+    if (this.syncQueue) {
+      while (!this.isClosed) {
+        const recvRet = this.syncQueue.receive(-1, this.sqPacket!);
+        if (recvRet === AVERROR_EAGAIN) {
+          break; // No more packets ready
+        }
+        if (recvRet === AVERROR_EOF) {
+          break; // All streams finished
+        }
+        if (recvRet >= 0) {
+          // recvRet is the stream index
+          const recvStreamInfo = this._streams.get(recvRet)!;
+
+          // Clone packet before writing (muxer takes ownership and will unref it)
+          const pkt = this.sqPacket!.clone();
+          if (!pkt) {
+            throw new Error('Failed to clone packet from sync queue during PreMuxQueue flush');
+          }
+          pkt.streamIndex = recvRet;
+
+          // Write packet (muxer takes ownership)
+          this.writeSync(pkt, recvStreamInfo, recvRet);
+        }
       }
     }
   }
