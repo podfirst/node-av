@@ -13,6 +13,7 @@ import {
   AVFMT_FLAG_CUSTOM_IO,
   AVFMT_GLOBALHEADER,
   AVFMT_NOFILE,
+  AVFMT_TS_NONSTRICT,
   AVIO_FLAG_WRITE,
   AVMEDIA_TYPE_AUDIO,
   AVMEDIA_TYPE_VIDEO,
@@ -24,7 +25,7 @@ import { IOContext } from '../lib/io-context.js';
 import { Packet } from '../lib/packet.js';
 import { Rational } from '../lib/rational.js';
 import { SyncQueue, SyncQueueType } from '../lib/sync-queue.js';
-import { avGetAudioFrameDuration2, avRescaleDelta, avRescaleQ } from '../lib/utilities.js';
+import { avAddQ, avCompareTs, avGetAudioFrameDuration2, avRescaleDelta, avRescaleQ } from '../lib/utilities.js';
 import { IO_BUFFER_SIZE, MAX_MUXING_QUEUE_SIZE, MAX_PACKET_SIZE, MUXING_QUEUE_DATA_THRESHOLD, SYNC_BUFFER_DURATION } from './constants.js';
 import { Encoder } from './encoder.js';
 import { AsyncQueue } from './utilities/async-queue.js';
@@ -34,25 +35,24 @@ import type { IOOutputCallbacks, MediaOutputOptions } from './types.js';
 
 export interface AddStreamOptionsWithEncoder {
   encoder?: Encoder;
-  timeBase?: IRational;
 }
 
 export interface AddStreamOptionsWithInputStream {
   inputStream?: Stream;
-  timeBase?: IRational;
 }
 
 interface StreamDescription {
   initialized: boolean;
-  stream: Stream;
   inputStream?: Stream; // Source stream for metadata/properties (optional in encoder-only mode)
+  outputStream: Stream;
   encoder?: Encoder;
   timeBase?: IRational;
   sourceTimeBase?: IRational;
   isStreamCopy: boolean;
   sqIdxMux: number; // Index in sync queue, -1 if not using sync queue
-  preMuxQueue: Packet[]; // PreMuxQueue: Buffered packets before muxer starts (per-stream FIFO with size limits)
+  preMuxQueue: (Packet | null)[]; // PreMuxQueue: Buffered packets (or NULL for EOF marker) before muxer starts
   preMuxQueueDataSize: number;
+  eofReceived: boolean; // Track if EOF (NULL packet) was received for this stream
   lastMuxDts: bigint;
   tsRescaleDeltaLast: { value: bigint }; // For av_rescale_delta (audio streamcopy)
   streamcopyStarted: boolean; // Track if streamcopy has started for this stream
@@ -65,7 +65,7 @@ interface WriteJob {
 }
 
 /**
- * High-level media output for writing and muxing media files.
+ * High-level muxer for writing and muxing media files.
  *
  * Provides simplified access to media muxing and file writing operations.
  * Automatically manages header and trailer writing - header is written on first packet,
@@ -76,10 +76,10 @@ interface WriteJob {
  *
  * @example
  * ```typescript
- * import { MediaOutput } from 'node-av/api';
+ * import { Muxer } from 'node-av/api';
  *
  * // Create output file
- * await using output = await MediaOutput.open('output.mp4');
+ * await using output = await Muxer.open('output.mp4');
  *
  * // Add streams from encoders
  * const videoIdx = output.addStream(videoEncoder);
@@ -95,8 +95,8 @@ interface WriteJob {
  * @example
  * ```typescript
  * // Stream copy
- * await using input = await MediaInput.open('input.mp4');
- * await using output = await MediaOutput.open('output.mp4');
+ * await using input = await Demuxer.open('input.mp4');
+ * await using output = await Muxer.open('output.mp4');
  *
  * // Copy stream configuration
  * const videoIdx = output.addStream(input.video());
@@ -108,11 +108,11 @@ interface WriteJob {
  * }
  * ```
  *
- * @see {@link MediaInput} For reading media files
+ * @see {@link Demuxer} For reading media files
  * @see {@link Encoder} For encoding frames to packets
  * @see {@link FormatContext} For low-level API
  */
-export class MediaOutput implements AsyncDisposable, Disposable {
+export class Muxer implements AsyncDisposable, Disposable {
   private formatContext: FormatContext;
   private options: MediaOutputOptions;
   private _streams = new Map<number, StreamDescription>();
@@ -145,7 +145,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
   }
 
   /**
-   * Open media output for writing.
+   * Open muxer for writing.
    *
    * Creates and configures output context for muxing.
    * Automatically creates directories for file output.
@@ -157,7 +157,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
    *
    * @param options - Output configuration options
    *
-   * @returns Opened media output instance
+   * @returns Opened muxer instance
    *
    * @throws {Error} If format required for custom I/O
    *
@@ -166,13 +166,13 @@ export class MediaOutput implements AsyncDisposable, Disposable {
    * @example
    * ```typescript
    * // Create file output
-   * await using output = await MediaOutput.open('output.mp4');
+   * await using output = await Muxer.open('output.mp4');
    * ```
    *
    * @example
    * ```typescript
    * // Create output with specific format
-   * await using output = await MediaOutput.open('output.ts', {
+   * await using output = await Muxer.open('output.ts', {
    *   format: 'mpegts'
    * });
    * ```
@@ -191,7 +191,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
    *   }
    * };
    *
-   * await using output = await MediaOutput.open(callbacks, {
+   * await using output = await Muxer.open(callbacks, {
    *   format: 'mp4',
    *   bufferSize: 8192
    * });
@@ -200,10 +200,10 @@ export class MediaOutput implements AsyncDisposable, Disposable {
    * @see {@link MediaOutputOptions} For configuration options
    * @see {@link IOOutputCallbacks} For custom I/O interface
    */
-  static async open(target: string, options?: MediaOutputOptions): Promise<MediaOutput>;
-  static async open(target: IOOutputCallbacks, options: MediaOutputOptions & { format: string }): Promise<MediaOutput>;
-  static async open(target: string | IOOutputCallbacks, options?: MediaOutputOptions): Promise<MediaOutput> {
-    const output = new MediaOutput(options);
+  static async open(target: string, options?: MediaOutputOptions): Promise<Muxer>;
+  static async open(target: IOOutputCallbacks, options: MediaOutputOptions & { format: string }): Promise<Muxer>;
+  static async open(target: string | IOOutputCallbacks, options?: MediaOutputOptions): Promise<Muxer> {
+    const output = new Muxer(options);
 
     try {
       if (typeof target === 'string') {
@@ -293,7 +293,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
   }
 
   /**
-   * Open media output for writing synchronously.
+   * Open muxer for writing synchronously.
    * Synchronous version of open.
    *
    * Creates and configures output context for muxing.
@@ -306,7 +306,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
    *
    * @param options - Output configuration options
    *
-   * @returns Opened media output instance
+   * @returns Opened muxer instance
    *
    * @throws {Error} If format required for custom I/O
    *
@@ -315,23 +315,23 @@ export class MediaOutput implements AsyncDisposable, Disposable {
    * @example
    * ```typescript
    * // Create file output
-   * using output = MediaOutput.openSync('output.mp4');
+   * using output = Muxer.openSync('output.mp4');
    * ```
    *
    * @example
    * ```typescript
    * // Create output with specific format
-   * using output = MediaOutput.openSync('output.ts', {
+   * using output = Muxer.openSync('output.ts', {
    *   format: 'mpegts'
    * });
    * ```
    *
    * @see {@link open} For async version
    */
-  static openSync(target: string, options?: MediaOutputOptions): MediaOutput;
-  static openSync(target: IOOutputCallbacks, options: MediaOutputOptions & { format: string }): MediaOutput;
-  static openSync(target: string | IOOutputCallbacks, options?: MediaOutputOptions): MediaOutput {
-    const output = new MediaOutput(options);
+  static openSync(target: string, options?: MediaOutputOptions): Muxer;
+  static openSync(target: IOOutputCallbacks, options: MediaOutputOptions & { format: string }): Muxer;
+  static openSync(target: string | IOOutputCallbacks, options?: MediaOutputOptions): Muxer {
+    const output = new Muxer(options);
 
     try {
       if (typeof target === 'string') {
@@ -430,7 +430,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
    * }
    * ```
    */
-  get isOutputOpen(): boolean {
+  get isOpen(): boolean {
     return !this.isClosed;
   }
 
@@ -447,7 +447,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
    * }
    * ```
    */
-  get isOutputInitialized(): boolean {
+  get streamsInitialized(): boolean {
     if (this._streams.size === 0) {
       return false;
     }
@@ -633,7 +633,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
 
   addStream(streamOrEncoder: Stream | Encoder, options?: AddStreamOptionsWithEncoder | AddStreamOptionsWithInputStream): number {
     if (this.isClosed) {
-      throw new Error('MediaOutput is closed');
+      throw new Error('Muxer is closed');
     }
 
     if (this.headerWritten) {
@@ -683,11 +683,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
       // Set the timebases
       const sourceTimeBase = stream.timeBase;
 
-      if (options?.timeBase) {
-        outStream.timeBase = new Rational(options.timeBase.num, options.timeBase.den);
-      } else {
-        outStream.timeBase = new Rational(stream.timeBase.num, stream.timeBase.den);
-      }
+      outStream.timeBase = new Rational(stream.timeBase.num, stream.timeBase.den);
 
       // Copy frame rates and aspect ratios
       outStream.avgFrameRate = stream.avgFrameRate;
@@ -719,15 +715,15 @@ export class MediaOutput implements AsyncDisposable, Disposable {
 
       this._streams.set(outStream.index, {
         initialized: true,
-        stream: outStream,
+        outputStream: outStream,
         inputStream: stream,
         encoder: undefined,
-        timeBase: options?.timeBase,
         sourceTimeBase,
         isStreamCopy: true,
         sqIdxMux: -1, // Will be set if sync queue is needed
         preMuxQueue: [],
         preMuxQueueDataSize: 0,
+        eofReceived: false,
         lastMuxDts: AV_NOPTS_VALUE,
         tsRescaleDeltaLast: { value: AV_NOPTS_VALUE },
         streamcopyStarted: false,
@@ -738,15 +734,15 @@ export class MediaOutput implements AsyncDisposable, Disposable {
       // If not provided (encoder-only mode), stream will be initialized from first encoded frame
       this._streams.set(outStream.index, {
         initialized: false,
-        stream: outStream,
+        outputStream: outStream,
         inputStream: stream,
         encoder,
-        timeBase: options?.timeBase,
         sourceTimeBase: undefined, // Will be set on initialization
         isStreamCopy: false,
         sqIdxMux: -1, // Will be set if sync queue is needed
         preMuxQueue: [],
         preMuxQueueDataSize: 0,
+        eofReceived: false,
         lastMuxDts: AV_NOPTS_VALUE,
         tsRescaleDeltaLast: { value: AV_NOPTS_VALUE },
         streamcopyStarted: false,
@@ -768,7 +764,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
    *
    * @example
    * ```typescript
-   * const output = await MediaOutput.open('output.mp4');
+   * const output = await Muxer.open('output.mp4');
    * const videoIdx = output.addStream(encoder);
    *
    * // Get the output stream to inspect codec parameters
@@ -802,7 +798,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
    *
    * @example
    * ```typescript
-   * const output = await MediaOutput.open('output.mp4');
+   * const output = await Muxer.open('output.mp4');
    * output.addStream(videoEncoder);
    *
    * // Get first video stream
@@ -834,7 +830,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
    *
    * @example
    * ```typescript
-   * const output = await MediaOutput.open('output.mp4');
+   * const output = await Muxer.open('output.mp4');
    * output.addStream(audioEncoder);
    *
    * // Get first audio stream
@@ -864,7 +860,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
    *
    * @example
    * ```typescript
-   * const output = await MediaOutput.open('output.mp4');
+   * const output = await Muxer.open('output.mp4');
    * const format = output.outputFormat();
    * if (format) {
    *   console.log(`Output format: ${format.name}`);
@@ -893,6 +889,10 @@ export class MediaOutput implements AsyncDisposable, Disposable {
    *
    * Uses FFmpeg CLI's sync queue pattern: buffers packets per stream and writes
    * them in DTS order using av_compare_ts for timebase-aware comparison.
+   *
+   * To signal EOF for a stream, pass null as the packet.
+   * This tells the muxer that no more packets will be sent for this stream.
+   * The trailer is written only when close() is called.
    *
    * Direct mapping to avformat_write_header() (on first packet) and av_interleaved_write_frame().
    *
@@ -927,9 +927,9 @@ export class MediaOutput implements AsyncDisposable, Disposable {
    *
    * @see {@link addStream} For adding streams
    */
-  async writePacket(packet: Packet, streamIndex: number): Promise<void> {
+  async writePacket(packet: Packet | null, streamIndex: number): Promise<void> {
     if (this.isClosed) {
-      throw new Error('MediaOutput is closed');
+      throw new Error('Muxer is closed');
     }
 
     if (this.trailerWritten) {
@@ -953,45 +953,39 @@ export class MediaOutput implements AsyncDisposable, Disposable {
 
         // This encoder is ready, initialize it now
         // Read codecType from codecContext, not from stream (which is still uninitialized)
-        const codecType = codecContext.codecType;
+        // const codecType = codecContext.codecType;
 
         // 1. Set stream timebase
-        // Use encoder's timebase unless user specified custom timebase
-        if (streamInfo.timeBase) {
-          // User specified custom timebase
-          streamInfo.stream.timeBase = new Rational(streamInfo.timeBase.num, streamInfo.timeBase.den);
-        } else {
-          // Use encoder's timebase directly
-          // The encoder timebase is already set from the first frame in Encoder.initialize()
-          streamInfo.stream.timeBase = new Rational(codecContext.timeBase.num, codecContext.timeBase.den);
+        if (streamInfo.outputStream.timeBase.num <= 0 || streamInfo.outputStream.timeBase.den <= 0) {
+          const tb = avAddQ(codecContext.timeBase, { num: 0, den: 1 });
+          streamInfo.outputStream.timeBase = new Rational(tb.num, tb.den);
         }
 
-        // 2. Set stream avg_frame_rate and sample_aspect_ratio
-        if (codecType === AVMEDIA_TYPE_VIDEO) {
-          const fr = codecContext.framerate;
-          streamInfo.stream.avgFrameRate = new Rational(fr.num, fr.den);
-          streamInfo.stream.sampleAspectRatio = codecContext.sampleAspectRatio;
-        }
+        // 2. Set stream avg_frame_rate, r_frame_rate and sample_aspect_ratio
+        const fr = codecContext.framerate;
+        streamInfo.outputStream.avgFrameRate = new Rational(fr.num, fr.den);
+        streamInfo.outputStream.sampleAspectRatio = codecContext.sampleAspectRatio;
 
         // 3. Copy codec parameters from encoder context
-        const ret = streamInfo.stream.codecpar.fromContext(codecContext);
+        const ret = streamInfo.outputStream.codecpar.fromContext(codecContext);
         FFmpegError.throwIfError(ret, 'Failed to copy codec parameters from encoder');
 
         // 4. Copy metadata from input stream
         if (streamInfo.inputStream) {
           const metadata = streamInfo.inputStream.metadata;
           if (metadata) {
-            streamInfo.stream.metadata = metadata;
+            streamInfo.outputStream.metadata = metadata;
           }
 
           // 5. Copy disposition from input stream
-          streamInfo.stream.disposition = streamInfo.inputStream.disposition;
+          streamInfo.outputStream.disposition = streamInfo.inputStream.disposition;
 
           // 6. Copy duration hint from input stream
           if (streamInfo.inputStream.duration > 0n) {
             const inputTb = streamInfo.inputStream.timeBase;
-            const outputTb = streamInfo.stream.timeBase;
-            streamInfo.stream.duration = avRescaleQ(streamInfo.inputStream.duration, inputTb, outputTb);
+            const outputTb = streamInfo.outputStream.timeBase;
+            const rescaledDuration = avRescaleQ(streamInfo.inputStream.duration, inputTb, outputTb);
+            streamInfo.outputStream.duration = rescaledDuration;
           }
         }
 
@@ -1004,6 +998,66 @@ export class MediaOutput implements AsyncDisposable, Disposable {
     }
 
     const streamInfo = this._streams.get(streamIndex)!;
+
+    // Handle NULL packet - signals EOF for this stream (FFmpeg pattern: av_interleaved_write_frame(s, NULL))
+    // FFmpeg's behavior:
+    // - If muxer not started (uninitialized streams), buffer NULL in PreMuxQueue as EOF marker
+    // - If muxer started, send NULL to SyncQueue to signal EOF and flush
+    if (packet === null) {
+      // Mark stream as EOF received
+      streamInfo.eofReceived = true;
+
+      // Check if any streams are still uninitialized (PreMuxQueue phase)
+      const uninitialized = Array.from(this._streams.values()).some((s) => !s.initialized);
+
+      // PHASE 1: Before muxer starts - buffer NULL packet in PreMuxQueue
+      // This matches FFmpeg's mux_queue_packet() which writes NULL to PreMuxQueue FIFO
+      if (uninitialized || this.headerWritePromise) {
+        // Buffer NULL as EOF marker (no size contribution)
+        streamInfo.preMuxQueue.push(null);
+        return;
+      }
+
+      // PHASE 2: After muxer started - send EOF to SyncQueue and flush
+      if (!this.headerWritten) {
+        return;
+      }
+
+      // If using SyncQueue, send EOF for this stream
+      if (this.syncQueue && streamInfo.sqIdxMux >= 0) {
+        // Send NULL to signal EOF to sync queue
+        // Native side handles null correctly (sets sqframe.p = nullptr)
+        const ret = this.syncQueue.send(streamInfo.sqIdxMux, null);
+
+        if (ret < 0 && ret !== AVERROR_EOF) {
+          if (this.options.exitOnError) {
+            FFmpegError.throwIfError(ret, 'Failed to send EOF to sync queue');
+          }
+        }
+
+        // Receive and write any remaining packets from sync queue
+        while (!this.isClosed) {
+          const recvRet = this.syncQueue.receive(-1, this.sqPacket!);
+          if (recvRet === AVERROR_EAGAIN) {
+            break; // No more packets ready
+          }
+          if (recvRet === AVERROR_EOF) {
+            break; // All streams finished
+          }
+          if (recvRet >= 0) {
+            const recvStreamInfo = this._streams.get(recvRet)!;
+            const pkt = this.sqPacket!.clone();
+            if (!pkt) {
+              throw new Error('Failed to clone packet from sync queue');
+            }
+            pkt.streamIndex = recvRet;
+            await this.write(pkt, recvStreamInfo, recvRet);
+          }
+        }
+      }
+
+      return; // EOF signaled, nothing more to do
+    }
 
     // Clone packet immediately - we will modify it and caller retains ownership
     const clonedPacket = packet.clone();
@@ -1082,8 +1136,8 @@ export class MediaOutput implements AsyncDisposable, Disposable {
     // PHASE 3: Write packet - normal muxing after header
     if (this.syncQueue && streamInfo.sqIdxMux >= 0) {
       // Use SyncQueue for packet interleaving
-      // Set packet timeBase from stream
-      clonedPacket.timeBase = streamInfo.stream.timeBase;
+      // NOTE: Do NOT set clonedPacket.timeBase here!
+      // Packet must keep its source timebase (encoder timebase) so muxFixupTs can rescale correctly
 
       // Send packet to sync queue
       const ret = this.syncQueue.send(streamInfo.sqIdxMux, clonedPacket);
@@ -1151,6 +1205,10 @@ export class MediaOutput implements AsyncDisposable, Disposable {
    * Uses FFmpeg CLI's sync queue pattern: buffers packets per stream and writes
    * them in DTS order using av_compare_ts for timebase-aware comparison.
    *
+   * To signal EOF for a stream, pass null as the packet.
+   * This tells the muxer that no more packets will be sent for this stream.
+   * The trailer is written only when close() is called.
+   *
    * Direct mapping to avformat_write_header() (on first packet) and av_interleaved_write_frame().
    *
    * @param packet - Packet to write
@@ -1184,9 +1242,9 @@ export class MediaOutput implements AsyncDisposable, Disposable {
    *
    * @see {@link writePacket} For async version
    */
-  writePacketSync(packet: Packet, streamIndex: number): void {
+  writePacketSync(packet: Packet | null, streamIndex: number): void {
     if (this.isClosed) {
-      throw new Error('MediaOutput is closed');
+      throw new Error('Muxer is closed');
     }
 
     if (this.trailerWritten) {
@@ -1216,39 +1274,41 @@ export class MediaOutput implements AsyncDisposable, Disposable {
         // Use encoder's timebase unless user specified custom timebase
         if (streamInfo.timeBase) {
           // User specified custom timebase
-          streamInfo.stream.timeBase = new Rational(streamInfo.timeBase.num, streamInfo.timeBase.den);
+          streamInfo.outputStream.timeBase = new Rational(streamInfo.timeBase.num, streamInfo.timeBase.den);
         } else {
           // Use encoder's timebase directly
           // The encoder timebase is already set from the first frame in Encoder.initialize()
-          streamInfo.stream.timeBase = new Rational(codecContext.timeBase.num, codecContext.timeBase.den);
+          streamInfo.outputStream.timeBase = new Rational(codecContext.timeBase.num, codecContext.timeBase.den);
         }
 
-        // 2. Set stream avg_frame_rate and sample_aspect_ratio
+        // 2. Set stream avg_frame_rate, r_frame_rate and sample_aspect_ratio
         if (codecType === AVMEDIA_TYPE_VIDEO) {
           const fr = codecContext.framerate;
-          streamInfo.stream.avgFrameRate = new Rational(fr.num, fr.den);
-          streamInfo.stream.sampleAspectRatio = codecContext.sampleAspectRatio;
+          streamInfo.outputStream.avgFrameRate = new Rational(fr.num, fr.den);
+          streamInfo.outputStream.rFrameRate = new Rational(fr.num, fr.den);
+          streamInfo.outputStream.sampleAspectRatio = codecContext.sampleAspectRatio;
         }
 
         // 3. Copy codec parameters from encoder context
-        const ret = streamInfo.stream.codecpar.fromContext(codecContext);
+        const ret = streamInfo.outputStream.codecpar.fromContext(codecContext);
         FFmpegError.throwIfError(ret, 'Failed to copy codec parameters from encoder');
 
         // 4. Copy metadata from input stream
         if (streamInfo.inputStream) {
           const metadata = streamInfo.inputStream.metadata;
           if (metadata) {
-            streamInfo.stream.metadata = metadata;
+            streamInfo.outputStream.metadata = metadata;
           }
 
           // 5. Copy disposition from input stream
-          streamInfo.stream.disposition = streamInfo.inputStream.disposition;
+          streamInfo.outputStream.disposition = streamInfo.inputStream.disposition;
 
           // 6. Copy duration hint from input stream
           if (streamInfo.inputStream.duration > 0n) {
             const inputTb = streamInfo.inputStream.timeBase;
-            const outputTb = streamInfo.stream.timeBase;
-            streamInfo.stream.duration = avRescaleQ(streamInfo.inputStream.duration, inputTb, outputTb);
+            const outputTb = streamInfo.outputStream.timeBase;
+            const rescaledDuration = avRescaleQ(streamInfo.inputStream.duration, inputTb, outputTb);
+            streamInfo.outputStream.duration = rescaledDuration;
           }
         }
 
@@ -1261,6 +1321,66 @@ export class MediaOutput implements AsyncDisposable, Disposable {
     }
 
     const streamInfo = this._streams.get(streamIndex)!;
+
+    // Handle NULL packet - signals EOF for this stream (FFmpeg pattern: av_interleaved_write_frame(s, NULL))
+    // FFmpeg's behavior:
+    // - If muxer not started (uninitialized streams), buffer NULL in PreMuxQueue as EOF marker
+    // - If muxer started, send NULL to SyncQueue to signal EOF and flush
+    if (packet === null) {
+      // Mark stream as EOF received
+      streamInfo.eofReceived = true;
+
+      // Check if any streams are still uninitialized (PreMuxQueue phase)
+      const uninitialized = Array.from(this._streams.values()).some((s) => !s.initialized);
+
+      // PHASE 1: Before muxer starts - buffer NULL packet in PreMuxQueue
+      // This matches FFmpeg's mux_queue_packet() which writes NULL to PreMuxQueue FIFO
+      if (uninitialized || this.headerWritePromise) {
+        // Buffer NULL as EOF marker (no size contribution)
+        streamInfo.preMuxQueue.push(null);
+        return;
+      }
+
+      // PHASE 2: After muxer started - send EOF to SyncQueue and flush
+      if (!this.headerWritten) {
+        return;
+      }
+
+      // If using SyncQueue, send EOF for this stream
+      if (this.syncQueue && streamInfo.sqIdxMux >= 0) {
+        // Send NULL to signal EOF to sync queue
+        // Native side handles null correctly (sets sqframe.p = nullptr)
+        const ret = this.syncQueue.send(streamInfo.sqIdxMux, null);
+
+        if (ret < 0 && ret !== AVERROR_EOF) {
+          if (this.options.exitOnError) {
+            FFmpegError.throwIfError(ret, 'Failed to send EOF to sync queue');
+          }
+        }
+
+        // Receive and write any remaining packets from sync queue
+        while (!this.isClosed) {
+          const recvRet = this.syncQueue.receive(-1, this.sqPacket!);
+          if (recvRet === AVERROR_EAGAIN) {
+            break; // No more packets ready
+          }
+          if (recvRet === AVERROR_EOF) {
+            break; // All streams finished
+          }
+          if (recvRet >= 0) {
+            const recvStreamInfo = this._streams.get(recvRet)!;
+            const pkt = this.sqPacket!.clone();
+            if (!pkt) {
+              throw new Error('Failed to clone packet from sync queue');
+            }
+            pkt.streamIndex = recvRet;
+            this.writeSync(pkt, recvStreamInfo, recvRet);
+          }
+        }
+      }
+
+      return; // EOF signaled, nothing more to do
+    }
 
     // Clone packet immediately - we will modify it and caller retains ownership
     const clonedPacket = packet.clone();
@@ -1330,8 +1450,8 @@ export class MediaOutput implements AsyncDisposable, Disposable {
     // PHASE 3: Write packet - normal muxing after header
     if (this.syncQueue && streamInfo.sqIdxMux >= 0) {
       // Use SyncQueue for packet interleaving
-      // Set packet timeBase from stream
-      clonedPacket.timeBase = streamInfo.stream.timeBase;
+      // NOTE: Do NOT set clonedPacket.timeBase here!
+      // Packet must keep its source timebase (encoder timebase) so muxFixupTs can rescale correctly
 
       // Send packet to sync queue
       const ret = this.syncQueue.send(streamInfo.sqIdxMux, clonedPacket);
@@ -1382,7 +1502,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
   }
 
   /**
-   * Close media output and free resources.
+   * Close muxer and free resources.
    *
    * Automatically writes trailer if header was written.
    * Closes the output file and releases all resources.
@@ -1391,7 +1511,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
    *
    * @example
    * ```typescript
-   * const output = await MediaOutput.open('output.mp4');
+   * const output = await Muxer.open('output.mp4');
    * try {
    *   // Use output - trailer written automatically on close
    * } finally {
@@ -1418,7 +1538,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
     for (const streamInfo of this._streams.values()) {
       // Free any packets in PreMuxQueue
       for (const pkt of streamInfo.preMuxQueue) {
-        pkt.free();
+        pkt?.free();
       }
       streamInfo.preMuxQueue = [];
     }
@@ -1481,7 +1601,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
   }
 
   /**
-   * Close media output and free resources synchronously.
+   * Close muxer and free resources synchronously.
    * Synchronous version of close.
    *
    * Automatically writes trailer if header was written.
@@ -1491,7 +1611,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
    *
    * @example
    * ```typescript
-   * const output = MediaOutput.openSync('output.mp4');
+   * const output = Muxer.openSync('output.mp4');
    * try {
    *   // Use output - trailer written automatically on close
    * } finally {
@@ -1512,7 +1632,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
     for (const streamInfo of this._streams.values()) {
       // Free any packets in PreMuxQueue
       for (const pkt of streamInfo.preMuxQueue) {
-        pkt.free();
+        pkt?.free();
       }
       streamInfo.preMuxQueue = [];
     }
@@ -1636,41 +1756,13 @@ export class MediaOutput implements AsyncDisposable, Disposable {
   }
 
   /**
-   * Compare two timestamps with different timebases.
-   *
-   * Equivalent to FFmpeg's av_compare_ts().
-   * Returns:
-   *   < 0 if ts1 < ts2
-   *   = 0 if ts1 = ts2
-   *   > 0 if ts1 > ts2
-   *
-   * @param ts1 - First timestamp
-   *
-   * @param tb1 - First timebase
-   *
-   * @param ts2 - Second timestamp
-   *
-   * @param tb2 - Second timebase
-   *
-   * @returns Comparison result
-   *
-   * @internal
-   */
-  private compareTs(ts1: bigint, tb1: IRational, ts2: bigint, tb2: IRational): number {
-    // av_compare_ts formula: (ts1 * tb1.num * tb2.den) compared to (ts2 * tb2.num * tb1.den)
-    const a = ts1 * BigInt(tb1.num) * BigInt(tb2.den);
-    const b = ts2 * BigInt(tb2.num) * BigInt(tb1.den);
-    return a < b ? -1 : a > b ? 1 : 0;
-  }
-
-  /**
    * Flush all PreMuxQueues in DTS-sorted order.
    *
    * Implements FFmpeg's PreMuxQueue flush algorithm from mux_task_start().
    * Repeatedly finds the stream with the earliest DTS packet and sends it:
    * - WITH SyncQueue: Sends to SyncQueue for interleaving
    * - WITHOUT SyncQueue: Writes directly to muxer
-   * Packets with AV_NOPTS_VALUE have priority (sent first).
+   * NULL packets (EOF markers) and packets with AV_NOPTS_VALUE have priority (sent first).
    *
    * @internal
    */
@@ -1682,20 +1774,24 @@ export class MediaOutput implements AsyncDisposable, Disposable {
       let minTimeBase: IRational = { num: 1, den: 1 };
 
       // 1. Find stream with earliest DTS across all PreMuxQueues
+      // FFmpeg logic: NULL packets and AV_NOPTS_VALUE packets have priority
       for (const [streamIndex, streamInfo] of this._streams) {
-        if (streamInfo.preMuxQueue.length === 0) continue;
+        if (streamInfo.preMuxQueue.length === 0) {
+          continue;
+        }
 
-        const pkt = streamInfo.preMuxQueue[0]; // Peek at first packet
+        const pkt = streamInfo.preMuxQueue[0]; // Peek at first packet (can be null)
 
-        // Packets with AV_NOPTS_VALUE have priority
-        if (pkt.dts === AV_NOPTS_VALUE) {
+        // NULL packets (EOF markers) have highest priority (FFmpeg: if (!pkt) -> priority)
+        // Packets with AV_NOPTS_VALUE also have priority
+        if (!pkt || pkt.dts === AV_NOPTS_VALUE) {
           minStreamInfo = streamInfo;
           minStreamIndex = streamIndex;
           break;
         }
 
         // Compare DTS with current minimum
-        if (minDts === AV_NOPTS_VALUE || this.compareTs(pkt.dts, pkt.timeBase, minDts, minTimeBase) < 0) {
+        if (minDts === AV_NOPTS_VALUE || avCompareTs(pkt.dts, pkt.timeBase, minDts, minTimeBase) < 0) {
           minStreamInfo = streamInfo;
           minStreamIndex = streamIndex;
           minDts = pkt.dts;
@@ -1704,17 +1800,39 @@ export class MediaOutput implements AsyncDisposable, Disposable {
       }
 
       // 2. No more packets - all queues empty
-      if (!minStreamInfo) break;
+      if (!minStreamInfo) {
+        break;
+      }
 
-      // 3. Take packet from stream with earliest DTS
+      // 3. Take packet from stream with earliest DTS (or NULL for EOF)
       const pkt = minStreamInfo.preMuxQueue.shift()!;
+
+      // 4. Handle NULL packet (EOF marker)
+      // FFmpeg: if (pkt) { send packet } else { tq_send_finish() }
+      if (!pkt) {
+        // Signal EOF to SyncQueue for this stream
+        if (this.syncQueue && minStreamInfo.sqIdxMux >= 0) {
+          const ret = this.syncQueue.send(minStreamInfo.sqIdxMux, null);
+          if (ret < 0 && ret !== AVERROR_EOF) {
+            if (this.options.exitOnError) {
+              FFmpegError.throwIfError(ret, 'Failed to send EOF to sync queue during PreMuxQueue flush');
+            }
+          }
+        }
+        // If not using SyncQueue, nothing to do - stream finished without data
+        continue;
+      }
+
+      // 5. Normal packet - update data size and send
       minStreamInfo.preMuxQueueDataSize -= pkt.size;
 
-      // 4. Send to SyncQueue or write directly
+      // 6. Send to SyncQueue or write directly
       pkt.streamIndex = minStreamIndex;
       if (this.syncQueue && minStreamInfo.sqIdxMux >= 0) {
         // Send to SyncQueue for interleaving
-        pkt.timeBase = minStreamInfo.stream.timeBase;
+        // NOTE: Do NOT set pkt.timeBase here!
+        // Packet must keep its source timebase so muxFixupTs can rescale correctly
+        // pkt.timeBase = minStreamInfo.stream.timeBase;  // ❌ WRONG!
         const ret = this.syncQueue.send(minStreamInfo.sqIdxMux, pkt);
         if (ret < 0 && ret !== AVERROR_EOF) {
           if (this.options.exitOnError) {
@@ -1762,7 +1880,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
    * Repeatedly finds the stream with the earliest DTS packet and sends it:
    * - WITH SyncQueue: Sends to SyncQueue for interleaving
    * - WITHOUT SyncQueue: Writes directly to muxer
-   * Packets with AV_NOPTS_VALUE have priority (sent first).
+   * NULL packets (EOF markers) and packets with AV_NOPTS_VALUE have priority (sent first).
    *
    * @internal
    */
@@ -1774,20 +1892,22 @@ export class MediaOutput implements AsyncDisposable, Disposable {
       let minTimeBase: IRational = { num: 1, den: 1 };
 
       // 1. Find stream with earliest DTS across all PreMuxQueues
+      // FFmpeg logic: NULL packets and AV_NOPTS_VALUE packets have priority
       for (const [streamIndex, streamInfo] of this._streams) {
         if (streamInfo.preMuxQueue.length === 0) continue;
 
-        const pkt = streamInfo.preMuxQueue[0]; // Peek at first packet
+        const pkt = streamInfo.preMuxQueue[0]; // Peek at first packet (can be null)
 
-        // Packets with AV_NOPTS_VALUE have priority
-        if (pkt.dts === AV_NOPTS_VALUE) {
+        // NULL packets (EOF markers) have highest priority (FFmpeg: if (!pkt) -> priority)
+        // Packets with AV_NOPTS_VALUE also have priority
+        if (!pkt || pkt.dts === AV_NOPTS_VALUE) {
           minStreamInfo = streamInfo;
           minStreamIndex = streamIndex;
           break;
         }
 
         // Compare DTS with current minimum
-        if (minDts === AV_NOPTS_VALUE || this.compareTs(pkt.dts, pkt.timeBase, minDts, minTimeBase) < 0) {
+        if (minDts === AV_NOPTS_VALUE || avCompareTs(pkt.dts, pkt.timeBase, minDts, minTimeBase) < 0) {
           minStreamInfo = streamInfo;
           minStreamIndex = streamIndex;
           minDts = pkt.dts;
@@ -1798,15 +1918,35 @@ export class MediaOutput implements AsyncDisposable, Disposable {
       // 2. No more packets - all queues empty
       if (!minStreamInfo) break;
 
-      // 3. Take packet from stream with earliest DTS
+      // 3. Take packet from stream with earliest DTS (or NULL for EOF)
       const pkt = minStreamInfo.preMuxQueue.shift()!;
+
+      // 4. Handle NULL packet (EOF marker)
+      // FFmpeg: if (pkt) { send packet } else { tq_send_finish() }
+      if (!pkt) {
+        // Signal EOF to SyncQueue for this stream
+        if (this.syncQueue && minStreamInfo.sqIdxMux >= 0) {
+          const ret = this.syncQueue.send(minStreamInfo.sqIdxMux, null);
+          if (ret < 0 && ret !== AVERROR_EOF) {
+            if (this.options.exitOnError) {
+              FFmpegError.throwIfError(ret, 'Failed to send EOF to sync queue during PreMuxQueue flush');
+            }
+          }
+        }
+        // If not using SyncQueue, nothing to do - stream finished without data
+        continue;
+      }
+
+      // 5. Normal packet - update data size and send
       minStreamInfo.preMuxQueueDataSize -= pkt.size;
 
-      // 4. Send to SyncQueue or write directly
+      // 6. Send to SyncQueue or write directly
       pkt.streamIndex = minStreamIndex;
       if (this.syncQueue && minStreamInfo.sqIdxMux >= 0) {
         // Send to SyncQueue for interleaving
-        pkt.timeBase = minStreamInfo.stream.timeBase;
+        // NOTE: Do NOT set pkt.timeBase here!
+        // Packet must keep its source timebase so muxFixupTs can rescale correctly
+        // pkt.timeBase = minStreamInfo.stream.timeBase;  // ❌ WRONG!
         const ret = this.syncQueue.send(minStreamInfo.sqIdxMux, pkt);
         if (ret < 0 && ret !== AVERROR_EOF) {
           if (this.options.exitOnError) {
@@ -2053,7 +2193,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
     const outputStream = this.formatContext.streams[streamIndex];
     if (!outputStream) return;
 
-    const codecType = streamInfo.stream.codecpar.codecType;
+    const codecType = streamInfo.outputStream.codecpar.codecType;
     const dstTb = outputStream.timeBase;
     // const srcTb = streamInfo.sourceTimeBase!;
 
@@ -2067,13 +2207,13 @@ export class MediaOutput implements AsyncDisposable, Disposable {
 
     // 1. Rescale timestamps to the stream timebase
     if (codecType === AVMEDIA_TYPE_AUDIO && streamInfo.isStreamCopy) {
-      let duration = avGetAudioFrameDuration2(streamInfo.stream.codecpar, pkt.size);
+      let duration = avGetAudioFrameDuration2(streamInfo.outputStream.codecpar, pkt.size);
       if (!duration) {
-        duration = streamInfo.stream.codecpar.frameSize;
+        duration = streamInfo.outputStream.codecpar.frameSize;
       }
 
       const srcTb = streamInfo.sourceTimeBase!;
-      const sampleRate = streamInfo.stream.codecpar.sampleRate;
+      const sampleRate = streamInfo.outputStream.codecpar.sampleRate;
       const fsTb: IRational = { num: 1, den: sampleRate };
 
       pkt.dts = avRescaleDelta(srcTb, pkt.dts, fsTb, duration, streamInfo.tsRescaleDeltaLast, dstTb);
@@ -2103,7 +2243,10 @@ export class MediaOutput implements AsyncDisposable, Disposable {
 
     // 4. Enforce monotonic DTS
     if ((codecType === AVMEDIA_TYPE_AUDIO || codecType === AVMEDIA_TYPE_VIDEO) && pkt.dts !== AV_NOPTS_VALUE && streamInfo.lastMuxDts !== AV_NOPTS_VALUE) {
-      const max = streamInfo.lastMuxDts + 1n;
+      // FFmpeg: max = last_mux_dts + !(oformat->flags & AVFMT_TS_NONSTRICT)
+      // AVFMT_TS_NONSTRICT allows non-strict monotonic timestamps (equal DTS is OK)
+      const tsNonStrict = this.formatContext.oformat?.hasFlags(AVFMT_TS_NONSTRICT) ?? false;
+      const max = streamInfo.lastMuxDts + (tsNonStrict ? 0n : 1n);
       if (pkt.dts < max) {
         // Adjust PTS if it would create invalid relationship
         if (pkt.pts !== AV_NOPTS_VALUE && pkt.pts >= pkt.dts) {
@@ -2120,7 +2263,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
   /**
    * Copy container metadata from input to output.
    *
-   * Automatically copies global metadata from input MediaInput to output format context.
+   * Automatically copies global metadata from input Demuxer to output format context.
    * Only copies once (on first call). Removes duration/creation_time metadata.
    *
    * @internal
@@ -2173,11 +2316,11 @@ export class MediaOutput implements AsyncDisposable, Disposable {
     const streamsByType = new Map<number, Stream[]>();
 
     for (const streamInfo of this._streams.values()) {
-      const codecType = streamInfo.stream.codecpar.codecType;
+      const codecType = streamInfo.outputStream.codecpar.codecType;
       if (!streamsByType.has(codecType)) {
         streamsByType.set(codecType, []);
       }
-      streamsByType.get(codecType)!.push(streamInfo.stream);
+      streamsByType.get(codecType)!.push(streamInfo.outputStream);
     }
 
     // For each media type, check if any stream has DEFAULT disposition
@@ -2204,7 +2347,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
   }
 
   /**
-   * Dispose of media output.
+   * Dispose of muxer.
    *
    * Implements AsyncDisposable interface for automatic cleanup.
    * Equivalent to calling close().
@@ -2212,7 +2355,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
    * @example
    * ```typescript
    * {
-   *   await using output = await MediaOutput.open('output.mp4');
+   *   await using output = await Muxer.open('output.mp4');
    *   // Use output...
    * } // Automatically closed
    * ```
@@ -2224,7 +2367,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
   }
 
   /**
-   * Dispose of media output synchronously.
+   * Dispose of muxer synchronously.
    *
    * Implements Disposable interface for automatic cleanup.
    * Equivalent to calling closeSync().
@@ -2232,7 +2375,7 @@ export class MediaOutput implements AsyncDisposable, Disposable {
    * @example
    * ```typescript
    * {
-   *   using output = MediaOutput.openSync('output.mp4');
+   *   using output = Muxer.openSync('output.mp4');
    *   // Use output...
    * } // Automatically closed
    * ```

@@ -53,7 +53,7 @@ interface StreamState {
 }
 
 /**
- * High-level media input for reading and demuxing media files.
+ * High-level demuxer for reading and demuxing media files.
  *
  * Provides simplified access to media streams, packets, and metadata.
  * Handles file opening, format detection, and stream information extraction.
@@ -62,10 +62,10 @@ interface StreamState {
  *
  * @example
  * ```typescript
- * import { MediaInput } from 'node-av/api';
+ * import { Demuxer } from 'node-av/api';
  *
  * // Open media file
- * await using input = await MediaInput.open('video.mp4');
+ * await using input = await Demuxer.open('video.mp4');
  * console.log(`Format: ${input.formatName}`);
  * console.log(`Duration: ${input.duration}s`);
  *
@@ -80,18 +80,18 @@ interface StreamState {
  * ```typescript
  * // From buffer
  * const buffer = await fs.readFile('video.mp4');
- * await using input = await MediaInput.open(buffer);
+ * await using input = await Demuxer.open(buffer);
  *
  * // Access streams
  * const videoStream = input.video();
  * const audioStream = input.audio();
  * ```
  *
- * @see {@link MediaOutput} For writing media files
+ * @see {@link Muxer} For writing media files
  * @see {@link Decoder} For decoding packets to frames
  * @see {@link FormatContext} For low-level API
  */
-export class MediaInput implements AsyncDisposable, Disposable {
+export class Demuxer implements AsyncDisposable, Disposable {
   private formatContext: FormatContext;
   private _streams: Stream[] = [];
   private ioContext?: IOContext;
@@ -143,7 +143,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
    *
    * @example
    * ```typescript
-   * const info = await MediaInput.probeFormat('video.mp4');
+   * const info = await Demuxer.probeFormat('video.mp4');
    * if (info) {
    *   console.log(`Format: ${info.format}`);
    *   console.log(`Confidence: ${info.confidence}%`);
@@ -154,7 +154,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
    * ```typescript
    * // Probe from buffer
    * const buffer = await fs.readFile('video.webm');
-   * const info = await MediaInput.probeFormat(buffer);
+   * const info = await Demuxer.probeFormat(buffer);
    * console.log(`MIME type: ${info?.mimeType}`);
    * ```
    *
@@ -232,7 +232,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
    *
    * @example
    * ```typescript
-   * const info = MediaInput.probeFormatSync('video.mp4');
+   * const info = Demuxer.probeFormatSync('video.mp4');
    * if (info) {
    *   console.log(`Format: ${info.format}`);
    *   console.log(`Confidence: ${info.confidence}%`);
@@ -243,7 +243,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
    * ```typescript
    * // Probe from buffer
    * const buffer = fs.readFileSync('video.webm');
-   * const info = MediaInput.probeFormatSync(buffer);
+   * const info = Demuxer.probeFormatSync(buffer);
    * console.log(`MIME type: ${info?.mimeType}`);
    * ```
    *
@@ -319,7 +319,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
    *
    * @param options - Input configuration options
    *
-   * @returns Opened media input instance
+   * @returns Opened demuxer instance
    *
    * @throws {Error} If format not found or open fails, or format required for custom I/O
    *
@@ -328,19 +328,19 @@ export class MediaInput implements AsyncDisposable, Disposable {
    * @example
    * ```typescript
    * // Open file
-   * await using input = await MediaInput.open('video.mp4');
+   * await using input = await Demuxer.open('video.mp4');
    * ```
    *
    * @example
    * ```typescript
    * // Open URL
-   * await using input = await MediaInput.open('http://example.com/stream.m3u8');
+   * await using input = await Demuxer.open('http://example.com/stream.m3u8');
    * ```
    *
    * @example
    * ```typescript
    * // Open with options
-   * await using input = await MediaInput.open('rtsp://camera.local', {
+   * await using input = await Demuxer.open('rtsp://camera.local', {
    *   format: 'rtsp',
    *   options: {
    *     rtsp_transport: 'tcp',
@@ -352,7 +352,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
    * @example
    * ```typescript
    * // Open raw video data
-   * await using input = await MediaInput.open({
+   * await using input = await Demuxer.open({
    *   type: 'video',
    *   input: rawBuffer,
    *   width: 1920,
@@ -376,7 +376,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
    *   }
    * };
    *
-   * await using input = await MediaInput.open(callbacks, {
+   * await using input = await Demuxer.open(callbacks, {
    *   format: 'mp4',
    *   bufferSize: 8192
    * });
@@ -386,10 +386,10 @@ export class MediaInput implements AsyncDisposable, Disposable {
    * @see {@link RawData} For raw data input
    * @see {@link IOInputCallbacks} For custom I/O interface
    */
-  static async open(input: string | Buffer, options?: MediaInputOptions): Promise<MediaInput>;
-  static async open(input: IOInputCallbacks, options: (MediaInputOptions | undefined) & { format: string }): Promise<MediaInput>;
-  static async open(rawData: RawData, options?: MediaInputOptions): Promise<MediaInput>;
-  static async open(input: string | Buffer | RawData | IOInputCallbacks, options: MediaInputOptions = {}): Promise<MediaInput> {
+  static async open(input: string | Buffer, options?: MediaInputOptions): Promise<Demuxer>;
+  static async open(input: IOInputCallbacks, options: (MediaInputOptions | undefined) & { format: string }): Promise<Demuxer>;
+  static async open(rawData: RawData, options?: MediaInputOptions): Promise<Demuxer>;
+  static async open(input: string | Buffer | RawData | IOInputCallbacks, options: MediaInputOptions = {}): Promise<Demuxer> {
     // Check if input is raw data
     if (typeof input === 'object' && 'type' in input && ('width' in input || 'sampleRate' in input)) {
       // Build options for raw data
@@ -524,7 +524,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
         options: options.options ?? {},
       };
 
-      const mediaInput = new MediaInput(formatContext, fullOptions, ioContext);
+      const mediaInput = new Demuxer(formatContext, fullOptions, ioContext);
 
       return mediaInput;
     } catch (error) {
@@ -560,7 +560,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
    *
    * @param options - Input configuration options
    *
-   * @returns Opened media input instance
+   * @returns Opened muxer instance
    *
    * @throws {Error} If format not found or open fails, or format required for custom I/O
    *
@@ -569,20 +569,20 @@ export class MediaInput implements AsyncDisposable, Disposable {
    * @example
    * ```typescript
    * // Open file
-   * using input = MediaInput.openSync('video.mp4');
+   * using input = Demuxer.openSync('video.mp4');
    * ```
    *
    * @example
    * ```typescript
    * // Open from buffer
    * const buffer = await fs.readFile('video.mp4');
-   * using input = MediaInput.openSync(buffer);
+   * using input = Demuxer.openSync(buffer);
    * ```
    *
    * @example
    * ```typescript
    * // Open with options
-   * using input = MediaInput.openSync('rtsp://camera.local', {
+   * using input = Demuxer.openSync('rtsp://camera.local', {
    *   format: 'rtsp',
    *   options: {
    *     rtsp_transport: 'tcp',
@@ -605,7 +605,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
    *   }
    * };
    *
-   * using input = MediaInput.openSync(callbacks, {
+   * using input = Demuxer.openSync(callbacks, {
    *   format: 'mp4',
    *   bufferSize: 8192
    * });
@@ -614,10 +614,10 @@ export class MediaInput implements AsyncDisposable, Disposable {
    * @see {@link open} For async version
    * @see {@link IOInputCallbacks} For custom I/O interface
    */
-  static openSync(input: string | Buffer, options?: MediaInputOptions): MediaInput;
-  static openSync(input: IOInputCallbacks, options: (MediaInputOptions | undefined) & { format: string }): MediaInput;
-  static openSync(rawData: RawData, options?: MediaInputOptions): MediaInput;
-  static openSync(input: string | Buffer | RawData | IOInputCallbacks, options: MediaInputOptions = {}): MediaInput {
+  static openSync(input: string | Buffer, options?: MediaInputOptions): Demuxer;
+  static openSync(input: IOInputCallbacks, options: (MediaInputOptions | undefined) & { format: string }): Demuxer;
+  static openSync(rawData: RawData, options?: MediaInputOptions): Demuxer;
+  static openSync(input: string | Buffer | RawData | IOInputCallbacks, options: MediaInputOptions = {}): Demuxer {
     // Check if input is raw data
     if (typeof input === 'object' && 'type' in input && ('width' in input || 'sampleRate' in input)) {
       // Build options for raw data
@@ -738,7 +738,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
         options: options.options ?? {},
       };
 
-      const mediaInput = new MediaInput(formatContext, fullOptions, ioContext);
+      const mediaInput = new Demuxer(formatContext, fullOptions, ioContext);
 
       return mediaInput;
     } catch (error) {
@@ -763,7 +763,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
   /**
    * Open RTP/SRTP input stream via localhost UDP.
    *
-   * Creates a MediaInput from SDP string received via UDP socket.
+   * Creates a Demuxer from SDP string received via UDP socket.
    * Opens UDP socket and configures FFmpeg to receive and parse RTP packets.
    *
    * @param sdpContent - SDP content string describing the RTP stream
@@ -772,11 +772,11 @@ export class MediaInput implements AsyncDisposable, Disposable {
    *
    * @throws {FFmpegError} If FFmpeg operations fail
    *
-   * @returns Promise with MediaInput, sendPacket function and cleanup
+   * @returns Promise with Demuxer, sendPacket function and cleanup
    *
    * @example
    * ```typescript
-   * import { MediaInput, StreamingUtils } from 'node-av/api';
+   * import { Demuxer, StreamingUtils } from 'node-av/api';
    * import { AV_CODEC_ID_OPUS } from 'node-av/constants';
    *
    * // Generate SDP for SRTP encrypted Opus
@@ -790,7 +790,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
    * }]);
    *
    * // Open RTP input
-   * const { input, sendPacket, close } = await MediaInput.openSDP(sdp);
+   * const { input, sendPacket, close } = await Demuxer.openSDP(sdp);
    *
    * // Route encrypted RTP packets from network
    * socket.on('message', (msg) => sendPacket(msg));
@@ -846,8 +846,8 @@ export class MediaInput implements AsyncDisposable, Disposable {
     const udpSocket = createSocket('udp4');
 
     try {
-      // Open MediaInput with SDP format using custom I/O
-      const input = await MediaInput.open(callbacks, {
+      // Open Demuxer with SDP format using custom I/O
+      const input = await Demuxer.open(callbacks, {
         format: 'sdp',
         skipStreamInfo: true,
         options: {
@@ -887,7 +887,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
    * Open RTP/SRTP input stream via localhost UDP synchronously.
    * Synchronous version of openSDP.
    *
-   * Creates a MediaInput from SDP string received via UDP socket.
+   * Creates a Demuxer from SDP string received via UDP socket.
    * Opens UDP socket and configures FFmpeg to receive and parse RTP packets.
    *
    * @param sdpContent - SDP content string describing the RTP stream
@@ -896,11 +896,11 @@ export class MediaInput implements AsyncDisposable, Disposable {
    *
    * @throws {FFmpegError} If FFmpeg operations fail
    *
-   * @returns Object with MediaInput, sendPacket function and cleanup
+   * @returns Object with Demuxer, sendPacket function and cleanup
    *
    * @example
    * ```typescript
-   * import { MediaInput, StreamingUtils } from 'node-av/api';
+   * import { Demuxer, StreamingUtils } from 'node-av/api';
    * import { AV_CODEC_ID_OPUS } from 'node-av/constants';
    *
    * // Generate SDP for SRTP encrypted Opus
@@ -914,7 +914,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
    * }]);
    *
    * // Open RTP input
-   * const { input, sendPacket, closeSync } = MediaInput.openSDPSync(sdp);
+   * const { input, sendPacket, closeSync } = Demuxer.openSDPSync(sdp);
    *
    * // Route encrypted RTP packets from network
    * socket.on('message', (msg) => sendPacket(msg));
@@ -971,8 +971,8 @@ export class MediaInput implements AsyncDisposable, Disposable {
     const udpSocket = createSocket('udp4');
 
     try {
-      // Open MediaInput with SDP format using custom I/O
-      const input = MediaInput.openSync(callbacks, {
+      // Open Demuxer with SDP format using custom I/O
+      const input = Demuxer.openSync(callbacks, {
         format: 'sdp',
         skipStreamInfo: true,
         options: {
@@ -1169,7 +1169,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
    *
    * @example
    * ```typescript
-   * const input = await MediaInput.open('input.mp4');
+   * const input = await Demuxer.open('input.mp4');
    *
    * // Get the input stream to inspect codec parameters
    * const stream = input.getStream(1); // Get stream at index 1
@@ -1368,7 +1368,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
    *
    * @see {@link Decoder.frames} For decoding packets
    */
-  async *packets(index?: number): AsyncGenerator<Packet> {
+  async *packets(index?: number): AsyncGenerator<Packet | null> {
     // Register this generator
     this.activeGenerators++;
     const queueKey = index ?? 'all';
@@ -1431,6 +1431,9 @@ export class MediaInput implements AsyncDisposable, Disposable {
 
         yield packet;
       }
+
+      // Signal EOF
+      yield null;
     } finally {
       // Unregister this generator
       this.activeGenerators--;
@@ -1479,7 +1482,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
    *
    * @see {@link packets} For async version
    */
-  *packetsSync(index?: number): Generator<Packet> {
+  *packetsSync(index?: number): Generator<Packet | null> {
     using packet = new Packet();
     packet.alloc();
     let hasSeenKeyframe = !this.options.startWithKeyframe;
@@ -1539,6 +1542,9 @@ export class MediaInput implements AsyncDisposable, Disposable {
       // The data itself is still alive because the clone has a reference
       packet.unref();
     }
+
+    // Signal EOF
+    yield null;
   }
 
   /**
@@ -2090,7 +2096,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
   }
 
   /**
-   * Close media input and free resources.
+   * Close demuxer and free resources.
    *
    * Releases format context and I/O context.
    * Safe to call multiple times.
@@ -2100,7 +2106,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
    *
    * @example
    * ```typescript
-   * const input = await MediaInput.open('video.mp4');
+   * const input = await Demuxer.open('video.mp4');
    * try {
    *   // Use input
    * } finally {
@@ -2137,7 +2143,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
   }
 
   /**
-   * Close media input and free resources synchronously.
+   * Close demuxer and free resources synchronously.
    * Synchronous version of close.
    *
    * Releases format context and I/O context.
@@ -2148,7 +2154,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
    *
    * @example
    * ```typescript
-   * const input = MediaInput.openSync('video.mp4');
+   * const input = Demuxer.openSync('video.mp4');
    * try {
    *   // Use input
    * } finally {
@@ -2206,7 +2212,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
   }
 
   /**
-   * Dispose of media input.
+   * Dispose of demuxer.
    *
    * Implements AsyncDisposable interface for automatic cleanup.
    * Equivalent to calling close().
@@ -2214,7 +2220,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
    * @example
    * ```typescript
    * {
-   *   await using input = await MediaInput.open('video.mp4');
+   *   await using input = await Demuxer.open('video.mp4');
    *   // Process media...
    * } // Automatically closed
    * ```
@@ -2226,7 +2232,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
   }
 
   /**
-   * Dispose of media input synchronously.
+   * Dispose of demuxer synchronously.
    *
    * Implements Disposable interface for automatic cleanup.
    * Equivalent to calling closeSync().
@@ -2234,7 +2240,7 @@ export class MediaInput implements AsyncDisposable, Disposable {
    * @example
    * ```typescript
    * {
-   *   using input = MediaInput.openSync('video.mp4');
+   *   using input = Demuxer.openSync('video.mp4');
    *   // Process media...
    * } // Automatically closed
    * ```
