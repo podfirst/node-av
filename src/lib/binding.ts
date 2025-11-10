@@ -267,8 +267,7 @@ export interface NativeBinding {
   avGetPlanarSampleFmt: (sampleFmt: AVSampleFormat) => AVSampleFormat;
   avSampleFmtIsPlanar: (sampleFmt: AVSampleFormat) => boolean;
   avGetCodecName: (codecId: AVCodecID) => string | null;
-  avGetCodecStringDash: (codecpar: NativeCodecParameters) => string | null;
-  avGetCodecStringHls: (codecpar: NativeCodecParameters) => string | null;
+  avGetCodecString: (codecpar: NativeCodecParameters, frameRate?: IRational) => string | null;
   avGetMimeTypeDash: (codecpar: NativeCodecParameters) => string | null;
   avGetPixFmtName: (pixFmt: AVPixelFormat) => string | null;
   avGetPixFmtFromName: (name: string) => AVPixelFormat;

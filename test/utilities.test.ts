@@ -44,8 +44,7 @@ import {
   avGcd,
   avGetAudioFrameDuration2,
   avGetBytesPerSample,
-  avGetCodecStringDash,
-  avGetCodecStringHls,
+  avGetCodecString,
   avGetMediaTypeString,
   avGetMimeTypeDash,
   avGetPackedSampleFmt,
@@ -790,34 +789,34 @@ describe('Utilities', () => {
   describe('Codec String and MIME Type Functions', () => {
     const inputFile = getInputFile('demux.mp4');
 
-    it('should get DASH codec string for video', async () => {
+    it('should get RFC 6381 codec string for video', async () => {
       const media = await Demuxer.open(inputFile);
       const videoStream = media.video();
 
       assert.ok(videoStream, 'Should have video stream');
 
-      const codecString = avGetCodecStringDash(videoStream.codecpar);
+      const codecString = avGetCodecString(videoStream.codecpar);
       assert.ok(codecString, 'Should return codec string');
       assert.ok(typeof codecString === 'string', 'Should be string');
 
       // H.264 should return format like "avc1.42E01E" or at least "avc1"
-      console.log('DASH codec string:', codecString);
+      console.log('Video codec string:', codecString);
       assert.ok(codecString.length > 0, 'Should have non-empty codec string');
 
       await media.close();
     });
 
-    it('should get DASH codec string for audio', async () => {
+    it('should get RFC 6381 codec string for audio', async () => {
       const media = await Demuxer.open(inputFile);
       const audioStream = media.audio();
 
       if (audioStream) {
-        const codecString = avGetCodecStringDash(audioStream.codecpar);
+        const codecString = avGetCodecString(audioStream.codecpar);
         assert.ok(codecString, 'Should return codec string');
         assert.ok(typeof codecString === 'string', 'Should be string');
 
         // AAC should return format like "mp4a.40.2"
-        console.log('DASH audio codec string:', codecString);
+        console.log('Audio codec string:', codecString);
       } else {
         console.log('Skipping audio codec string test: no audio stream');
       }
@@ -825,36 +824,19 @@ describe('Utilities', () => {
       await media.close();
     });
 
-    it('should get HLS codec string for video', async () => {
+    it('should accept optional frame rate parameter', async () => {
       const media = await Demuxer.open(inputFile);
       const videoStream = media.video();
 
       assert.ok(videoStream, 'Should have video stream');
 
-      const codecString = avGetCodecStringHls(videoStream.codecpar);
-      assert.ok(codecString, 'Should return codec string');
+      // Test with frame rate parameter
+      const frameRate = { num: 30, den: 1 };
+      const codecString = avGetCodecString(videoStream.codecpar, frameRate);
+      assert.ok(codecString, 'Should return codec string with frame rate');
       assert.ok(typeof codecString === 'string', 'Should be string');
 
-      // H.264 should return format like "avc1.42E01E"
-      console.log('HLS codec string:', codecString);
-      assert.ok(codecString.length > 0, 'Should have non-empty codec string');
-
-      await media.close();
-    });
-
-    it('should get HLS codec string for audio', async () => {
-      const media = await Demuxer.open(inputFile);
-      const audioStream = media.audio();
-
-      if (audioStream) {
-        const codecString = avGetCodecStringHls(audioStream.codecpar);
-        assert.ok(codecString, 'Should return codec string');
-        assert.ok(typeof codecString === 'string', 'Should be string');
-
-        console.log('HLS audio codec string:', codecString);
-      } else {
-        console.log('Skipping HLS audio codec string test: no audio stream');
-      }
+      console.log('Codec string with frame rate:', codecString);
 
       await media.close();
     });
@@ -907,7 +889,7 @@ describe('Utilities', () => {
         console.log('Stream has extradata:', extradata.length, 'bytes');
 
         // Codec string should include profile/level info from extradata
-        const codecString = avGetCodecStringDash(videoStream.codecpar);
+        const codecString = avGetCodecString(videoStream.codecpar);
         assert.ok(codecString, 'Should return codec string');
 
         // For H.264 with extradata, should have format like "avc1.42E01E"
@@ -930,7 +912,7 @@ describe('Utilities', () => {
 
         assert.ok(videoStream, 'Should have video stream');
 
-        const codecString = avGetCodecStringDash(videoStream.codecpar);
+        const codecString = avGetCodecString(videoStream.codecpar);
         assert.ok(codecString, 'Should return codec string');
         assert.equal(codecString, 'vp8', 'VP8 should return "vp8"');
 
@@ -956,7 +938,7 @@ describe('Utilities', () => {
 
         assert.ok(videoStream, 'Should have video stream');
 
-        const codecString = avGetCodecStringDash(videoStream.codecpar);
+        const codecString = avGetCodecString(videoStream.codecpar);
         assert.ok(codecString, 'Should return codec string');
 
         // VP9 should return format like "vp09.00.41.08" or at least "vp9"
@@ -975,24 +957,27 @@ describe('Utilities', () => {
       }
     });
 
-    it('should return consistent codec strings between DASH and HLS for H.264', async () => {
-      const media = await Demuxer.open(inputFile);
-      const videoStream = media.video();
+    it('should handle VP9 with frame rate parameter', async () => {
+      const vp9File = getInputFile('video-vp9.webm');
 
-      assert.ok(videoStream, 'Should have video stream');
+      try {
+        const media = await Demuxer.open(vp9File);
+        const videoStream = media.video();
 
-      const dashCodec = avGetCodecStringDash(videoStream.codecpar);
-      const hlsCodec = avGetCodecStringHls(videoStream.codecpar);
+        assert.ok(videoStream, 'Should have video stream');
 
-      // For H.264, DASH and HLS should return the same string
-      console.log('DASH:', dashCodec);
-      console.log('HLS:', hlsCodec);
+        // VP9 codec string can be more detailed with frame rate for level calculation
+        const frameRate = { num: 30, den: 1 };
+        const codecString = avGetCodecString(videoStream.codecpar, frameRate);
+        assert.ok(codecString, 'Should return codec string');
 
-      // Both should return valid strings
-      assert.ok(dashCodec, 'DASH should return codec string');
-      assert.ok(hlsCodec, 'HLS should return codec string');
+        console.log('VP9 codec string with frame rate:', codecString);
+        assert.ok(codecString.startsWith('vp'), 'VP9 should start with "vp"');
 
-      await media.close();
+        await media.close();
+      } catch {
+        console.log('Skipping VP9 frame rate test: file not found');
+      }
     });
   });
 

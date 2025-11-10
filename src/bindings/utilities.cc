@@ -14,15 +14,8 @@ extern "C" {
 #include <libswresample/version.h>
 #include <libavutil/ffversion.h>
 #include <libavutil/intreadwrite.h>
-#include <libavformat/vpcc.h>
-#include <libavformat/av1.h>
-#include <libavformat/avc.h>
-#include <libavformat/nal.h>
-
-// Forward declare the tag tables from isom.h (to avoid C++ keyword conflicts)
-extern const AVCodecTag ff_codec_movvideo_tags[];
-extern const AVCodecTag ff_codec_movaudio_tags[];
-extern const AVCodecTag ff_mp4_obj_type[];
+#include <libavutil/bprint.h>
+#include <libavformat/internal.h>
 }
 
 namespace ffmpeg {
@@ -50,8 +43,7 @@ Napi::Object Utilities::Init(Napi::Env env, Napi::Object exports) {
 
   // Codec utilities
   exports.Set("avGetCodecName", Napi::Function::New(env, GetCodecName));
-  exports.Set("avGetCodecStringDash", Napi::Function::New(env, GetCodecStringDash));
-  exports.Set("avGetCodecStringHls", Napi::Function::New(env, GetCodecStringHls));
+  exports.Set("avGetCodecString", Napi::Function::New(env, GetCodecString));
   exports.Set("avGetMimeTypeDash", Napi::Function::New(env, GetMimeTypeDash));
 
   // Image utilities
@@ -371,10 +363,10 @@ Napi::Value Utilities::GetCodecName(const Napi::CallbackInfo& info) {
   return env.Null();
 }
 
-Napi::Value Utilities::GetCodecStringDash(const Napi::CallbackInfo& info) {
+Napi::Value Utilities::GetCodecString(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
 
-  // Expects: CodecParameters object, optional frameRate
+  // Expects: CodecParameters object, optional frameRate { num, den }
   if (info.Length() < 1) {
     Napi::TypeError::New(env, "Expected CodecParameters object").ThrowAsJavaScriptException();
     return env.Null();
@@ -388,319 +380,37 @@ Napi::Value Utilities::GetCodecStringDash(const Napi::CallbackInfo& info) {
   }
 
   AVCodecParameters* par = codecParams->Get();
-  AVCodecID codec_id = par->codec_id;
-  uint32_t codec_tag = par->codec_tag;
-  AVMediaType codec_type = par->codec_type;
-  const uint8_t* extradata = par->extradata;
-  int extradata_size = par->extradata_size;
-  AVRational frame_rate = par->framerate;
 
-  char str[128] = {0};
+  // Optional frame rate parameter for video (needed for VP9)
+  AVRational frame_rate = {0, 1};
+  const AVRational* frame_rate_ptr = nullptr;
 
-  // WebM codecs (not RFC 6381)
-  switch (codec_id) {
-    case AV_CODEC_ID_VP8:
-      return Napi::String::New(env, "vp8");
-    case AV_CODEC_ID_VORBIS:
-      return Napi::String::New(env, "vorbis");
-    case AV_CODEC_ID_OPUS:
-      return Napi::String::New(env, "opus");
-    case AV_CODEC_ID_FLAC:
-      return Napi::String::New(env, "flac");
-    case AV_CODEC_ID_VP9: {
-      // Use FFmpeg's VP9 codec string function
-      // Check if we have extradata
-      if (!extradata || extradata_size < 4) {
-        return Napi::String::New(env, "vp9"); // Fallback when no extradata
-      }
-
-      VPCC vpcc;
-      int ret = ff_isom_get_vpcc_features(nullptr, nullptr, extradata, extradata_size, &frame_rate, &vpcc);
-      if (ret == 0) {
-        snprintf(str, sizeof(str), "vp09.%02d.%02d.%02d", vpcc.profile, vpcc.level, vpcc.bitdepth);
-        return Napi::String::New(env, str);
-      }
-      return Napi::String::New(env, "vp9"); // Fallback
-    }
-    default:
-      break;
-  }
-
-  // RFC 6381 codecs - determine codec_tag if not set (same as dashenc.c)
-  if (codec_tag == 0) {
-    const AVCodecTag* tags[2] = {NULL, NULL};
-
-    // Select appropriate tag table based on codec type
-    if (codec_type == AVMEDIA_TYPE_VIDEO) {
-      tags[0] = ff_codec_movvideo_tags;
-    } else if (codec_type == AVMEDIA_TYPE_AUDIO) {
-      tags[0] = ff_codec_movaudio_tags;
-    } else {
-      return env.Null();
-    }
-
-    // Use FFmpeg's av_codec_get_tag to get the default tag
-    codec_tag = av_codec_get_tag(tags, codec_id);
-    if (!codec_tag) {
-      return env.Null();
-    }
-  }
-
-  if (!extradata || extradata_size < 4) {
-    // Not enough extradata, return just the tag
-    str[0] = (codec_tag >> 0) & 0xff;
-    str[1] = (codec_tag >> 8) & 0xff;
-    str[2] = (codec_tag >> 16) & 0xff;
-    str[3] = (codec_tag >> 24) & 0xff;
-    str[4] = '\0';
-    return Napi::String::New(env, str);
-  }
-
-  // Convert tag to string (little-endian)
-  str[0] = (codec_tag >> 0) & 0xff;
-  str[1] = (codec_tag >> 8) & 0xff;
-  str[2] = (codec_tag >> 16) & 0xff;
-  str[3] = (codec_tag >> 24) & 0xff;
-  str[4] = '\0';
-
-  // H.264 (avc1/avc3)
-  if (strcmp(str, "avc1") == 0 || strcmp(str, "avc3") == 0) {
-    uint8_t* tmpbuf = nullptr;
-    const uint8_t* data = extradata;
-    int data_size = extradata_size;
-
-    // Check if extradata is in annexB format (needs conversion)
-    if (extradata[0] != 1) {
-      AVIOContext* pb = nullptr;
-      if (avio_open_dyn_buf(&pb) >= 0) {
-        if (ff_isom_write_avcc(pb, extradata, extradata_size) >= 0) {
-          data_size = avio_close_dyn_buf(pb, &tmpbuf);
-          data = tmpbuf;
-        } else {
-          // Close and free on error
-          uint8_t* dummy = nullptr;
-          avio_close_dyn_buf(pb, &dummy);
-          av_free(dummy);
-        }
+  if (info.Length() >= 2 && info[1].IsObject()) {
+    Napi::Object frObj = info[1].As<Napi::Object>();
+    if (frObj.Has("num") && frObj.Has("den")) {
+      frame_rate.num = frObj.Get("num").As<Napi::Number>().Int32Value();
+      frame_rate.den = frObj.Get("den").As<Napi::Number>().Int32Value();
+      if (frame_rate.num > 0 && frame_rate.den > 0) {
+        frame_rate_ptr = &frame_rate;
       }
     }
-
-    if (data_size >= 4) {
-      snprintf(str + 4, sizeof(str) - 4, ".%02x%02x%02x", data[1], data[2], data[3]);
-    }
-
-    if (tmpbuf) {
-      av_free(tmpbuf);
-    }
-
-    return Napi::String::New(env, str);
   }
 
-  // AV1 (av01)
-  if (strcmp(str, "av01") == 0) {
-    AV1SequenceParameters seq;
-    if (ff_av1_parse_seq_header(&seq, extradata, extradata_size) >= 0) {
-      snprintf(str + 4, sizeof(str) - 4, ".%01u.%02u%s.%02u",
-               seq.profile, seq.level, seq.tier ? "H" : "M", seq.bitdepth);
+  // Use FFmpeg's centralized codec string function
+  AVBPrint buf;
+  av_bprint_init(&buf, 0, AV_BPRINT_SIZE_AUTOMATIC);
 
-      if (seq.color_description_present_flag) {
-        int len = strlen(str);
-        snprintf(str + len, sizeof(str) - len, ".%01u.%01u%01u%01u.%02u.%02u.%02u.%01u",
-                 seq.monochrome,
-                 seq.chroma_subsampling_x, seq.chroma_subsampling_y, seq.chroma_sample_position,
-                 seq.color_primaries, seq.transfer_characteristics, seq.matrix_coefficients,
-                 seq.color_range);
-      }
-      return Napi::String::New(env, str);
-    }
-    return Napi::String::New(env, "av01"); // Fallback
-  }
+  int ret = ff_make_codec_str(nullptr, par, frame_rate_ptr, &buf);
 
-  // AAC (mp4a) and other MP4 codecs - use FFmpeg's object type table (same as dashenc.c)
-  if (strcmp(str, "mp4a") == 0 || strcmp(str, "mp4v") == 0) {
-    const AVCodecTag* tags[2] = {ff_mp4_obj_type, NULL};
-    uint32_t oti = av_codec_get_tag(tags, codec_id);
-    if (oti) {
-      int len = strlen(str);
-      snprintf(str + len, sizeof(str) - len, ".%02x", oti);
-    } else {
-      return Napi::String::New(env, str);
-    }
-
-    // For AAC (mp4a), also append audio object type from extradata
-    if (codec_tag == MKTAG('m', 'p', '4', 'a')) {
-      if (extradata_size >= 2) {
-        int aot = extradata[0] >> 3;
-        if (aot == 31) {
-          aot = ((AV_RB16(extradata) >> 5) & 0x3f) + 32;
-        }
-        int len = strlen(str);
-        snprintf(str + len, sizeof(str) - len, ".%d", aot);
-      }
-    }
-    return Napi::String::New(env, str);
-  }
-
-  // Return base tag for other codecs
-  return Napi::String::New(env, str);
-}
-
-Napi::Value Utilities::GetCodecStringHls(const Napi::CallbackInfo& info) {
-  Napi::Env env = info.Env();
-
-  // Expects: CodecParameters object
-  if (info.Length() < 1) {
-    Napi::TypeError::New(env, "Expected CodecParameters object").ThrowAsJavaScriptException();
+  if (ret < 0 || !buf.str) {
+    av_bprint_finalize(&buf, nullptr);
     return env.Null();
   }
 
-  CodecParameters* codecParams = UnwrapNativeObject<CodecParameters>(env, info[0], "CodecParameters");
-  if (!codecParams || !codecParams->Get()) {
-    Napi::TypeError::New(env, "Invalid CodecParameters object").ThrowAsJavaScriptException();
-    return env.Null();
-  }
+  Napi::String result = Napi::String::New(env, buf.str);
+  av_bprint_finalize(&buf, nullptr);
 
-  AVCodecParameters* par = codecParams->Get();
-  AVCodecID codec_id = par->codec_id;
-  const uint8_t* extradata = par->extradata;
-  int extradata_size = par->extradata_size;
-  char attr[128] = {0};
-
-  // H.264 (avc1) - same as DASH
-  if (codec_id == AV_CODEC_ID_H264) {
-    if (!extradata) {
-      return env.Null();
-    }
-
-    const uint8_t* p = nullptr;
-    if (AV_RB32(extradata) == 0x01 && (extradata[4] & 0x1F) == 7) {
-      p = &extradata[5];
-    } else if (AV_RB24(extradata) == 0x01 && (extradata[3] & 0x1F) == 7) {
-      p = &extradata[4];
-    } else if (extradata[0] == 0x01) {
-      p = &extradata[1];
-    } else {
-      return env.Null();
-    }
-    snprintf(attr, sizeof(attr), "avc1.%02x%02x%02x", p[0], p[1], p[2]);
-    return Napi::String::New(env, attr);
-  }
-
-  // HEVC (hvc1) - detailed parsing from hlsenc.c
-  if (codec_id == AV_CODEC_ID_HEVC) {
-    uint8_t* data = (uint8_t*)extradata;
-    int profile = par->profile != AV_PROFILE_UNKNOWN ? par->profile : AV_PROFILE_UNKNOWN;
-    uint32_t profile_compatibility = AV_PROFILE_UNKNOWN;
-    char tier = 0;
-    int level = par->level != AV_LEVEL_UNKNOWN ? par->level : AV_LEVEL_UNKNOWN;
-    char constraints[8] = "";
-
-    // Parse SPS NAL to get profile_tier_level
-    while (data && (data - extradata + 19) < extradata_size) {
-      // Find HEVC SPS NAL (nal_unit_type == 33, or 0x42 after shifting)
-      if (!(data[0] | data[1] | data[2]) && data[3] == 1 && ((data[4] & 0x7E) == 0x42)) {
-        uint8_t* rbsp_buf = nullptr;
-        int remain_size = extradata_size - (data - extradata);
-        uint32_t rbsp_size = 0;
-
-        // Skip start code + nalu header
-        data += 6;
-        remain_size = extradata_size - (data - extradata);
-
-        // Extract RBSP
-        rbsp_buf = ff_nal_unit_extract_rbsp(data, remain_size, &rbsp_size, 0);
-        if (!rbsp_buf) {
-          return env.Null();
-        }
-
-        if (rbsp_size < 13) {
-          av_freep(&rbsp_buf);
-          break;
-        }
-
-        // Parse profile_tier_level
-        tier = (rbsp_buf[1] & 0x20) == 0 ? 'L' : 'H';
-        profile = rbsp_buf[1] & 0x1f;
-
-        // Profile compatibility (reverse bit order)
-        uint32_t profile_compatibility_flags = AV_RB32(rbsp_buf + 2);
-        profile_compatibility_flags = ((profile_compatibility_flags & 0x55555555U) << 1) | ((profile_compatibility_flags >> 1) & 0x55555555U);
-        profile_compatibility_flags = ((profile_compatibility_flags & 0x33333333U) << 2) | ((profile_compatibility_flags >> 2) & 0x33333333U);
-        profile_compatibility_flags = ((profile_compatibility_flags & 0x0F0F0F0FU) << 4) | ((profile_compatibility_flags >> 4) & 0x0F0F0F0FU);
-        profile_compatibility_flags = ((profile_compatibility_flags & 0x00FF00FFU) << 8) | ((profile_compatibility_flags >> 8) & 0x00FF00FFU);
-        profile_compatibility = (profile_compatibility_flags << 16) | (profile_compatibility_flags >> 16);
-
-        // Constraints
-        uint8_t high_nibble = rbsp_buf[7] >> 4;
-        snprintf(constraints, sizeof(constraints),
-                 high_nibble ? "%02x.%x" : "%02x",
-                 rbsp_buf[6], high_nibble);
-
-        // Level
-        level = rbsp_buf[12];
-
-        av_freep(&rbsp_buf);
-        break;
-      }
-      data++;
-    }
-
-    // Build codec string if we have all the info
-    // Note: Accept both hvc1 and hev1 (or tag==0), but always output hvc1 for HLS compatibility
-    uint32_t hevc_tag = par->codec_tag;
-    if (hevc_tag == 0) {
-      // Get default tag if not set
-      const AVCodecTag* tags[2] = {ff_codec_movvideo_tags, NULL};
-      hevc_tag = av_codec_get_tag(tags, codec_id);
-    }
-
-    // Accept both hvc1 and hev1 tags
-    if ((hevc_tag == MKTAG('h','v','c','1') || hevc_tag == MKTAG('h','e','v','1')) &&
-        profile != AV_PROFILE_UNKNOWN &&
-        profile_compatibility != (uint32_t)AV_PROFILE_UNKNOWN &&
-        tier != 0 &&
-        level != AV_LEVEL_UNKNOWN &&
-        constraints[0] != '\0') {
-      // Always use hvc1 for HLS (parameter sets in extradata only)
-      snprintf(attr, sizeof(attr), "hvc1.%d.%x.%c%d.%s",
-               profile, profile_compatibility, tier, level, constraints);
-      return Napi::String::New(env, attr);
-    }
-    return env.Null();
-  }
-
-  // MP2
-  if (codec_id == AV_CODEC_ID_MP2) {
-    return Napi::String::New(env, "mp4a.40.33");
-  }
-
-  // MP3
-  if (codec_id == AV_CODEC_ID_MP3) {
-    return Napi::String::New(env, "mp4a.40.34");
-  }
-
-  // AAC - use profile field
-  if (codec_id == AV_CODEC_ID_AAC) {
-    if (par->profile != AV_PROFILE_UNKNOWN) {
-      snprintf(attr, sizeof(attr), "mp4a.40.%d", par->profile + 1);
-    } else {
-      snprintf(attr, sizeof(attr), "mp4a.40.2");  // Backward compatibility
-    }
-    return Napi::String::New(env, attr);
-  }
-
-  // AC-3
-  if (codec_id == AV_CODEC_ID_AC3) {
-    return Napi::String::New(env, "ac-3");
-  }
-
-  // E-AC-3
-  if (codec_id == AV_CODEC_ID_EAC3) {
-    return Napi::String::New(env, "ec-3");
-  }
-
-  // Unsupported codec
-  return env.Null();
+  return result;
 }
 
 Napi::Value Utilities::GetMimeTypeDash(const Napi::CallbackInfo& info) {

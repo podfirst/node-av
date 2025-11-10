@@ -227,82 +227,50 @@ export function avGetCodecName(codecId: AVCodecID): string | null {
 }
 
 /**
- * Get DASH/RFC 6381 codec string from codec parameters.
+ * Get RFC 6381 codec string from codec parameters.
  *
- * Generates codec strings for MPEG-DASH manifests following RFC 6381.
- * Uses FFmpeg's dashenc.c implementation for accurate codec strings.
- *
- * Supported codecs:
- * - **WebM codecs**: VP8, VP9 (detailed), Vorbis, Opus, FLAC
- * - **H.264** (avc1): `avc1.PPCCLL` (profile, constraints, level)
- * - **HEVC** (hvc1/hev1): Base tag only (`hvc1` or `hev1`) - no profile details
- * - **AV1** (av01): `av01.P.LLT.BB...` (profile, level, tier, bitdepth, etc.)
- * - **AAC** (mp4a): `mp4a.OT.AOT` (object type, audio object type)
- *
- * Note: For HLS with detailed HEVC codec strings, use {@link avGetCodecStringHls}.
- *
- * @param codecpar - Codec parameters
- *
- * @returns DASH codec string, or null if cannot be determined
- *
- * @example
- * ```typescript
- * import { avGetCodecStringDash } from 'node-av/lib';
- *
- * // Get codec string from DASH output stream
- * const stream = dashOutput.video();
- * const codecString = avGetCodecStringDash(stream.codecpar);
- * console.log(codecString); // "hev1" for HEVC, "avc1.42c01e" for H.264
- *
- * // Use for DASH manifest
- * const mimeType = `video/mp4; codecs="${codecString}"`;
- * ```
- *
- * @see [RFC 6381](https://tools.ietf.org/html/rfc6381) - RFC 6381: Codecs Parameter Specification
- * @see [dashenc](https://ffmpeg.org/doxygen/trunk/dashenc_8c_source.html#l00345) - FFmpeg dashenc.c implementation
- */
-export function avGetCodecStringDash(codecpar: NativeWrapper<NativeCodecParameters>): string | null {
-  return bindings.avGetCodecStringDash(codecpar.getNative());
-}
-
-/**
- * Get HLS codec string from codec parameters.
- *
- * Generates codec strings for HLS playlists. Uses FFmpeg's hlsenc.c implementation.
- * Provides detailed HEVC codec strings with profile, tier, level, and constraints.
+ * Generates codec strings for MPEG-DASH and HLS manifests following RFC 6381.
+ * Uses FFmpeg's centralized ff_make_codec_str() implementation (libavformat/codecstring.c).
  *
  * Supported codecs:
+ * - **WebM codecs**: VP8, VP9 (with detailed profile/level), Vorbis, Opus, FLAC
  * - **H.264** (avc1): `avc1.PPCCLL` (profile, constraints, level)
  * - **HEVC** (hvc1): `hvc1.P.PC.TL.C` (profile, profile_compatibility, tier+level, constraints)
- * - **AAC**: `mp4a.40.AOT` (audio object type based on profile)
+ * - **AV1** (av01): `av01.P.LLT.BB...` (profile, level, tier, bitdepth, color info)
+ * - **AAC**: `mp4a.40.AOT` (audio object type)
  * - **MP2**: `mp4a.40.33`
  * - **MP3**: `mp4a.40.34`
  * - **AC-3**: `ac-3`
  * - **E-AC-3**: `ec-3`
- *
- * Note: For DASH manifests, use {@link avGetCodecStringDash} instead.
+ * - **MPEG-4 Visual**: `mp4v.20` (profile/level not implemented)
  *
  * @param codecpar - Codec parameters
  *
- * @returns HLS codec string, or null if cannot be determined
+ * @param frameRate - Optional frame rate for VP9 level calculation (only used for VP9)
+ *
+ * @returns RFC 6381 codec string, or null if codec not supported
  *
  * @example
  * ```typescript
- * import { avGetCodecStringHls } from 'node-av/lib';
+ * import { avGetCodecString } from 'node-av/lib';
  *
- * // Get detailed HEVC codec string for HLS
- * const stream = hlsOutput.video();
- * const codecString = avGetCodecStringHls(stream.codecpar);
- * console.log(codecString); // "hvc1.1.6.L93.B0" - detailed HEVC profile info
+ * // Get codec string for DASH/HLS manifest
+ * const stream = output.video();
+ * const codecString = avGetCodecString(stream.codecpar);
+ * console.log(codecString); // "hvc1.1.6.L93.B0" for HEVC, "avc1.42c01e" for H.264
  *
- * // Use for HLS playlist
- * const codecsAttr = `CODECS="${codecString}"`;
+ * // VP9 with frame rate for accurate level
+ * const codecStringVP9 = avGetCodecString(stream.codecpar, { num: 30, den: 1 });
+ * console.log(codecStringVP9); // "vp09.00.30.08" - detailed VP9 string
+ *
+ * // Use for DASH/HLS manifest
+ * const mimeType = `video/mp4; codecs="${codecString}"`;
  * ```
  *
- * @see [hlsenc](https://ffmpeg.org/doxygen/trunk/hlsenc_8c_source.html#l00351) - FFmpeg hlsenc.c implementation
+ * @see [codecstring.c](https://github.com/FFmpeg/FFmpeg/blob/master/libavformat/codecstring.c) - FFmpeg implementation
  */
-export function avGetCodecStringHls(codecpar: NativeWrapper<NativeCodecParameters>): string | null {
-  return bindings.avGetCodecStringHls(codecpar.getNative());
+export function avGetCodecString(codecpar: NativeWrapper<NativeCodecParameters>, frameRate?: IRational): string | null {
+  return bindings.avGetCodecString(codecpar.getNative(), frameRate);
 }
 
 /**
