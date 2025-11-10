@@ -140,12 +140,12 @@ while (true) {
 Higher-level abstractions for common tasks like decoding, encoding, filtering, and transcoding. Easier to use while still providing access to low-level details when needed.
 
 ```typescript
-import { Decoder, Encoder, MediaInput, MediaOutput, HardwareContext } from 'node-av/api';
+import { Decoder, Encoder, Muxer, Muxer, HardwareContext } from 'node-av/api';
 import { FF_ENCODER_LIBX264 } from 'node-av/constants';
 
 // Open media
-await using input = await MediaInput.open('input.mp4');
-await using output = await MediaOutput.open('output.mp4', {
+await using input = await Muxer.open('input.mp4');
+await using output = await Muxer.open('output.mp4', {
   input, // Optional, used to copy global headers and metadata
 });
 
@@ -188,11 +188,11 @@ for await (using packet of encoderGenerator) {
 A simple way to chain together multiple processing steps like decoding, filtering, encoding, and muxing.
 
 ```typescript
-import { pipeline, MediaInput, MediaOutput, Decoder, Encoder } from 'node-av/api';
+import { pipeline, Muxer, Muxer, Decoder, Encoder } from 'node-av/api';
 
 // Simple transcode pipeline: input → decoder → encoder → output
-const input = await MediaInput.open('input.mp4');
-const output = await MediaOutput.open('output.mp4', {
+const input = await Muxer.open('input.mp4');
+const output = await Muxer.open('output.mp4', {
   input,
 });
 const decoder = await Decoder.create(input.video());
@@ -246,7 +246,7 @@ The library provides multiple entry points for optimal tree shaking:
 
 ```typescript
 // High-Level API only - Recommended for most use cases
-import { MediaInput, MediaOutput, Decoder, Encoder } from 'node-av/api';
+import { Muxer, Muxer, Decoder, Encoder } from 'node-av/api';
 
 // Low-Level API only - Direct FFmpeg bindings
 import { FormatContext, CodecContext, Frame, Packet } from 'node-av/lib';
@@ -266,11 +266,11 @@ import * as ffmpeg from 'node-av';
 ### From Files or Network
 
 ```typescript
-const media = await MediaInput.open('input.mp4');
+const media = await Muxer.open('input.mp4');
 
 // or
 
-const media = await MediaInput.open('rtsp://example.com/stream');
+const media = await Muxer.open('rtsp://example.com/stream');
 ```
 
 ### From Buffers
@@ -279,7 +279,7 @@ const media = await MediaInput.open('rtsp://example.com/stream');
 import { readFile } from 'fs/promises';
 
 const buffer = await readFile('input.mp4');
-const media = await MediaInput.open(buffer);
+const media = await Muxer.open(buffer);
 ```
 
 ### Custom I/O Callbacks
@@ -299,7 +299,7 @@ const inputCallbacks: IOInputCallbacks = {
   }
 };
 
-await using input = await MediaInput.open(inputCallbacks, {
+await using input = await Muxer.open(inputCallbacks, {
   format: 'mp4'
 });
 ```
@@ -308,7 +308,7 @@ await using input = await MediaInput.open(inputCallbacks, {
 
 ```typescript
 // Raw video input
-const rawVideo = await MediaInput.open({
+const rawVideo = await Muxer.open({
   type: 'video',
   input: 'input.yuv',
   width: 1280,
@@ -318,7 +318,7 @@ const rawVideo = await MediaInput.open({
 });
 
 // Raw audio input
-const rawAudio = await MediaInput.open({
+const rawAudio = await Muxer.open({
   type: 'audio',
   input: 'input.pcm',
   sampleRate: 48000,
@@ -336,13 +336,13 @@ The library supports automatic resource cleanup using the Disposable pattern:
 ```typescript
 // Automatic cleanup with 'using'
 {
-  await using media = await MediaInput.open('input.mp4');
+  await using media = await Muxer.open('input.mp4');
   using decoder = await Decoder.create(media.video());
   // Resources automatically cleaned up at end of scope
 }
 
 // Manual cleanup
-const media = await MediaInput.open('input.mp4');
+const media = await Muxer.open('input.mp4');
 try {
   // Process media
 } finally {
@@ -427,6 +427,7 @@ NodeAV provides direct bindings to FFmpeg's C APIs, which work with raw memory p
 | `api-muxing` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-muxing.ts) |
 | `api-pipeline-hw-rtsp` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-pipeline-hw-rtsp.ts) |
 | `api-pipeline-raw-muxing` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-pipeline-raw-muxing.ts) |
+| `api-rtp` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-rtp.ts) |
 | `api-sdp-custom` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-sdp-custom.ts) |
 | `api-sdp-input` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-sdp-input.ts) |
 | `api-stream-input` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-stream-input.ts) |

@@ -113,8 +113,8 @@ src/
 │   ├── decoder.ts         # High-level decoder
 │   ├── encoder.ts         # High-level encoder
 │   ├── filter.ts          # High-level filter
-│   ├── media-input.ts     # Media input handler
-│   ├── media-output.ts    # Media output handler
+│   ├── demuxer.ts         # Media input handler
+│   ├── muxer.ts           # Media output handler
 │   ├── hardware.ts        # Hardware acceleration
 │   ├── pipeline.ts        # Pipeline orchestration
 │   └── types.ts           # API type definitions
@@ -426,10 +426,10 @@ All examples must be complete and working:
  * @example
  * ```typescript
  * // Import required modules
- * import { MediaInput, Decoder } from 'node-av';
+ * import { Muxer, Decoder } from 'node-av';
  * 
  * // Open media and create decoder
- * const input = await MediaInput.open('video.mp4');
+ * const input = await Muxer.open('video.mp4');
  * const stream = input.video();
  * const decoder = await Decoder.create(stream);
  * 
@@ -475,7 +475,7 @@ import { strict as assert } from 'node:assert';
 describe('Decoder', () => {
   describe('create()', () => {
     it('should create decoder from stream', async () => {
-      const input = await MediaInput.open('testdata/video.mp4');
+      const input = await Muxer.open('testdata/video.mp4');
       const stream = input.video();
       const decoder = await Decoder.create(stream);
       
