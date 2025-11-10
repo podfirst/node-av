@@ -9,7 +9,8 @@ import {
   AV_SAMPLE_FMT_FLTP,
 } from '../constants/constants.js';
 import { FF_ENCODER_AAC, FF_ENCODER_LIBX264 } from '../constants/encoders.js';
-import { avGetCodecStringHls } from '../lib/utilities.js';
+import { Codec } from '../lib/codec.js';
+import { avGetCodecString } from '../lib/utilities.js';
 import { Decoder } from './decoder.js';
 import { Demuxer } from './demuxer.js';
 import { Encoder } from './encoder.js';
@@ -21,7 +22,7 @@ import { pipeline } from './pipeline.js';
 
 import type { AVCodecID, AVHWDeviceType, FFHWDeviceType } from '../constants/index.js';
 import type { PipelineControl } from './pipeline.js';
-import type { IOOutputCallbacks, MediaInputOptions } from './types.js';
+import type { EncoderOptions, IOOutputCallbacks, MediaInputOptions } from './types.js';
 
 /**
  * MP4 box information.
@@ -335,17 +336,17 @@ export class FMP4Stream {
         // Transcoding to H.264
         videoCodec = FMP4_CODECS.H264;
       } else if (videoCodecId === AV_CODEC_ID_H264) {
-        // H.264 - use HLS codec string from input
-        const hlsCodec = avGetCodecStringHls(videoStream.codecpar);
-        videoCodec = hlsCodec ?? FMP4_CODECS.H264;
+        // H.264 - use RFC 6381 codec string from input
+        const codecString = avGetCodecString(videoStream.codecpar);
+        videoCodec = codecString ?? FMP4_CODECS.H264;
       } else if (videoCodecId === AV_CODEC_ID_HEVC) {
-        // H.265 - use HLS codec string from input
-        const hlsCodec = avGetCodecStringHls(videoStream.codecpar);
-        videoCodec = hlsCodec ?? FMP4_CODECS.H265;
+        // H.265 - use RFC 6381 codec string from input
+        const codecString = avGetCodecString(videoStream.codecpar);
+        videoCodec = codecString ?? FMP4_CODECS.H265;
       } else if (videoCodecId === AV_CODEC_ID_AV1) {
-        // AV1 - use HLS codec string from input
-        const hlsCodec = avGetCodecStringHls(videoStream.codecpar);
-        videoCodec = hlsCodec ?? FMP4_CODECS.AV1;
+        // AV1 - use RFC 6381 codec string from input
+        const codecString = avGetCodecString(videoStream.codecpar);
+        videoCodec = codecString ?? FMP4_CODECS.AV1;
       } else {
         // Fallback to H.264 (should not happen as we transcode unsupported codecs)
         videoCodec = FMP4_CODECS.H264;
@@ -434,8 +435,17 @@ export class FMP4Stream {
         exitOnError: false,
       });
 
-      this.videoEncoder = await Encoder.create(FF_ENCODER_LIBX264, {
+      const encoderCodec = this.hardwareContext?.getEncoderCodec('h264') ?? Codec.findEncoderByName(FF_ENCODER_LIBX264)!;
+
+      const encoderOptions: EncoderOptions['options'] = {};
+      if (encoderCodec.name === FF_ENCODER_LIBX264 || encoderCodec.name === FF_ENCODER_LIBX264) {
+        encoderOptions.preset = 'ultrafast';
+        encoderOptions.tune = 'zerolatency';
+      }
+
+      this.videoEncoder = await Encoder.create(encoderCodec, {
         decoder: this.videoDecoder,
+        options: encoderOptions,
       });
     }
 
@@ -570,9 +580,21 @@ export class FMP4Stream {
         this.output,
       );
     } else if (hasVideo) {
-      this.pipeline = pipeline(this.input, this.videoDecoder!, this.videoEncoder!, this.output);
+      this.pipeline = pipeline(
+        this.input,
+        {
+          video: [this.videoDecoder, this.videoEncoder],
+        },
+        this.output,
+      );
     } else if (hasAudio) {
-      this.pipeline = pipeline(this.input, this.audioDecoder!, this.audioFilter!, this.audioEncoder!, this.output);
+      this.pipeline = pipeline(
+        this.input,
+        {
+          audio: [this.audioDecoder, this.audioFilter, this.audioEncoder],
+        },
+        this.output,
+      );
     } else {
       throw new Error('No audio or video streams found in input');
     }
