@@ -22,14 +22,14 @@ import {
   AV_PIX_FMT_YUV420P,
   Codec,
   Decoder,
+  Demuxer,
   Encoder,
   FF_ENCODER_LIBX265,
   FilterAPI,
   FilterPreset,
   HardwareContext,
   Log,
-  MediaInput,
-  MediaOutput,
+  Muxer,
 } from '../src/index.js';
 import { prepareTestEnvironment } from './index.js';
 
@@ -65,7 +65,7 @@ console.log(`Output: ${outputFile}`);
 
 // Open raw YUV input
 console.log('Opening raw video input...');
-await using input = await MediaInput.open({
+await using input = await Demuxer.open({
   type: 'video',
   input: inputFile,
   width,
@@ -127,7 +127,7 @@ using encoder = await Encoder.create(encoderCodec, {
 
 // Create output
 console.log('Creating output file...');
-await using output = await MediaOutput.open(outputFile);
+await using output = await Muxer.open(outputFile);
 const videoOutputIndex = output.addStream(encoder);
 
 // Process video using generator pipeline

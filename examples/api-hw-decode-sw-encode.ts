@@ -18,14 +18,14 @@ import {
   AV_PIX_FMT_NV12,
   AV_PIX_FMT_YUV420P,
   Decoder,
+  Demuxer,
   Encoder,
   FF_ENCODER_LIBX264,
   FilterAPI,
   FilterPreset,
   HardwareContext,
   Log,
-  MediaInput,
-  MediaOutput,
+  Muxer,
 } from '../src/index.js';
 import { prepareTestEnvironment } from './index.js';
 
@@ -50,7 +50,7 @@ if (!hw) {
 console.log(`Hardware detected: ${hw.deviceTypeName}`);
 
 // Open input file
-await using input = await MediaInput.open(inputFile);
+await using input = await Demuxer.open(inputFile);
 
 const audioStream = input.audio();
 const videoStream = input.video();
@@ -88,8 +88,8 @@ using encoder = await Encoder.create(FF_ENCODER_LIBX264, {
   },
 });
 
-// Create output using MediaOutput
-await using output = await MediaOutput.open(outputFile);
+// Create output using Muxer
+await using output = await Muxer.open(outputFile);
 const outputVideoStreamIndex = output.addStream(encoder);
 const outputAudioStreamIndex = audioStream ? output.addStream(audioStream) : -1;
 
@@ -100,6 +100,10 @@ let frameCount = 0;
 const startTime = Date.now();
 
 for await (using packet of input.packets()) {
+  if (!packet) {
+    break;
+  }
+
   if (packet.streamIndex === videoStream.index) {
     // Hardware decode
     using frame = await decoder.decode(packet);

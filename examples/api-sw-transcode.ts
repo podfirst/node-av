@@ -13,7 +13,7 @@
  * Example: tsx examples/api-sw-transcode.ts testdata/video.mp4 examples/.tmp/api-sw-transcode.mp4
  */
 
-import { Decoder, Encoder, FF_ENCODER_LIBX264, MediaInput, MediaOutput } from '../src/index.js';
+import { Decoder, Demuxer, Encoder, FF_ENCODER_LIBX264, Muxer } from '../src/index.js';
 
 const inputFile = process.argv[2];
 const outputFile = process.argv[3];
@@ -28,7 +28,7 @@ console.log(`Input: ${inputFile}`);
 console.log(`Output: ${outputFile}`);
 
 // Open input file
-await using input = await MediaInput.open(inputFile);
+await using input = await Demuxer.open(inputFile);
 const videoStream = input.video();
 const audioStream = input.audio();
 
@@ -62,8 +62,8 @@ const encoder = await Encoder.create(FF_ENCODER_LIBX264, {
   },
 });
 
-// Create output using MediaOutput
-await using output = await MediaOutput.open(outputFile);
+// Create output using Muxer
+await using output = await Muxer.open(outputFile);
 const outputStreamIndex = output.addStream(encoder);
 
 // Process video
@@ -76,6 +76,10 @@ let packetCount = 0;
 const startTime = Date.now();
 
 for await (using packet of input.packets(videoStream.index)) {
+  if (!packet) {
+    break;
+  }
+
   // Software decode
   using frame = await decoder.decode(packet);
   if (frame) {
@@ -84,7 +88,7 @@ for await (using packet of input.packets(videoStream.index)) {
     // Software encode (encoder handles PTS rescaling automatically)
     using encodedPacket = await encoder.encode(frame);
     if (encodedPacket) {
-      // Write to output (MediaOutput handles timestamp rescaling)
+      // Write to output (Muxer handles timestamp rescaling)
       await output.writePacket(encodedPacket, outputStreamIndex);
       packetCount++;
     }

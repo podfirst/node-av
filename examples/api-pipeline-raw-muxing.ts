@@ -18,7 +18,7 @@
  *   tsx examples/api-pipeline-raw-muxing.ts raw.yuv raw.pcm out.mp4 --video-fps 60 --audio-rate 44100
  */
 
-import { Decoder, Encoder, FilterAPI, FilterPreset, MediaInput, MediaOutput, pipeline } from '../src/api/index.js';
+import { Decoder, Demuxer, Encoder, FilterAPI, FilterPreset, Muxer, pipeline } from '../src/api/index.js';
 import { AV_LOG_DEBUG, AV_PIX_FMT_YUV420P, AV_SAMPLE_FMT_FLTP, AV_SAMPLE_FMT_S16, FF_ENCODER_AAC, FF_ENCODER_LIBX264, Log } from '../src/index.js';
 import { prepareTestEnvironment } from './index.js';
 
@@ -67,7 +67,7 @@ console.log(`Output: ${outputFile}`);
 
 // Open raw YUV video
 console.log('Opening raw video input...');
-await using videoInput = await MediaInput.open({
+await using videoInput = await Demuxer.open({
   type: 'video',
   input: videoFile,
   width: videoWidth,
@@ -78,7 +78,7 @@ await using videoInput = await MediaInput.open({
 
 // Open raw PCM audio
 console.log('Opening raw audio input...');
-await using audioInput = await MediaInput.open(
+await using audioInput = await Demuxer.open(
   {
     type: 'audio',
     input: audioFile,
@@ -93,7 +93,7 @@ await using audioInput = await MediaInput.open(
 
 // Create output
 console.log('Creating output file...');
-await using output = await MediaOutput.open(outputFile);
+await using output = await Muxer.open(outputFile);
 
 // Get streams
 const videoStream = videoInput.video();

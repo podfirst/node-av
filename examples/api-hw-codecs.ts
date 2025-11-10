@@ -4,7 +4,7 @@
  * Tests hardware support for various codecs: H.264, H.265, VP8, VP9, AV1, MJPEG
  *
  * Usage:
- *   tsx examples/api-hardware-codecs.ts
+ *   tsx examples/api-hw-codecs.ts
  */
 
 import { AV_CODEC_ID_AV1, AV_CODEC_ID_H264, AV_CODEC_ID_HEVC, AV_CODEC_ID_MJPEG, AV_CODEC_ID_VP8, AV_CODEC_ID_VP9, HardwareContext } from '../src/index.js';

@@ -8,7 +8,7 @@
  * Example: tsx examples/api-encode-decode.ts testdata/video.mp4 examples/.tmp/api-encode-decode.mp4
  */
 
-import { AV_LOG_DEBUG, Decoder, Encoder, FF_ENCODER_LIBX264, Log, MediaInput, MediaOutput } from '../src/index.js';
+import { AV_LOG_DEBUG, Decoder, Demuxer, Encoder, FF_ENCODER_LIBX264, Log, Muxer } from '../src/index.js';
 import { prepareTestEnvironment } from './index.js';
 
 const inputFile = process.argv[2];
@@ -24,7 +24,7 @@ Log.setLevel(AV_LOG_DEBUG);
 
 // Open input media
 console.log('Opening input:', inputFile);
-await using input = await MediaInput.open(inputFile);
+await using input = await Demuxer.open(inputFile);
 
 // Get video stream
 const videoStream = input.video(0);
@@ -58,7 +58,7 @@ using encoder = await Encoder.create(FF_ENCODER_LIBX264, {
 
 // Create output
 console.log('Creating output:', outputFile);
-await using output = await MediaOutput.open(outputFile);
+await using output = await Muxer.open(outputFile);
 
 // Add stream(s) to output
 const outputVideoStreamIndex = output.addStream(encoder);
@@ -74,6 +74,10 @@ let encodedPackets = 0;
 let processedAudioPackets = 0;
 
 for await (using packet of input.packets()) {
+  if (!packet) {
+    break;
+  }
+
   if (packet.streamIndex === videoStream.index) {
     // Decode packet to frame
     using frame = await decoder.decode(packet);

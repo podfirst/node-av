@@ -11,7 +11,7 @@
  * Note: For RTSP streams, specify tcp or udp as second argument (default: tcp)
  */
 
-import { FFmpegError, MediaInput, StreamingUtils } from '../src/index.js';
+import { Demuxer, FFmpegError, StreamingUtils } from '../src/index.js';
 
 /**
  * Generate SDP from media input
@@ -34,7 +34,7 @@ async function generateSdp(inputUrl: string, rtspTransport = 'tcp'): Promise<voi
       }
     : {};
 
-  await using input = await MediaInput.open(inputUrl, { options });
+  await using input = await Demuxer.open(inputUrl, { options });
 
   console.log('Generating SDP...\n');
   const sdp = StreamingUtils.createSdp([input.getFormatContext()]);

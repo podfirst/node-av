@@ -14,14 +14,14 @@ import {
   AV_PIX_FMT_NV12,
   Codec,
   Decoder,
+  Demuxer,
   Encoder,
   FF_ENCODER_LIBX265,
   FilterAPI,
   FilterPreset,
   HardwareContext,
   Log,
-  MediaInput,
-  MediaOutput,
+  Muxer,
 } from '../src/index.js';
 import { prepareTestEnvironment } from './index.js';
 
@@ -55,7 +55,7 @@ if (!hw) {
 
 // Open input media
 console.log('Opening input:', inputFile);
-using input = MediaInput.openSync(inputFile);
+using input = Demuxer.openSync(inputFile);
 
 // Get video stream
 const videoStream = input.video();
@@ -92,9 +92,9 @@ using encoder = Encoder.createSync(encoderCodec, {
   filter,
 });
 
-// Create output using MediaOutput
+// Create output using Muxer
 console.log('Creating output:', outputFile);
-using output = MediaOutput.openSync(outputFile);
+using output = Muxer.openSync(outputFile);
 const videoOutputIndex = output.addStream(encoder);
 
 // Process frames
@@ -106,6 +106,10 @@ const filterGenerator = filter.framesSync(decoderGenerator);
 const encoderGenerator = encoder.packetsSync(filterGenerator);
 
 for (using packet of encoderGenerator) {
+  if (!packet) {
+    break;
+  }
+
   console.log(`Encoded packet: pts=${packet.pts}, dts=${packet.dts}, size=${packet.size}`);
   output.writePacketSync(packet, videoOutputIndex);
 }

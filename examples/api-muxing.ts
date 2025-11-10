@@ -24,14 +24,14 @@ import {
   AV_LOG_DEBUG,
   AV_SAMPLE_FMT_FLTP,
   Decoder,
+  Demuxer,
   Encoder,
   FF_ENCODER_AAC,
   FF_ENCODER_LIBX264,
   FilterAPI,
   FilterPreset,
   Log,
-  MediaInput,
-  MediaOutput,
+  Muxer,
 } from '../src/index.js';
 import { prepareTestEnvironment } from './index.js';
 
@@ -72,9 +72,9 @@ console.log('Output: ' + outputFile);
 console.log('Mode: ' + (forceCopy ? 'Stream Copy' : 'Auto (Copy if compatible, otherwise transcode)'));
 
 // Open separate inputs
-await using videoInput = await MediaInput.open(videoInputFile);
-await using audioInput = await MediaInput.open(audioInputFile);
-await using output = await MediaOutput.open(outputFile);
+await using videoInput = await Demuxer.open(videoInputFile);
+await using audioInput = await Demuxer.open(audioInputFile);
+await using output = await Muxer.open(outputFile);
 
 // Get streams
 const videoStream = videoInput.video();
@@ -179,6 +179,9 @@ const processVideo = async () => {
     // Transcode without filter - direct decode->encode
     let frameCount = 0;
     for await (using packet of videoInput.packets(videoStream.index)) {
+      if (!packet) {
+        break;
+      }
       using frame = await videoDecoder!.decode(packet);
       if (frame) {
         // Fix timestamps - set PTS based on frame count
@@ -222,6 +225,10 @@ const processAudio = async () => {
     }
   } else {
     for await (using packet of audioInput.packets(audioStream.index)) {
+      if (!packet) {
+        break;
+      }
+
       using frame = await audioDecoder!.decode(packet);
       if (frame) {
         using filteredFrame = await audioFilter!.process(frame);

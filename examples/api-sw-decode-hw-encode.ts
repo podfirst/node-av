@@ -13,7 +13,7 @@
  * Example: tsx examples/api-sw-decode-hw-encode.ts testdata/video.mp4 examples/.tmp/api-sw-decode-hw-encode.mp4
  */
 
-import { Decoder, Encoder, FilterAPI, FilterPreset, HardwareContext, MediaInput, MediaOutput } from '../src/api/index.js';
+import { Decoder, Demuxer, Encoder, FilterAPI, FilterPreset, HardwareContext, Muxer } from '../src/api/index.js';
 import { AV_LOG_DEBUG, AV_PIX_FMT_NV12, Log } from '../src/index.js';
 import { prepareTestEnvironment } from './index.js';
 
@@ -41,7 +41,7 @@ if (!hw) {
 console.log(`Hardware detected: ${hw.deviceTypeName}`);
 
 // Open input file
-await using input = await MediaInput.open(inputFile);
+await using input = await Demuxer.open(inputFile);
 const videoStream = input.video();
 const audioStream = input.audio();
 
@@ -86,8 +86,8 @@ using encoder = await Encoder.create(encoderCodec, {
   gopSize: 60,
 });
 
-// Create output using MediaOutput
-await using output = await MediaOutput.open(outputFile);
+// Create output using Muxer
+await using output = await Muxer.open(outputFile);
 const outputStreamIndex = output.addStream(encoder);
 
 // Process video
@@ -98,6 +98,10 @@ let packetCount = 0;
 const startTime = Date.now();
 
 for await (using packet of input.packets(videoStream.index)) {
+  if (!packet) {
+    break;
+  }
+
   // Software decode
   using frame = await decoder.decode(packet);
   if (frame) {

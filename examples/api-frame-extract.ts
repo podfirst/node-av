@@ -19,6 +19,7 @@ import {
   AV_PIX_FMT_RGB24,
   AV_PIX_FMT_RGB8,
   Decoder,
+  Demuxer,
   Encoder,
   FF_ENCODER_GIF,
   FF_ENCODER_MJPEG,
@@ -26,8 +27,7 @@ import {
   FilterAPI,
   FilterPreset,
   Log,
-  MediaInput,
-  MediaOutput,
+  Muxer,
 } from '../src/index.js';
 import { prepareTestEnvironment } from './index.js';
 
@@ -40,7 +40,7 @@ if (!inputFile || !outputDir) {
 }
 
 async function extractFrameAsPNG(frameNumber: number) {
-  await using input = await MediaInput.open(inputFile);
+  await using input = await Demuxer.open(inputFile);
 
   const videoStream = input.video(0);
   if (!videoStream) {
@@ -64,6 +64,10 @@ async function extractFrameAsPNG(frameNumber: number) {
 
   let currentFrame = 0;
   for await (using packet of input.packets(videoStream.index)) {
+    if (!packet) {
+      break;
+    }
+
     using frame = await decoder.decode(packet);
     if (frame) {
       using filteredFrame = await filter.process(frame);
@@ -97,7 +101,7 @@ async function extractFrameAsPNG(frameNumber: number) {
 }
 
 async function extractFramesAtInterval(intervalSeconds: number, count: number) {
-  await using input = await MediaInput.open(inputFile);
+  await using input = await Demuxer.open(inputFile);
 
   const videoStream = input.video(0);
   if (!videoStream) {
@@ -127,6 +131,10 @@ async function extractFramesAtInterval(intervalSeconds: number, count: number) {
   let extractedCount = 0;
 
   for await (using packet of input.packets(videoStream.index)) {
+    if (!packet) {
+      break;
+    }
+
     using frame = await decoder.decode(packet);
     if (frame) {
       if (currentFrame % frameInterval === 0 && extractedCount < count) {
@@ -154,7 +162,7 @@ async function extractFramesAtInterval(intervalSeconds: number, count: number) {
 }
 
 async function analyzeFrames(count: number) {
-  await using input = await MediaInput.open(inputFile);
+  await using input = await Demuxer.open(inputFile);
 
   const videoStream = input.video(0);
   if (!videoStream) {
@@ -171,6 +179,10 @@ async function analyzeFrames(count: number) {
   let analyzedFrames = 0;
 
   for await (using packet of input.packets(videoStream.index)) {
+    if (!packet) {
+      break;
+    }
+
     using frame = await decoder.decode(packet);
     if (frame) {
       // Analyze frame
@@ -202,8 +214,8 @@ async function analyzeFrames(count: number) {
 }
 
 async function generateGIF(startTime: number, duration: number) {
-  await using input = await MediaInput.open(inputFile);
-  await using output = await MediaOutput.open(`${outputDir}/output.gif`);
+  await using input = await Demuxer.open(inputFile);
+  await using output = await Muxer.open(`${outputDir}/output.gif`);
 
   const videoStream = input.video(0);
   if (!videoStream) {
@@ -240,6 +252,10 @@ async function generateGIF(startTime: number, duration: number) {
   const outputStreamIndex = output.addStream(encoder);
 
   for await (using packet of input.packets(videoStream.index)) {
+    if (!packet) {
+      break;
+    }
+
     using frame = await decoder.decode(packet);
     if (frame) {
       using filteredFrame = await filter.process(frame);

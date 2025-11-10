@@ -19,6 +19,7 @@ import {
   AV_PIX_FMT_NV12,
   Codec,
   Decoder,
+  Demuxer,
   Encoder,
   FF_ENCODER_LIBX265,
   FF_ENCODER_RAWVIDEO,
@@ -26,8 +27,7 @@ import {
   FilterPreset,
   HardwareContext,
   Log,
-  MediaInput,
-  MediaOutput,
+  Muxer,
 } from '../src/index.js';
 import { prepareTestEnvironment } from './index.js';
 
@@ -69,7 +69,7 @@ console.log(`Frame rate: ${fps} fps`);
 
 // Open input file
 console.log('Opening input file...');
-await using input = await MediaInput.open(inputFile);
+await using input = await Demuxer.open(inputFile);
 
 // Get streams
 const videoStream = input.video();
@@ -124,7 +124,7 @@ using encoder = await Encoder.create(FF_ENCODER_RAWVIDEO, {
 
 // Create output
 console.log('Creating output file...');
-await using output = await MediaOutput.open(outputFile, {
+await using output = await Muxer.open(outputFile, {
   format: 'rawvideo',
 });
 

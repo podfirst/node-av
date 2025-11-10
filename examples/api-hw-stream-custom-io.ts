@@ -22,14 +22,14 @@ import {
   AV_SAMPLE_FMT_FLTP,
   Codec,
   Decoder,
+  Demuxer,
   Encoder,
   FF_ENCODER_AAC,
   FF_ENCODER_LIBX265,
   FilterAPI,
   FilterPreset,
   HardwareContext,
-  MediaInput,
-  MediaOutput,
+  Muxer,
 } from '../src/index.js';
 import { prepareTestEnvironment } from './index.js';
 
@@ -63,7 +63,7 @@ const isRtsp = filePath.startsWith('rtsp://') || filePath.startsWith('rtsps://')
 
 // Open RTSP stream
 console.log('Connecting to RTSP stream...');
-await using input = await MediaInput.open(filePath, {
+await using input = await Demuxer.open(filePath, {
   options: {
     rtsp_transport: isRtsp ? 'tcp' : undefined,
     flags: 'nodelay',
@@ -137,7 +137,7 @@ using videoEncoder = await Encoder.create(encoderCodec, {
 });
 
 let receivedRTPPackets = 0;
-await using videoOutput = await MediaOutput.open(
+await using videoOutput = await Muxer.open(
   {
     write: (data) => {
       receivedRTPPackets++;
@@ -171,7 +171,7 @@ using audioEncoder = await Encoder.create(FF_ENCODER_AAC, {
   filter: audioFilter,
 });
 
-await using audioOutput = await MediaOutput.open(
+await using audioOutput = await Muxer.open(
   {
     write: (data) => {
       receivedRTPPackets++;
@@ -215,6 +215,9 @@ try {
 
     for await (const packet of input.packets()) {
       if (stop) break;
+      if (!packet) {
+        break;
+      }
       if (packet.streamIndex === videoStream.index) {
         const now = performance.now();
         console.log('Sending packet to video scheduler, pts:', packet.pts);
@@ -268,6 +271,9 @@ try {
   } else if (iterType === 3) {
     for await (using packet of input.packets()) {
       if (stop) break;
+      if (!packet) {
+        break;
+      }
       if (packet.streamIndex === videoStream.index) {
         const frames = await videoDecoder.decodeAll(packet);
         for (using frame of frames) {
@@ -297,6 +303,9 @@ try {
   } else {
     for await (using packet of input.packets()) {
       if (stop) break;
+      if (!packet) {
+        break;
+      }
       if (packet.streamIndex === videoStream.index) {
         using frame = await videoDecoder.decode(packet);
         if (frame) {

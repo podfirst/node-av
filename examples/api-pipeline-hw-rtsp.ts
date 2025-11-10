@@ -21,6 +21,7 @@ import {
   AV_SAMPLE_FMT_FLTP,
   Codec,
   Decoder,
+  Demuxer,
   Encoder,
   FF_ENCODER_AAC,
   FF_ENCODER_LIBX265,
@@ -28,8 +29,7 @@ import {
   FilterPreset,
   HardwareContext,
   Log,
-  MediaInput,
-  MediaOutput,
+  Muxer,
   pipeline,
 } from '../src/index.js';
 import { prepareTestEnvironment } from './index.js';
@@ -74,7 +74,7 @@ console.log(`Scale to: ${scaleWidth}x${scaleHeight}`);
 
 // Open RTSP stream
 console.log('Connecting to RTSP stream...');
-await using input = await MediaInput.open(rtspUrl, {
+await using input = await Demuxer.open(rtspUrl, {
   options: {
     rtsp_transport: 'tcp',
   },
@@ -139,7 +139,7 @@ using encoder = await Encoder.create(encoderCodec, {
 });
 
 // Create output
-await using output = await MediaOutput.open(outputFile);
+await using output = await Muxer.open(outputFile);
 
 // Setup pipeline based on available streams
 console.log('Setting up pipeline...');

@@ -10,7 +10,7 @@
 
 import { readFile } from 'fs/promises';
 
-import { MediaInput } from '../src/api/index.js';
+import { Demuxer } from '../src/api/index.js';
 import { AV_LOG_DEBUG, Log } from '../src/index.js';
 import { prepareTestEnvironment } from './index.js';
 
@@ -28,13 +28,17 @@ const buffer = await readFile(inputFile);
 console.log(`Buffer size: ${(buffer.length / 1024 / 1024).toFixed(2)} MB`);
 
 // Open media from buffer
-await using input = await MediaInput.open(buffer);
+await using input = await Demuxer.open(buffer);
 
 // Count packets by type
 const packetCounts: Record<string, number> = {};
 let totalPackets = 0;
 
 for await (using packet of input.packets()) {
+  if (!packet) {
+    break;
+  }
+
   const streamInfo = input.streams[packet.streamIndex];
   if (streamInfo) {
     packetCounts[streamInfo.codecpar.codecType] = (packetCounts[streamInfo.codecpar.codecType] || 0) + 1;

@@ -22,7 +22,7 @@
 
 import fs from 'fs/promises';
 
-import { AV_PIX_FMT_YUV420P, Decoder, Encoder, FF_ENCODER_LIBX264, FilterAPI, FilterPreset, MediaInput, MediaOutput } from '../src/index.js';
+import { AV_PIX_FMT_YUV420P, Decoder, Demuxer, Encoder, FF_ENCODER_LIBX264, FilterAPI, FilterPreset, Muxer } from '../src/index.js';
 import { prepareTestEnvironment } from './index.js';
 
 // Parse command line arguments
@@ -80,7 +80,7 @@ const isRtsp = inputUrl.toLowerCase().startsWith('rtsp://');
 
 // Open input
 console.log(isRtsp ? 'Connecting to RTSP stream...' : 'Opening input file...');
-await using input = await MediaInput.open(inputUrl, {
+await using input = await Demuxer.open(inputUrl, {
   options: isRtsp ? { rtsp_transport: 'tcp' } : undefined,
 });
 
@@ -123,7 +123,7 @@ using encoder = await Encoder.create(FF_ENCODER_LIBX264, {
 
 // Create DASH output
 console.log('\nCreating DASH output...');
-await using dashOutput = await MediaOutput.open(dashManifestPath, {
+await using dashOutput = await Muxer.open(dashManifestPath, {
   input, // Pass input for automatic metadata copying (Title, etc.)
   options: {
     movflags: 'frag_keyframe+empty_moov+default_base_moof',

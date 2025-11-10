@@ -8,7 +8,7 @@
  * Example: tsx examples/api-hw-transcode.ts testdata/video.mp4 examples/.tmp/api-hw-transcode.mp4
  */
 
-import { AV_HWDEVICE_TYPE_CUDA, AV_LOG_DEBUG, Codec, Decoder, Encoder, FF_ENCODER_LIBX265, HardwareContext, Log, MediaInput, MediaOutput } from '../src/index.js';
+import { AV_HWDEVICE_TYPE_CUDA, AV_LOG_DEBUG, Codec, Decoder, Demuxer, Encoder, FF_ENCODER_LIBX265, HardwareContext, Log, Muxer } from '../src/index.js';
 import { prepareTestEnvironment } from './index.js';
 
 const inputFile = process.argv[2];
@@ -43,7 +43,7 @@ if (!hw) {
 
 // Open input media
 console.log('Opening input:', inputFile);
-await using input = await MediaInput.open(inputFile);
+await using input = await Demuxer.open(inputFile);
 
 // Get video stream
 const videoStream = input.video();
@@ -77,9 +77,9 @@ using encoder = await Encoder.create(encoderCodec, {
   decoder,
 });
 
-// Create output using MediaOutput
+// Create output using Muxer
 console.log('Creating output:', outputFile);
-await using output = await MediaOutput.open(outputFile);
+await using output = await Muxer.open(outputFile);
 const videoOutputIndex = output.addStream(encoder);
 const audioOutputIndex = output.addStream(audioStream);
 
@@ -93,6 +93,9 @@ let audioFrames = 0;
 const startTime = Date.now();
 
 for await (using packet of input.packets()) {
+  if (!packet) {
+    break;
+  }
   if (packet.streamIndex === videoStream.index) {
     // Decode packet to frame
     using frame = await decoder.decode(packet);
@@ -107,7 +110,7 @@ for await (using packet of input.packets()) {
       // Re-encode frame (zero-copy if both on same GPU)
       using encodedPacket = await encoder.encode(frame);
       if (encodedPacket) {
-        // Write packet (MediaOutput handles timestamp rescaling)
+        // Write packet (Muxer handles timestamp rescaling)
         await output.writePacket(encodedPacket, videoOutputIndex);
         encodedPackets++;
       }
