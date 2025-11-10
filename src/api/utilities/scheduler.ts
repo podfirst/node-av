@@ -1,13 +1,14 @@
-import { MediaOutput } from '../media-output.js';
+import { Muxer } from '../muxer.js';
 
 import type { Frame, Packet } from '../../lib/index.js';
+import type { BitStreamFilterAPI } from '../bitstream-filter.js';
 import type { Encoder } from '../encoder.js';
 import type { FilterAPI } from '../filter.js';
 
 export interface SchedulableComponent<TItem = Packet | Frame> {
   sendToQueue(item: TItem): Promise<void>;
   flushPipeline(): Promise<void>;
-  pipeTo(target: FilterAPI | Encoder | MediaOutput, streamIndex?: number): any;
+  pipeTo(target: FilterAPI | Encoder | BitStreamFilterAPI | Muxer, streamIndex?: number): any;
 }
 
 /**
@@ -62,9 +63,23 @@ export class Scheduler<TSend = Packet | Frame> implements AsyncDisposable {
   pipeTo(target: Encoder): Scheduler<TSend>;
 
   /**
-   * Pipe output to a media output (final stage).
+   * Pipe output to a bitstream filter component.
    *
-   * @param output - MediaOutput to write to
+   * @param target - BitStreamFilter to receive packets
+   *
+   * @returns Scheduler for continued chaining
+   *
+   * @example
+   * ```typescript
+   * decoder.pipeTo(encoder).pipeTo(bsf).pipeTo(output, 0)
+   * ```
+   */
+  pipeTo(target: BitStreamFilterAPI): Scheduler<TSend>;
+
+  /**
+   * Pipe output to a muxer (final stage).
+   *
+   * @param output - Muxer to write to
    *
    * @param streamIndex - Stream index in output
    *
@@ -79,11 +94,11 @@ export class Scheduler<TSend = Packet | Frame> implements AsyncDisposable {
    * await control.send(packet);
    * ```
    */
-  pipeTo(output: MediaOutput, streamIndex: number): SchedulerControl<TSend>;
+  pipeTo(output: Muxer, streamIndex: number): SchedulerControl<TSend>;
 
-  pipeTo(target: FilterAPI | Encoder | MediaOutput, streamIndex?: number): Scheduler<TSend> | SchedulerControl<TSend> {
+  pipeTo(target: FilterAPI | Encoder | BitStreamFilterAPI | Muxer, streamIndex?: number): Scheduler<TSend> | SchedulerControl<TSend> {
     if (typeof this.lastComponent.pipeTo === 'function') {
-      if (target instanceof MediaOutput) {
+      if (target instanceof Muxer) {
         // Start the pipe task (encoder -> output)
         this.lastComponent.pipeTo(target, streamIndex);
         // Return control with correct firstComponent (not lastComponent!)
@@ -145,7 +160,7 @@ export class Scheduler<TSend = Packet | Frame> implements AsyncDisposable {
  * Control interface for completed pipelines.
  *
  * Provides control methods without pipeTo() - this is the final
- * stage after piping to MediaOutput.
+ * stage after piping to Muxer.
  *
  * @template TSend - The input type flowing through the pipeline
  */
