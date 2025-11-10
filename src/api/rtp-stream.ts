@@ -563,9 +563,21 @@ export class RTPStream {
         },
       );
     } else if (hasVideo) {
-      this.pipeline = pipeline(this.input, this.videoDecoder!, this.videoEncoder!, this.videoOutput!);
+      this.pipeline = pipeline(
+        this.input,
+        {
+          video: [this.videoDecoder, this.videoEncoder],
+        },
+        this.videoOutput!,
+      );
     } else if (hasAudio) {
-      this.pipeline = pipeline(this.input, this.audioDecoder!, this.audioFilter!, this.audioEncoder!, this.audioOutput!);
+      this.pipeline = pipeline(
+        this.input,
+        {
+          audio: [this.audioDecoder, this.audioFilter, this.audioEncoder],
+        },
+        this.audioOutput!,
+      );
     } else {
       throw new Error('No audio or video streams found in input');
     }
