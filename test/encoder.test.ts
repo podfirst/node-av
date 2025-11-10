@@ -156,7 +156,7 @@ describe('Encoder', () => {
       });
 
       // Create test frame
-      const frame = new Frame();
+      using frame = new Frame();
       frame.alloc();
       frame.width = 320;
       frame.height = 240;
@@ -184,10 +184,8 @@ describe('Encoder', () => {
       }
 
       // Encode frame
-      const packet = await encoder.encode(frame);
-      packet?.free();
+      using _packet = await encoder.encode(frame);
 
-      frame.free();
       encoder.close();
     });
 
@@ -198,7 +196,7 @@ describe('Encoder', () => {
       });
 
       // Create test frame
-      const frame = new Frame();
+      using frame = new Frame();
       frame.alloc();
       frame.width = 320;
       frame.height = 240;
@@ -226,10 +224,8 @@ describe('Encoder', () => {
       }
 
       // Encode frame
-      const packet = encoder.encodeSync(frame);
-      packet?.free();
+      using _packet = encoder.encodeSync(frame);
 
-      frame.free();
       encoder.close();
     });
 
@@ -239,7 +235,7 @@ describe('Encoder', () => {
       });
 
       // Create test frame with typical AAC frame size
-      const frame = new Frame();
+      using frame = new Frame();
       frame.alloc();
       frame.nbSamples = 1024; // Typical AAC frame size
       frame.sampleRate = 44100;
@@ -252,10 +248,8 @@ describe('Encoder', () => {
       assert.equal(ret, 0, 'Should allocate frame buffer');
 
       // Encode frame
-      const packet = await encoder.encode(frame);
-      packet?.free();
+      using _packet = await encoder.encode(frame);
 
-      frame.free();
       encoder.close();
     });
 
@@ -265,7 +259,7 @@ describe('Encoder', () => {
       });
 
       // Create test frame with typical AAC frame size
-      const frame = new Frame();
+      using frame = new Frame();
       frame.alloc();
       frame.nbSamples = 1024; // Typical AAC frame size
       frame.sampleRate = 44100;
@@ -278,10 +272,8 @@ describe('Encoder', () => {
       assert.equal(ret, 0, 'Should allocate frame buffer');
 
       // Encode frame
-      const packet = encoder.encodeSync(frame);
-      packet?.free();
+      using _packet = encoder.encodeSync(frame);
 
-      frame.free();
       encoder.close();
     });
 
@@ -289,7 +281,7 @@ describe('Encoder', () => {
       const encoder = await Encoder.create(FF_ENCODER_LIBX264);
 
       // Create and encode frame
-      const frame = new Frame();
+      using frame = new Frame();
       frame.alloc();
       frame.width = 320;
       frame.height = 240;
@@ -298,13 +290,8 @@ describe('Encoder', () => {
       frame.timeBase = new Rational(1, 25);
       frame.getBuffer();
 
-      const packet = await encoder.encode(frame);
-      // Packet can be null, that's okay
-      if (packet) {
-        packet.free();
-      }
+      using _packet = await encoder.encode(frame);
 
-      frame.free();
       encoder.close();
     });
 
@@ -312,7 +299,7 @@ describe('Encoder', () => {
       const encoder = Encoder.createSync(FF_ENCODER_LIBX264);
 
       // Create and encode frame
-      const frame = new Frame();
+      using frame = new Frame();
       frame.alloc();
       frame.width = 320;
       frame.height = 240;
@@ -321,13 +308,8 @@ describe('Encoder', () => {
       frame.timeBase = new Rational(1, 25);
       frame.getBuffer();
 
-      const packet = encoder.encodeSync(frame);
-      // Packet can be null, that's okay
-      if (packet) {
-        packet.free();
-      }
+      using _packet = encoder.encodeSync(frame);
 
-      frame.free();
       encoder.close();
     });
 
@@ -335,7 +317,7 @@ describe('Encoder', () => {
       const encoder = await Encoder.create(FF_ENCODER_LIBX264);
 
       // Initialize encoder with a frame first
-      const initFrame = new Frame();
+      using initFrame = new Frame();
       initFrame.alloc();
       initFrame.width = 320;
       initFrame.height = 240;
@@ -344,11 +326,10 @@ describe('Encoder', () => {
       initFrame.timeBase = new Rational(1, 25);
       initFrame.getBuffer();
       await encoder.encode(initFrame);
-      initFrame.free();
 
       encoder.close();
 
-      const frame = new Frame();
+      using frame = new Frame();
       frame.alloc();
       frame.width = 320;
       frame.height = 240;
@@ -357,15 +338,13 @@ describe('Encoder', () => {
       frame.timeBase = new Rational(1, 25);
 
       await assert.doesNotReject(async () => await encoder.encode(frame));
-
-      frame.free();
     });
 
     it('should not throw when encoder is closed (sync)', () => {
       const encoder = Encoder.createSync(FF_ENCODER_LIBX264);
 
       // Initialize encoder with a frame first
-      const initFrame = new Frame();
+      using initFrame = new Frame();
       initFrame.alloc();
       initFrame.width = 320;
       initFrame.height = 240;
@@ -374,11 +353,10 @@ describe('Encoder', () => {
       initFrame.timeBase = new Rational(1, 25);
       initFrame.getBuffer();
       encoder.encodeSync(initFrame);
-      initFrame.free();
 
       encoder.close();
 
-      const frame = new Frame();
+      using frame = new Frame();
       frame.alloc();
       frame.width = 320;
       frame.height = 240;
@@ -387,8 +365,6 @@ describe('Encoder', () => {
       frame.timeBase = new Rational(1, 25);
 
       assert.doesNotThrow(() => encoder.encodeSync(frame));
-
-      frame.free();
     });
   });
 
@@ -400,7 +376,7 @@ describe('Encoder', () => {
 
       // Encode some frames first
       for (let i = 0; i < 5; i++) {
-        const frame = new Frame();
+        using frame = new Frame();
         frame.alloc();
         frame.width = 320;
         frame.height = 240;
@@ -409,19 +385,16 @@ describe('Encoder', () => {
         frame.timeBase = new Rational(1, 25);
         frame.getBuffer();
 
-        const packet = await encoder.encode(frame);
-        if (packet) {
-          packet.free();
-        }
-        frame.free();
+        using _packet = await encoder.encode(frame);
       }
 
       // Flush encoder
       let flushCount = 0;
-      for await (const packet of encoder.flushPackets()) {
-        packet.free();
+      for await (using _packet of encoder.flushPackets()) {
         flushCount++;
-        if (flushCount > 20) break; // Safety limit
+        if (flushCount > 20) {
+          break; // Safety limit
+        }
       }
 
       encoder.close();
@@ -434,7 +407,7 @@ describe('Encoder', () => {
 
       // Encode some frames first
       for (let i = 0; i < 5; i++) {
-        const frame = new Frame();
+        using frame = new Frame();
         frame.alloc();
         frame.width = 320;
         frame.height = 240;
@@ -443,17 +416,12 @@ describe('Encoder', () => {
         frame.timeBase = new Rational(1, 25);
         frame.getBuffer();
 
-        const packet = encoder.encodeSync(frame);
-        if (packet) {
-          packet.free();
-        }
-        frame.free();
+        using _packet = encoder.encodeSync(frame);
       }
 
       // Flush encoder
       let flushCount = 0;
-      for (const packet of encoder.flushPacketsSync()) {
-        packet.free();
+      for (using _packet of encoder.flushPacketsSync()) {
         flushCount++;
         if (flushCount > 20) break; // Safety limit
       }
@@ -504,10 +472,12 @@ describe('Encoder', () => {
       }
 
       let packetCount = 0;
-      for await (const packet of encoder.packets(generateFrames())) {
+      for await (using packet of encoder.packets(generateFrames())) {
+        if (!packet) {
+          break;
+        }
         assert.ok(packet);
         packetCount++;
-        packet.free();
       }
 
       // May get more or fewer packets due to B-frames
@@ -539,10 +509,12 @@ describe('Encoder', () => {
       }
 
       let packetCount = 0;
-      for (const packet of encoder.packetsSync(generateFrames())) {
+      for (using packet of encoder.packetsSync(generateFrames())) {
+        if (!packet) {
+          break;
+        }
         assert.ok(packet);
         packetCount++;
-        packet.free();
       }
 
       // May get more or fewer packets due to B-frames
@@ -560,9 +532,11 @@ describe('Encoder', () => {
       }
 
       let packetCount = 0;
-      for await (const packet of encoder.packets(emptyFrames())) {
+      for await (using _packet of encoder.packets(emptyFrames())) {
+        if (!_packet) {
+          break;
+        }
         packetCount++;
-        packet.free();
       }
 
       assert.equal(packetCount, 0, 'Should not produce packets from empty stream');
@@ -579,9 +553,11 @@ describe('Encoder', () => {
       }
 
       let packetCount = 0;
-      for (const packet of encoder.packetsSync(emptyFrames())) {
+      for (using _packet of encoder.packetsSync(emptyFrames())) {
+        if (!_packet) {
+          break;
+        }
         packetCount++;
-        packet.free();
       }
 
       assert.equal(packetCount, 0, 'Should not produce packets from empty stream');
@@ -657,7 +633,7 @@ describe('Encoder', () => {
       const encoder = await Encoder.create(FF_ENCODER_LIBX264);
 
       // Initialize encoder with a frame first
-      const frame = new Frame();
+      using frame = new Frame();
       frame.alloc();
       frame.width = 320;
       frame.height = 240;
@@ -665,8 +641,7 @@ describe('Encoder', () => {
       frame.pts = 0n;
       frame.timeBase = new Rational(1, 25);
       frame.getBuffer();
-      await encoder.encode(frame);
-      frame.free();
+      using _packet = await encoder.encode(frame);
 
       // Now codec context should be available
       assert.ok(encoder.getCodecContext());

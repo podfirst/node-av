@@ -75,7 +75,7 @@ import {
   getFFmpegInfo,
 } from '../src/index.js';
 
-import { MediaInput } from '../src/api/index.js';
+import { Demuxer } from '../src/api/index.js';
 import { getInputFile, prepareTestEnvironment } from './index.js';
 
 prepareTestEnvironment();
@@ -791,7 +791,7 @@ describe('Utilities', () => {
     const inputFile = getInputFile('demux.mp4');
 
     it('should get DASH codec string for video', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
       const videoStream = media.video();
 
       assert.ok(videoStream, 'Should have video stream');
@@ -808,7 +808,7 @@ describe('Utilities', () => {
     });
 
     it('should get DASH codec string for audio', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
       const audioStream = media.audio();
 
       if (audioStream) {
@@ -826,7 +826,7 @@ describe('Utilities', () => {
     });
 
     it('should get HLS codec string for video', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
       const videoStream = media.video();
 
       assert.ok(videoStream, 'Should have video stream');
@@ -843,7 +843,7 @@ describe('Utilities', () => {
     });
 
     it('should get HLS codec string for audio', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
       const audioStream = media.audio();
 
       if (audioStream) {
@@ -860,7 +860,7 @@ describe('Utilities', () => {
     });
 
     it('should get MIME type for video stream', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
       const videoStream = media.video();
 
       assert.ok(videoStream, 'Should have video stream');
@@ -877,7 +877,7 @@ describe('Utilities', () => {
     });
 
     it('should get MIME type for audio stream', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
       const audioStream = media.audio();
 
       if (audioStream) {
@@ -896,7 +896,7 @@ describe('Utilities', () => {
     });
 
     it('should handle codec strings with extradata', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
       const videoStream = media.video();
 
       assert.ok(videoStream, 'Should have video stream');
@@ -925,7 +925,7 @@ describe('Utilities', () => {
       const vp8File = getInputFile('video-vp8.webm');
 
       try {
-        const media = await MediaInput.open(vp8File);
+        const media = await Demuxer.open(vp8File);
         const videoStream = media.video();
 
         assert.ok(videoStream, 'Should have video stream');
@@ -951,7 +951,7 @@ describe('Utilities', () => {
       const vp9File = getInputFile('video-vp9.webm');
 
       try {
-        const media = await MediaInput.open(vp9File);
+        const media = await Demuxer.open(vp9File);
         const videoStream = media.video();
 
         assert.ok(videoStream, 'Should have video stream');
@@ -976,7 +976,7 @@ describe('Utilities', () => {
     });
 
     it('should return consistent codec strings between DASH and HLS for H.264', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
       const videoStream = media.video();
 
       assert.ok(videoStream, 'Should have video stream');
@@ -1140,7 +1140,7 @@ describe('Utilities', () => {
   describe('Audio Frame Duration', () => {
     it('should get audio frame duration for AAC', async () => {
       const inputFile = getInputFile('demux.mp4');
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
       const audioStream = media.audio();
 
       if (audioStream) {
@@ -1164,7 +1164,7 @@ describe('Utilities', () => {
 
     it('should handle various frame sizes', async () => {
       const inputFile = getInputFile('demux.mp4');
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
       const audioStream = media.audio();
 
       if (audioStream) {
@@ -1185,7 +1185,7 @@ describe('Utilities', () => {
 
     it('should handle zero frame bytes', async () => {
       const inputFile = getInputFile('demux.mp4');
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
       const audioStream = media.audio();
 
       if (audioStream) {

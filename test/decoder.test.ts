@@ -2,7 +2,7 @@ import assert from 'node:assert';
 import { describe, it } from 'node:test';
 
 import { Decoder } from '../src/api/decoder.js';
-import { MediaInput } from '../src/api/media-input.js';
+import { Demuxer } from '../src/api/demuxer.js';
 import { AV_CODEC_ID_H264, AV_PIX_FMT_YUV420P } from '../src/constants/constants.js';
 import { FF_DECODER_AAC, FF_DECODER_H264 } from '../src/constants/decoders.js';
 import { Codec, Packet } from '../src/lib/index.js';
@@ -15,7 +15,7 @@ const inputFile = getInputFile('demux.mp4');
 describe('Decoder', () => {
   describe('create', () => {
     it('should create decoder for video stream (async)', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
 
       // Find video stream
       const videoStream = media.video();
@@ -32,7 +32,7 @@ describe('Decoder', () => {
     });
 
     it('should create decoder for video stream (sync)', () => {
-      const media = MediaInput.openSync(inputFile);
+      const media = Demuxer.openSync(inputFile);
 
       // Find video stream
       const videoStream = media.video();
@@ -49,7 +49,7 @@ describe('Decoder', () => {
     });
 
     it('should create decoder for audio stream (sync)', () => {
-      const media = MediaInput.openSync(inputFile);
+      const media = Demuxer.openSync(inputFile);
 
       // Find audio stream
       const audioStream = media.audio();
@@ -66,7 +66,7 @@ describe('Decoder', () => {
   });
 
   it('should create decoder for audio stream (async)', async () => {
-    const media = await MediaInput.open(inputFile);
+    const media = await Demuxer.open(inputFile);
 
     // Find audio stream
     const audioStream = media.audio();
@@ -82,7 +82,7 @@ describe('Decoder', () => {
   });
 
   it('should create decoder for video stream (sync)', () => {
-    const media = MediaInput.openSync(inputFile);
+    const media = Demuxer.openSync(inputFile);
 
     // Find video stream
     const videoStream = media.video();
@@ -99,7 +99,7 @@ describe('Decoder', () => {
   });
 
   it('should create decoder for audio stream (sync)', () => {
-    const media = MediaInput.openSync(inputFile);
+    const media = Demuxer.openSync(inputFile);
 
     // Find audio stream
     const audioStream = media.audio();
@@ -115,7 +115,7 @@ describe('Decoder', () => {
   });
 
   it('should create decoder for video stream (sync)', () => {
-    const media = MediaInput.openSync(inputFile);
+    const media = Demuxer.openSync(inputFile);
 
     // Find video stream
     const videoStream = media.video();
@@ -132,7 +132,7 @@ describe('Decoder', () => {
   });
 
   it('should create decoder for audio stream (sync)', () => {
-    const media = MediaInput.openSync(inputFile);
+    const media = Demuxer.openSync(inputFile);
 
     // Find audio stream
     const audioStream = media.audio();
@@ -149,7 +149,7 @@ describe('Decoder', () => {
 
   describe('explicit codec selection', () => {
     it('should create decoder with explicit codec name (async)', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
       const videoStream = media.video();
       assert.ok(videoStream);
 
@@ -164,7 +164,7 @@ describe('Decoder', () => {
     });
 
     it('should create decoder with explicit codec name (sync)', () => {
-      const media = MediaInput.openSync(inputFile);
+      const media = Demuxer.openSync(inputFile);
       const videoStream = media.video();
       assert.ok(videoStream);
 
@@ -179,7 +179,7 @@ describe('Decoder', () => {
     });
 
     it('should create decoder with explicit codec ID (async)', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
       const videoStream = media.video();
       assert.ok(videoStream);
 
@@ -193,7 +193,7 @@ describe('Decoder', () => {
     });
 
     it('should create decoder with explicit codec ID (sync)', () => {
-      const media = MediaInput.openSync(inputFile);
+      const media = Demuxer.openSync(inputFile);
       const videoStream = media.video();
       assert.ok(videoStream);
 
@@ -207,7 +207,7 @@ describe('Decoder', () => {
     });
 
     it('should create decoder with Codec instance (async)', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
       const videoStream = media.video();
       assert.ok(videoStream);
 
@@ -225,7 +225,7 @@ describe('Decoder', () => {
     });
 
     it('should create decoder with Codec instance (sync)', () => {
-      const media = MediaInput.openSync(inputFile);
+      const media = Demuxer.openSync(inputFile);
       const videoStream = media.video();
       assert.ok(videoStream);
 
@@ -243,7 +243,7 @@ describe('Decoder', () => {
     });
 
     it('should create audio decoder with explicit codec name (async)', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
       const audioStream = media.audio();
       assert.ok(audioStream);
 
@@ -257,7 +257,7 @@ describe('Decoder', () => {
     });
 
     it('should create audio decoder with explicit codec name (sync)', () => {
-      const media = MediaInput.openSync(inputFile);
+      const media = Demuxer.openSync(inputFile);
       const audioStream = media.audio();
       assert.ok(audioStream);
 
@@ -271,7 +271,7 @@ describe('Decoder', () => {
     });
 
     it('should throw for invalid codec name (async)', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
       const videoStream = media.video();
       assert.ok(videoStream);
 
@@ -284,7 +284,7 @@ describe('Decoder', () => {
     });
 
     it('should throw for invalid codec name (sync)', () => {
-      const media = MediaInput.openSync(inputFile);
+      const media = Demuxer.openSync(inputFile);
       const videoStream = media.video();
       assert.ok(videoStream);
 
@@ -297,7 +297,7 @@ describe('Decoder', () => {
     });
 
     it('should throw for invalid codec ID (async)', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
       const videoStream = media.video();
       assert.ok(videoStream);
 
@@ -310,7 +310,7 @@ describe('Decoder', () => {
     });
 
     it('should throw for invalid codec ID (sync)', () => {
-      const media = MediaInput.openSync(inputFile);
+      const media = Demuxer.openSync(inputFile);
       const videoStream = media.video();
       assert.ok(videoStream);
 
@@ -323,7 +323,7 @@ describe('Decoder', () => {
     });
 
     it('should decode with explicitly selected codec (async)', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
       const videoStream = media.video();
       assert.ok(videoStream);
 
@@ -334,18 +334,23 @@ describe('Decoder', () => {
       let packetCount = 0;
       const maxPackets = 10;
 
-      for await (const packet of media.packets()) {
+      for await (using packet of media.packets()) {
+        if (!packet) {
+          break;
+        }
+
         if (packet.streamIndex === videoStream.index) {
-          const frame = await decoder.decode(packet);
+          using frame = await decoder.decode(packet);
           if (frame) {
             assert.ok(frame.width > 0);
             assert.ok(frame.height > 0);
             frameCount++;
-            frame.free();
           }
 
           packetCount++;
-          if (packetCount >= maxPackets) break;
+          if (packetCount >= maxPackets) {
+            break;
+          }
         }
       }
 
@@ -356,7 +361,7 @@ describe('Decoder', () => {
     });
 
     it('should decode with explicitly selected codec (sync)', () => {
-      const media = MediaInput.openSync(inputFile);
+      const media = Demuxer.openSync(inputFile);
       const videoStream = media.video();
       assert.ok(videoStream);
 
@@ -367,18 +372,23 @@ describe('Decoder', () => {
       let packetCount = 0;
       const maxPackets = 10;
 
-      for (const packet of media.packetsSync()) {
+      for (using packet of media.packetsSync()) {
+        if (!packet) {
+          break;
+        }
+
         if (packet.streamIndex === videoStream.index) {
-          const frame = decoder.decodeSync(packet);
+          using frame = decoder.decodeSync(packet);
           if (frame) {
             assert.ok(frame.width > 0);
             assert.ok(frame.height > 0);
             frameCount++;
-            frame.free();
           }
 
           packetCount++;
-          if (packetCount >= maxPackets) break;
+          if (packetCount >= maxPackets) {
+            break;
+          }
         }
       }
 
@@ -391,7 +401,7 @@ describe('Decoder', () => {
 
   describe('options', () => {
     it('should create decoder with hwaccelOutputFormat option', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
       const videoStream = media.video();
       assert.ok(videoStream);
 
@@ -407,7 +417,7 @@ describe('Decoder', () => {
     });
 
     it('should create decoder with forcedFramerate option', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
       const videoStream = media.video();
       assert.ok(videoStream);
 
@@ -422,7 +432,7 @@ describe('Decoder', () => {
     });
 
     it('should create decoder with sarOverride option', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
       const videoStream = media.video();
       assert.ok(videoStream);
 
@@ -437,7 +447,7 @@ describe('Decoder', () => {
     });
 
     it('should create decoder with applyCropping option', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
       const videoStream = media.video();
       assert.ok(videoStream);
 
@@ -452,7 +462,7 @@ describe('Decoder', () => {
     });
 
     it('should create decoder with all video options combined', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
       const videoStream = media.video();
       assert.ok(videoStream);
 
@@ -470,7 +480,7 @@ describe('Decoder', () => {
     });
 
     it('should create decoder with options (sync)', () => {
-      const media = MediaInput.openSync(inputFile);
+      const media = Demuxer.openSync(inputFile);
       const videoStream = media.video();
       assert.ok(videoStream);
 
@@ -488,7 +498,7 @@ describe('Decoder', () => {
 
   describe('decode', () => {
     it('should decode video packets (async)', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
       const videoStream = media.video();
       assert.ok(videoStream);
 
@@ -498,18 +508,23 @@ describe('Decoder', () => {
       let packetCount = 0;
       const maxPackets = 10;
 
-      for await (const packet of media.packets()) {
+      for await (using packet of media.packets()) {
+        if (!packet) {
+          break;
+        }
+
         if (packet.streamIndex === videoStream.index) {
-          const frame = await decoder.decode(packet);
+          using frame = await decoder.decode(packet);
           if (frame) {
             assert.ok(frame.width > 0);
             assert.ok(frame.height > 0);
             frameCount++;
-            frame.free();
           }
 
           packetCount++;
-          if (packetCount >= maxPackets) break;
+          if (packetCount >= maxPackets) {
+            break;
+          }
         }
       }
 
@@ -520,7 +535,7 @@ describe('Decoder', () => {
     });
 
     it('should decode video packets (sync)', () => {
-      const media = MediaInput.openSync(inputFile);
+      const media = Demuxer.openSync(inputFile);
       const videoStream = media.video();
       assert.ok(videoStream);
 
@@ -530,18 +545,23 @@ describe('Decoder', () => {
       let packetCount = 0;
       const maxPackets = 10;
 
-      for (const packet of media.packetsSync()) {
+      for (using packet of media.packetsSync()) {
+        if (!packet) {
+          break;
+        }
+
         if (packet.streamIndex === videoStream.index) {
-          const frame = decoder.decodeSync(packet);
+          using frame = decoder.decodeSync(packet);
           if (frame) {
             assert.ok(frame.width > 0);
             assert.ok(frame.height > 0);
             frameCount++;
-            frame.free();
           }
 
           packetCount++;
-          if (packetCount >= maxPackets) break;
+          if (packetCount >= maxPackets) {
+            break;
+          }
         }
       }
 
@@ -552,7 +572,7 @@ describe('Decoder', () => {
     });
 
     it('should decode audio packets (async)', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
       const audioStream = media.audio();
       assert.ok(audioStream);
 
@@ -562,18 +582,23 @@ describe('Decoder', () => {
       let packetCount = 0;
       const maxPackets = 10;
 
-      for await (const packet of media.packets()) {
+      for await (using packet of media.packets()) {
+        if (!packet) {
+          break;
+        }
+
         if (packet.streamIndex === audioStream.index) {
-          const frame = await decoder.decode(packet);
+          using frame = await decoder.decode(packet);
           if (frame) {
             assert.ok(frame.nbSamples > 0);
             assert.ok(frame.sampleRate > 0);
             frameCount++;
-            frame.free();
           }
 
           packetCount++;
-          if (packetCount >= maxPackets) break;
+          if (packetCount >= maxPackets) {
+            break;
+          }
         }
       }
 
@@ -584,7 +609,7 @@ describe('Decoder', () => {
     });
 
     it('should decode audio packets (sync)', () => {
-      const media = MediaInput.openSync(inputFile);
+      const media = Demuxer.openSync(inputFile);
       const audioStream = media.audio();
       assert.ok(audioStream);
 
@@ -594,18 +619,23 @@ describe('Decoder', () => {
       let packetCount = 0;
       const maxPackets = 10;
 
-      for (const packet of media.packetsSync()) {
+      for (using packet of media.packetsSync()) {
+        if (!packet) {
+          break;
+        }
+
         if (packet.streamIndex === audioStream.index) {
-          const frame = decoder.decodeSync(packet);
+          using frame = decoder.decodeSync(packet);
           if (frame) {
             assert.ok(frame.nbSamples > 0);
             assert.ok(frame.sampleRate > 0);
             frameCount++;
-            frame.free();
           }
 
           packetCount++;
-          if (packetCount >= maxPackets) break;
+          if (packetCount >= maxPackets) {
+            break;
+          }
         }
       }
 
@@ -616,20 +646,20 @@ describe('Decoder', () => {
     });
 
     it('should handle null frames gracefully (async)', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
       const videoStream = media.video();
       assert.ok(videoStream);
 
       const decoder = await Decoder.create(videoStream);
 
       // Some packets might not immediately produce frames
-      for await (const packet of media.packets()) {
+      for await (using packet of media.packets()) {
+        if (!packet) {
+          break;
+        }
+
         if (packet.streamIndex === videoStream.index) {
-          const frame = await decoder.decode(packet);
-          // Frame can be null, that's okay
-          if (frame) {
-            frame.free();
-          }
+          using _frame = await decoder.decode(packet);
           break; // Just test one packet
         }
       }
@@ -639,20 +669,20 @@ describe('Decoder', () => {
     });
 
     it('should handle null frames gracefully (sync)', () => {
-      const media = MediaInput.openSync(inputFile);
+      const media = Demuxer.openSync(inputFile);
       const videoStream = media.video();
       assert.ok(videoStream);
 
       const decoder = Decoder.createSync(videoStream);
 
       // Some packets might not immediately produce frames
-      for (const packet of media.packetsSync()) {
+      for (using packet of media.packetsSync()) {
+        if (!packet) {
+          break;
+        }
+
         if (packet.streamIndex === videoStream.index) {
-          const frame = decoder.decodeSync(packet);
-          // Frame can be null, that's okay
-          if (frame) {
-            frame.free();
-          }
+          using _frame = decoder.decodeSync(packet);
           break; // Just test one packet
         }
       }
@@ -662,7 +692,7 @@ describe('Decoder', () => {
     });
 
     it('should not throw when decoder is closed (async)', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
       const videoStream = media.video();
       assert.ok(videoStream);
 
@@ -679,7 +709,7 @@ describe('Decoder', () => {
     });
 
     it('should not throw when decoder is closed (sync)', () => {
-      const media = MediaInput.openSync(inputFile);
+      const media = Demuxer.openSync(inputFile);
       const videoStream = media.video();
       assert.ok(videoStream);
 
@@ -698,7 +728,7 @@ describe('Decoder', () => {
 
   describe('flush', () => {
     it('should flush remaining frames (async)', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
       const videoStream = media.video();
       assert.ok(videoStream);
 
@@ -706,21 +736,28 @@ describe('Decoder', () => {
 
       // Decode some packets first
       let packetCount = 0;
-      for await (const packet of media.packets()) {
+      for await (using packet of media.packets()) {
+        if (!packet) {
+          break;
+        }
+
         if (packet.streamIndex === videoStream.index) {
-          await decoder.decode(packet);
+          using _frame = await decoder.decode(packet);
           packetCount++;
-          if (packetCount >= 5) break;
+          if (packetCount >= 5) {
+            break;
+          }
         }
       }
 
       // Flush decoder
       let flushCount = 0;
-      for await (const frame of decoder.flushFrames()) {
+      for await (using frame of decoder.flushFrames()) {
         assert.ok(frame.width > 0);
-        frame.free();
         flushCount++;
-        if (flushCount > 10) break; // Safety limit
+        if (flushCount > 10) {
+          break; // Safety limit
+        }
       }
 
       decoder.close();
@@ -728,7 +765,7 @@ describe('Decoder', () => {
     });
 
     it('should flush remaining frames (sync)', () => {
-      const media = MediaInput.openSync(inputFile);
+      const media = Demuxer.openSync(inputFile);
       const videoStream = media.video();
       assert.ok(videoStream);
 
@@ -736,21 +773,28 @@ describe('Decoder', () => {
 
       // Decode some packets first
       let packetCount = 0;
-      for (const packet of media.packetsSync()) {
+      for (using packet of media.packetsSync()) {
+        if (!packet) {
+          break;
+        }
+
         if (packet.streamIndex === videoStream.index) {
-          decoder.decodeSync(packet);
+          using _frame = decoder.decodeSync(packet);
           packetCount++;
-          if (packetCount >= 5) break;
+          if (packetCount >= 5) {
+            break;
+          }
         }
       }
 
       // Flush decoder
       let flushCount = 0;
-      for (const frame of decoder.flushFramesSync()) {
+      for (using frame of decoder.flushFramesSync()) {
         assert.ok(frame.width > 0);
-        frame.free();
         flushCount++;
-        if (flushCount > 10) break; // Safety limit
+        if (flushCount > 10) {
+          break; // Safety limit
+        }
       }
 
       decoder.close();
@@ -758,7 +802,7 @@ describe('Decoder', () => {
     });
 
     it('should throw when decoder is closed (async)', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
       const videoStream = media.video();
       assert.ok(videoStream);
 
@@ -772,7 +816,7 @@ describe('Decoder', () => {
     });
 
     it('should throw when decoder is closed (sync)', () => {
-      const media = MediaInput.openSync(inputFile);
+      const media = Demuxer.openSync(inputFile);
       const videoStream = media.video();
       assert.ok(videoStream);
 
@@ -788,7 +832,7 @@ describe('Decoder', () => {
 
   describe('resource management', () => {
     it('should support Symbol.dispose', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
       const videoStream = media.video();
       assert.ok(videoStream);
 
@@ -802,7 +846,7 @@ describe('Decoder', () => {
     });
 
     it('should handle multiple close calls', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
       const videoStream = media.video();
       assert.ok(videoStream);
 
@@ -821,7 +865,7 @@ describe('Decoder', () => {
 
   describe('async iterator', () => {
     it('should decode frames using iterator (async)', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
       const videoStream = media.video();
       assert.ok(videoStream);
 
@@ -830,13 +874,18 @@ describe('Decoder', () => {
       let frameCount = 0;
       const maxFrames = 10;
 
-      for await (const frame of decoder.frames(media.packets())) {
+      for await (using frame of decoder.frames(media.packets())) {
+        if (!frame) {
+          break;
+        }
+
         assert.ok(frame.width > 0);
         assert.ok(frame.height > 0);
-        frame.free();
 
         frameCount++;
-        if (frameCount >= maxFrames) break;
+        if (frameCount >= maxFrames) {
+          break;
+        }
       }
 
       assert.ok(frameCount > 0, 'Should decode at least one frame');
@@ -846,7 +895,7 @@ describe('Decoder', () => {
     });
 
     it('should decode frames using iterator (sync)', () => {
-      const media = MediaInput.openSync(inputFile);
+      const media = Demuxer.openSync(inputFile);
       const videoStream = media.video();
       assert.ok(videoStream);
 
@@ -855,13 +904,18 @@ describe('Decoder', () => {
       let frameCount = 0;
       const maxFrames = 10;
 
-      for (const frame of decoder.framesSync(media.packetsSync())) {
+      for (using frame of decoder.framesSync(media.packetsSync())) {
+        if (!frame) {
+          break;
+        }
+
         assert.ok(frame.width > 0);
         assert.ok(frame.height > 0);
-        frame.free();
 
         frameCount++;
-        if (frameCount >= maxFrames) break;
+        if (frameCount >= maxFrames) {
+          break;
+        }
       }
 
       assert.ok(frameCount > 0, 'Should decode at least one frame');
@@ -871,7 +925,7 @@ describe('Decoder', () => {
     });
 
     it('should only decode packets for its stream (async)', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
       const videoStream = media.video();
       const audioStream = media.audio();
       assert.ok(videoStream);
@@ -883,12 +937,17 @@ describe('Decoder', () => {
       const maxFrames = 5;
 
       // The iterator should only process video packets
-      for await (const frame of videoDecoder.frames(media.packets())) {
+      for await (using frame of videoDecoder.frames(media.packets())) {
+        if (!frame) {
+          break;
+        }
+
         assert.ok(frame.width > 0); // Video frames have width
-        frame.free();
 
         videoFrameCount++;
-        if (videoFrameCount >= maxFrames) break;
+        if (videoFrameCount >= maxFrames) {
+          break;
+        }
       }
 
       assert.ok(videoFrameCount > 0, 'Should decode video frames');
@@ -898,7 +957,7 @@ describe('Decoder', () => {
     });
 
     it('should only decode packets for its stream (sync)', () => {
-      const media = MediaInput.openSync(inputFile);
+      const media = Demuxer.openSync(inputFile);
       const videoStream = media.video();
       const audioStream = media.audio();
       assert.ok(videoStream);
@@ -910,12 +969,17 @@ describe('Decoder', () => {
       const maxFrames = 5;
 
       // The iterator should only process video packets
-      for (const frame of videoDecoder.framesSync(media.packetsSync())) {
+      for (using frame of videoDecoder.framesSync(media.packetsSync())) {
+        if (!frame) {
+          break;
+        }
+
         assert.ok(frame.width > 0); // Video frames have width
-        frame.free();
 
         videoFrameCount++;
-        if (videoFrameCount >= maxFrames) break;
+        if (videoFrameCount >= maxFrames) {
+          break;
+        }
       }
 
       assert.ok(videoFrameCount > 0, 'Should decode video frames');
@@ -925,7 +989,7 @@ describe('Decoder', () => {
     });
 
     it('should handle empty packet stream (async)', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
       const videoStream = media.video();
       assert.ok(videoStream);
 
@@ -937,9 +1001,12 @@ describe('Decoder', () => {
       }
 
       let frameCount = 0;
-      for await (const frame of decoder.frames(emptyPackets())) {
+      for await (using frame of decoder.frames(emptyPackets())) {
+        if (!frame) {
+          break;
+        }
+
         frameCount++;
-        frame.free();
       }
 
       assert.equal(frameCount, 0, 'Should not produce frames from empty stream');
@@ -949,7 +1016,7 @@ describe('Decoder', () => {
     });
 
     it('should handle empty packet stream (sync)', () => {
-      const media = MediaInput.openSync(inputFile);
+      const media = Demuxer.openSync(inputFile);
       const videoStream = media.video();
       assert.ok(videoStream);
 
@@ -961,9 +1028,12 @@ describe('Decoder', () => {
       }
 
       let frameCount = 0;
-      for (const frame of decoder.framesSync(emptyPackets())) {
+      for (using frame of decoder.framesSync(emptyPackets())) {
+        if (!frame) {
+          break;
+        }
+
         frameCount++;
-        frame.free();
       }
 
       assert.equal(frameCount, 0, 'Should not produce frames from empty stream');
@@ -975,7 +1045,7 @@ describe('Decoder', () => {
 
   describe('stream identification', () => {
     it('should track stream index (async)', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
       const videoStream = media.video();
       const audioStream = media.audio();
       assert.ok(videoStream);
@@ -994,7 +1064,7 @@ describe('Decoder', () => {
     });
 
     it('should track stream index (sync)', () => {
-      const media = MediaInput.openSync(inputFile);
+      const media = Demuxer.openSync(inputFile);
       const videoStream = media.video();
       const audioStream = media.audio();
       assert.ok(videoStream);

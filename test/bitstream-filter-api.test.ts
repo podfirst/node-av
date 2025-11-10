@@ -1,7 +1,7 @@
 import assert from 'node:assert';
 import { describe, it } from 'node:test';
 
-import { AV_CODEC_ID_H264, BitStreamFilterAPI, MediaInput, Packet } from '../src/index.js';
+import { AV_CODEC_ID_H264, BitStreamFilterAPI, Demuxer, Packet } from '../src/index.js';
 import { getInputFile, prepareTestEnvironment } from './index.js';
 
 prepareTestEnvironment();
@@ -11,7 +11,7 @@ const inputFile = getInputFile('demux.mp4');
 describe('BitStreamFilterAPI', () => {
   describe('Basic Operations', () => {
     it('should throw for non-existent filter', async () => {
-      await using media = await MediaInput.open(inputFile);
+      await using media = await Demuxer.open(inputFile);
       const stream = media.video();
 
       assert.throws(() => BitStreamFilterAPI.create('non_existent_filter', stream!), /Bitstream filter 'non_existent_filter' not found/);
@@ -19,8 +19,8 @@ describe('BitStreamFilterAPI', () => {
   });
 
   describe('Packet Processing', () => {
-    it('should process packets through null filter (async)', async () => {
-      await using media = await MediaInput.open(inputFile);
+    it('should filter packets through null filter (async)', async () => {
+      await using media = await Demuxer.open(inputFile);
       const stream = media.video();
       assert.ok(stream);
 
@@ -30,10 +30,16 @@ describe('BitStreamFilterAPI', () => {
       let packetsProcessed = 0;
       const maxPackets = 5;
 
-      for await (const packet of media.packets()) {
-        if (packet.streamIndex !== stream.index) continue;
+      for await (using packet of media.packets()) {
+        if (!packet) {
+          break;
+        }
 
-        const filtered = await bsf.process(packet);
+        if (packet.streamIndex !== stream.index) {
+          continue;
+        }
+
+        const filtered = await bsf.filterAll(packet);
 
         // null filter should pass packets through
         assert.ok(Array.isArray(filtered), 'Should return array of packets');
@@ -44,14 +50,16 @@ describe('BitStreamFilterAPI', () => {
         }
 
         packetsProcessed++;
-        if (packetsProcessed >= maxPackets) break;
+        if (packetsProcessed >= maxPackets) {
+          break;
+        }
       }
 
       assert.ok(packetsProcessed > 0, 'Should have processed at least one packet');
     });
 
-    it('should process packets through null filter (sync)', () => {
-      using media = MediaInput.openSync(inputFile);
+    it('should filter packets through null filter (sync)', () => {
+      using media = Demuxer.openSync(inputFile);
       const stream = media.video();
       assert.ok(stream);
 
@@ -61,10 +69,16 @@ describe('BitStreamFilterAPI', () => {
       let packetsProcessed = 0;
       const maxPackets = 5;
 
-      for (const packet of media.packetsSync()) {
-        if (packet.streamIndex !== stream.index) continue;
+      for (using packet of media.packetsSync()) {
+        if (!packet) {
+          break;
+        }
 
-        const filtered = bsf.processSync(packet);
+        if (packet.streamIndex !== stream.index) {
+          continue;
+        }
+
+        const filtered = bsf.filterAllSync(packet);
 
         // null filter should pass packets through
         assert.ok(Array.isArray(filtered), 'Should return array of packets');
@@ -75,106 +89,138 @@ describe('BitStreamFilterAPI', () => {
         }
 
         packetsProcessed++;
-        if (packetsProcessed >= maxPackets) break;
+        if (packetsProcessed >= maxPackets) {
+          break;
+        }
       }
 
       assert.ok(packetsProcessed > 0, 'Should have processed at least one packet');
     });
 
     it('should handle flush correctly (async)', async () => {
-      await using media = await MediaInput.open(inputFile);
+      await using media = await Demuxer.open(inputFile);
       const stream = media.video();
       assert.ok(stream);
 
       using bsf = BitStreamFilterAPI.create('null', stream);
 
       // Process one packet
-      for await (const packet of media.packets()) {
-        if (packet.streamIndex !== stream.index) continue;
+      for await (using packet of media.packets()) {
+        if (!packet) {
+          break;
+        }
 
-        await bsf.process(packet);
-        break; // Just process one
+        if (packet.streamIndex !== stream.index) {
+          continue;
+        }
+
+        await bsf.filter(packet);
+        break; // Just filter one
       }
 
       // Flush
-      const remaining = await bsf.flush();
+      const remaining: Packet[] = [];
+      for await (using pkt of bsf.flushPackets()) {
+        remaining.push(pkt);
+      }
       assert.ok(Array.isArray(remaining), 'Flush should return array');
     });
 
     it('should handle flush correctly (sync)', () => {
-      using media = MediaInput.openSync(inputFile);
+      using media = Demuxer.openSync(inputFile);
       const stream = media.video();
       assert.ok(stream);
 
       using bsf = BitStreamFilterAPI.create('null', stream);
 
       // Process one packet
-      for (const packet of media.packetsSync()) {
-        if (packet.streamIndex !== stream.index) continue;
+      for (using packet of media.packetsSync()) {
+        if (!packet) {
+          break;
+        }
 
-        bsf.processSync(packet);
-        break; // Just process one
+        if (packet.streamIndex !== stream.index) {
+          continue;
+        }
+
+        bsf.filterSync(packet);
+        break; // Just filter one
       }
 
-      // Flush
-      const remaining = bsf.flushSync();
+      const remaining: Packet[] = [];
+      for (const pkt of bsf.flushPacketsSync()) {
+        remaining.push(pkt);
+      }
+
       assert.ok(Array.isArray(remaining), 'Flush should return array');
     });
 
     it('should handle flushPackets generator (async)', async () => {
-      await using media = await MediaInput.open(inputFile);
+      await using media = await Demuxer.open(inputFile);
       const stream = media.video();
       assert.ok(stream);
 
       using bsf = BitStreamFilterAPI.create('null', stream);
 
       // Process one packet
-      for await (const packet of media.packets()) {
-        if (packet.streamIndex !== stream.index) continue;
+      for await (using packet of media.packets()) {
+        if (!packet) {
+          break;
+        }
 
-        await bsf.process(packet);
-        break; // Just process one
+        if (packet.streamIndex !== stream.index) {
+          continue;
+        }
+
+        await bsf.filter(packet);
+        break; // Just filter one
       }
 
       // Flush with generator
       let flushedCount = 0;
-      for await (const packet of bsf.flushPackets()) {
+      for await (using packet of bsf.flushPackets()) {
         assert.ok(packet instanceof Packet);
         flushedCount++;
       }
 
       // null filter may or may not have buffered packets
-      assert.ok(flushedCount >= 0, 'Should process flush packets');
+      assert.ok(flushedCount >= 0, 'Should filter flush packets');
     });
 
     it('should handle flushPackets generator (sync)', () => {
-      using media = MediaInput.openSync(inputFile);
+      using media = Demuxer.openSync(inputFile);
       const stream = media.video();
       assert.ok(stream);
 
       using bsf = BitStreamFilterAPI.create('null', stream);
 
       // Process one packet
-      for (const packet of media.packetsSync()) {
-        if (packet.streamIndex !== stream.index) continue;
+      for (using packet of media.packetsSync()) {
+        if (!packet) {
+          break;
+        }
 
-        bsf.processSync(packet);
-        break; // Just process one
+        if (packet.streamIndex !== stream.index) {
+          continue;
+        }
+
+        bsf.filterSync(packet);
+        break; // Just filter one
       }
 
       // Flush with generator
       let flushedCount = 0;
-      for (const packet of bsf.flushPacketsSync()) {
+      for (using packet of bsf.flushPacketsSync()) {
         assert.ok(packet instanceof Packet);
         flushedCount++;
       }
 
       // null filter may or may not have buffered packets
-      assert.ok(flushedCount >= 0, 'Should process flush packets');
+      assert.ok(flushedCount >= 0, 'Should filter flush packets');
     });
 
     it('should reset filter state', async () => {
-      await using media = await MediaInput.open(inputFile);
+      await using media = await Demuxer.open(inputFile);
       const stream = media.video();
       assert.ok(stream);
 
@@ -186,8 +232,8 @@ describe('BitStreamFilterAPI', () => {
   });
 
   describe('Stream Processing', () => {
-    it('should process packet stream with packets (async)', async () => {
-      await using media = await MediaInput.open(inputFile);
+    it('should filter packet stream with packets (async)', async () => {
+      await using media = await Demuxer.open(inputFile);
       const stream = media.video();
       assert.ok(stream);
 
@@ -196,7 +242,11 @@ describe('BitStreamFilterAPI', () => {
       // Create filtered packet stream
       async function* videoPackets() {
         let count = 0;
-        for await (const packet of media.packets()) {
+        for await (using packet of media.packets()) {
+          if (!packet) {
+            break;
+          }
+
           if (packet.streamIndex === stream?.index) {
             yield packet;
             count++;
@@ -207,6 +257,9 @@ describe('BitStreamFilterAPI', () => {
 
       let processedCount = 0;
       for await (const filtered of bsf.packets(videoPackets())) {
+        if (!filtered) {
+          break;
+        }
         assert.ok(filtered instanceof Packet);
         assert.ok(filtered.size >= 0);
         processedCount++;
@@ -215,8 +268,8 @@ describe('BitStreamFilterAPI', () => {
       assert.ok(processedCount > 0, 'Should have processed packets');
     });
 
-    it('should process packet stream with packets (sync)', () => {
-      using media = MediaInput.openSync(inputFile);
+    it('should filter packet stream with packets (sync)', () => {
+      using media = Demuxer.openSync(inputFile);
       const stream = media.video();
       assert.ok(stream);
 
@@ -225,7 +278,11 @@ describe('BitStreamFilterAPI', () => {
       // Create filtered packet stream
       function* videoPackets() {
         let count = 0;
-        for (const packet of media.packetsSync()) {
+        for (using packet of media.packetsSync()) {
+          if (!packet) {
+            break;
+          }
+
           if (packet.streamIndex === stream?.index) {
             yield packet;
             count++;
@@ -236,6 +293,10 @@ describe('BitStreamFilterAPI', () => {
 
       let processedCount = 0;
       for (const filtered of bsf.packetsSync(videoPackets())) {
+        if (!filtered) {
+          break;
+        }
+
         assert.ok(filtered instanceof Packet);
         assert.ok(filtered.size >= 0);
         processedCount++;
@@ -246,8 +307,8 @@ describe('BitStreamFilterAPI', () => {
   });
 
   describe('H.264 Filtering', () => {
-    it('should process H.264 with h264_mp4toannexb filter (async)', async function (t) {
-      await using media = await MediaInput.open(inputFile);
+    it('should filter H.264 with h264_mp4toannexb filter (async)', async function (t) {
+      await using media = await Demuxer.open(inputFile);
       const stream = media.video();
 
       if (stream?.codecpar.codecId !== AV_CODEC_ID_H264) {
@@ -266,26 +327,38 @@ describe('BitStreamFilterAPI', () => {
       let packetsProcessed = 0;
       const maxPackets = 3;
 
-      for await (const packet of media.packets()) {
-        if (packet.streamIndex !== stream.index) continue;
+      for await (using packet of media.packets()) {
+        if (!packet) {
+          break;
+        }
 
-        const filtered = await bsf.process(packet);
+        if (packet.streamIndex !== stream.index) {
+          continue;
+        }
+
+        const filtered = await bsf.filterAll(packet);
 
         for (const outPacket of filtered) {
+          if (!outPacket) {
+            continue;
+          }
+
           assert.ok(outPacket.size > 0, 'Filtered packet should have data');
           // h264_mp4toannexb converts MP4 format to Annex B
           // The output should be valid H.264 Annex B stream
         }
 
         packetsProcessed++;
-        if (packetsProcessed >= maxPackets) break;
+        if (packetsProcessed >= maxPackets) {
+          break;
+        }
       }
 
       assert.ok(packetsProcessed > 0, 'Should have processed at least one packet');
     });
 
-    it('should process H.264 with h264_mp4toannexb filter (sync)', function (t) {
-      using media = MediaInput.openSync(inputFile);
+    it('should filter H.264 with h264_mp4toannexb filter (sync)', function (t) {
+      using media = Demuxer.openSync(inputFile);
       const stream = media.video();
 
       if (stream?.codecpar.codecId !== AV_CODEC_ID_H264) {
@@ -304,10 +377,16 @@ describe('BitStreamFilterAPI', () => {
       let packetsProcessed = 0;
       const maxPackets = 3;
 
-      for (const packet of media.packetsSync()) {
-        if (packet.streamIndex !== stream.index) continue;
+      for (using packet of media.packetsSync()) {
+        if (!packet) {
+          break;
+        }
 
-        const filtered = bsf.processSync(packet);
+        if (packet.streamIndex !== stream.index) {
+          continue;
+        }
+
+        const filtered = bsf.filterAllSync(packet);
 
         for (const outPacket of filtered) {
           assert.ok(outPacket.size > 0, 'Filtered packet should have data');
@@ -316,7 +395,9 @@ describe('BitStreamFilterAPI', () => {
         }
 
         packetsProcessed++;
-        if (packetsProcessed >= maxPackets) break;
+        if (packetsProcessed >= maxPackets) {
+          break;
+        }
       }
 
       assert.ok(packetsProcessed > 0, 'Should have processed at least one packet');
@@ -325,7 +406,7 @@ describe('BitStreamFilterAPI', () => {
 
   describe('Error Handling', () => {
     it('should not throw when using disposed filter', async () => {
-      await using media = await MediaInput.open(inputFile);
+      await using media = await Demuxer.open(inputFile);
       const stream = media.video();
       assert.ok(stream);
 
@@ -337,7 +418,7 @@ describe('BitStreamFilterAPI', () => {
       packet.alloc();
 
       // Should not throw when trying to use disposed filter
-      await assert.doesNotReject(async () => await bsf.process(packet));
+      await assert.doesNotReject(async () => await bsf.filter(packet));
       await assert.doesNotReject(async () => await bsf.flush());
       assert.doesNotThrow(() => bsf.reset());
 
@@ -345,7 +426,7 @@ describe('BitStreamFilterAPI', () => {
     });
 
     it('should not throw when using disposed filter (sync)', () => {
-      using media = MediaInput.openSync(inputFile);
+      using media = Demuxer.openSync(inputFile);
       const stream = media.video();
       assert.ok(stream);
 
@@ -357,7 +438,7 @@ describe('BitStreamFilterAPI', () => {
       packet.alloc();
 
       // Should not throw when trying to use disposed filter
-      assert.doesNotThrow(() => bsf.processSync(packet));
+      assert.doesNotThrow(() => bsf.filterSync(packet));
       assert.doesNotThrow(() => bsf.flushSync());
       assert.doesNotThrow(() => bsf.reset());
 

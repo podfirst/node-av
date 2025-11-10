@@ -8,12 +8,12 @@ import {
   AV_SAMPLE_FMT_S16,
   AVFILTER_CMD_FLAG_ONE,
   Decoder,
+  Demuxer,
   Encoder,
   FF_ENCODER_LIBX264,
   FilterAPI,
   FilterPreset,
   Frame,
-  MediaInput,
   Rational,
 } from '../src/index.js';
 import { getInputFile, prepareTestEnvironment } from './index.js';
@@ -85,7 +85,7 @@ describe('High-Level Filter API', () => {
       // Test with a malformed filter string that will fail during graph config
       const filter = FilterAPI.create('scale=w=invalid:h=invalid');
 
-      const frame = new Frame();
+      using frame = new Frame();
       frame.alloc();
       frame.width = 1920;
       frame.height = 1080;
@@ -95,10 +95,9 @@ describe('High-Level Filter API', () => {
       frame.getBuffer();
 
       await assert.rejects(async () => {
-        await filter.process(frame);
+        using _frame = await filter.process(frame);
       });
 
-      frame.free();
       filter.close();
     });
   });
@@ -190,7 +189,7 @@ describe('High-Level Filter API', () => {
       const filter = FilterAPI.create('scale=1280:720');
 
       // Create a test frame
-      const frame = new Frame();
+      using frame = new Frame();
       frame.alloc();
       frame.width = 1920;
       frame.height = 1080;
@@ -202,7 +201,7 @@ describe('High-Level Filter API', () => {
 
       console.log('Processing frame through filter...');
 
-      const output = await filter.process(frame);
+      using output = await filter.process(frame);
 
       console.log('Frame processed.');
 
@@ -210,8 +209,6 @@ describe('High-Level Filter API', () => {
       assert.equal(output.width, 1280);
       assert.equal(output.height, 720);
 
-      frame.free();
-      output.free();
       filter.close();
     });
 
@@ -219,7 +216,7 @@ describe('High-Level Filter API', () => {
       const filter = FilterAPI.create('scale=1280:720');
 
       // Create a test frame
-      const frame = new Frame();
+      using frame = new Frame();
       frame.alloc();
       frame.width = 1920;
       frame.height = 1080;
@@ -229,13 +226,11 @@ describe('High-Level Filter API', () => {
       const ret = frame.getBuffer();
       assert.ok(ret >= 0);
 
-      const output = filter.processSync(frame);
+      using output = filter.processSync(frame);
       assert.ok(output);
       assert.equal(output.width, 1280);
       assert.equal(output.height, 720);
 
-      frame.free();
-      output.free();
       filter.close();
     });
 
@@ -244,7 +239,7 @@ describe('High-Level Filter API', () => {
 
       // Send some frames
       for (let i = 0; i < 5; i++) {
-        const frame = new Frame();
+        using frame = new Frame();
         frame.alloc();
         frame.width = 640;
         frame.height = 480;
@@ -254,11 +249,7 @@ describe('High-Level Filter API', () => {
         const ret = frame.getBuffer();
         assert.ok(ret >= 0);
 
-        const output = await filter.process(frame);
-        if (output) {
-          output.free();
-        }
-        frame.free();
+        using _output = await filter.process(frame);
       }
 
       // Flush
@@ -267,10 +258,9 @@ describe('High-Level Filter API', () => {
       // Receive remaining frames
       let remainingCount = 0;
       while (true) {
-        const frame = await filter.receive();
+        using frame = await filter.receive();
         if (!frame) break;
         remainingCount++;
-        frame.free();
       }
 
       assert.ok(remainingCount >= 0);
@@ -282,7 +272,7 @@ describe('High-Level Filter API', () => {
 
       // Send some frames
       for (let i = 0; i < 5; i++) {
-        const frame = new Frame();
+        using frame = new Frame();
         frame.alloc();
         frame.width = 640;
         frame.height = 480;
@@ -292,11 +282,7 @@ describe('High-Level Filter API', () => {
         const ret = frame.getBuffer();
         assert.ok(ret >= 0);
 
-        const output = filter.processSync(frame);
-        if (output) {
-          output.free();
-        }
-        frame.free();
+        using _output = filter.processSync(frame);
       }
 
       // Flush
@@ -305,10 +291,9 @@ describe('High-Level Filter API', () => {
       // Receive remaining frames
       let remainingCount = 0;
       while (true) {
-        const frame = filter.receiveSync();
+        using frame = filter.receiveSync();
         if (!frame) break;
         remainingCount++;
-        frame.free();
       }
 
       assert.ok(remainingCount >= 0);
@@ -318,7 +303,7 @@ describe('High-Level Filter API', () => {
 
   describe('Async Generator Interface', () => {
     it('should process frames via async generator', async () => {
-      const media = await MediaInput.open(testVideoPath);
+      const media = await Demuxer.open(testVideoPath);
       const videoStream = media.video();
       assert.ok(videoStream);
       const decoder = await Decoder.create(videoStream);
@@ -332,7 +317,11 @@ describe('High-Level Filter API', () => {
 
       async function* limitedFrames() {
         let count = 0;
-        for await (const packet of media.packets()) {
+        for await (using packet of media.packets()) {
+          if (!packet) {
+            break;
+          }
+
           if (packet.streamIndex === videoStream!.index) {
             const frame = await decoder.decode(packet);
             if (frame) {
@@ -344,11 +333,13 @@ describe('High-Level Filter API', () => {
         }
       }
 
-      for await (const filtered of filter.frames(limitedFrames())) {
+      for await (using filtered of filter.frames(limitedFrames())) {
+        if (!filtered) {
+          break;
+        }
         assert.ok(filtered);
         assert.equal(filtered.width, 320);
         assert.equal(filtered.height, 240);
-        filtered.free();
         frameCount++;
       }
 
@@ -360,7 +351,7 @@ describe('High-Level Filter API', () => {
     });
 
     it('should process frames via sync generator', () => {
-      const media = MediaInput.openSync(testVideoPath);
+      const media = Demuxer.openSync(testVideoPath);
       const videoStream = media.video();
       assert.ok(videoStream);
       const decoder = Decoder.createSync(videoStream);
@@ -374,7 +365,11 @@ describe('High-Level Filter API', () => {
 
       function* limitedFrames() {
         let count = 0;
-        for (const packet of media.packetsSync()) {
+        for (using packet of media.packetsSync()) {
+          if (!packet) {
+            break;
+          }
+
           if (packet.streamIndex === videoStream!.index) {
             const frame = decoder.decodeSync(packet);
             if (frame) {
@@ -387,6 +382,9 @@ describe('High-Level Filter API', () => {
       }
 
       for (const filtered of filter.framesSync(limitedFrames())) {
+        if (!filtered) {
+          break;
+        }
         assert.ok(filtered);
         assert.equal(filtered.width, 320);
         assert.equal(filtered.height, 240);
@@ -407,7 +405,7 @@ describe('High-Level Filter API', () => {
       const filter = FilterAPI.create('volume=0.5');
 
       // Initialize filter with a frame first
-      const frame = new Frame();
+      using frame = new Frame();
       frame.alloc();
       frame.sampleRate = 48000;
       frame.format = AV_SAMPLE_FMT_FLTP;
@@ -417,8 +415,7 @@ describe('High-Level Filter API', () => {
       frame.timeBase = new Rational(1, 48000);
       frame.getBuffer();
 
-      await filter.process(frame);
-      frame.free();
+      using _output = await filter.process(frame);
 
       const description = filter.getGraphDescription();
       assert.ok(description);
@@ -431,7 +428,7 @@ describe('High-Level Filter API', () => {
       const filter = FilterAPI.create('volume=0.5');
 
       // Initialize filter with a frame first
-      const frame = new Frame();
+      using frame = new Frame();
       frame.alloc();
       frame.sampleRate = 48000;
       frame.format = AV_SAMPLE_FMT_FLTP;
@@ -441,8 +438,7 @@ describe('High-Level Filter API', () => {
       frame.timeBase = new Rational(1, 48000);
       frame.getBuffer();
 
-      filter.processSync(frame);
-      frame.free();
+      using _output = filter.processSync(frame);
 
       const description = filter.getGraphDescription();
       assert.ok(description);
@@ -458,7 +454,7 @@ describe('High-Level Filter API', () => {
       assert.ok(!filter.isReady());
 
       // Initialize with a frame
-      const frame = new Frame();
+      using frame = new Frame();
       frame.alloc();
       frame.width = 1920;
       frame.height = 1080;
@@ -466,8 +462,7 @@ describe('High-Level Filter API', () => {
       frame.timeBase = new Rational(1, 30);
       frame.getBuffer();
 
-      await filter.process(frame);
-      frame.free();
+      using _output = await filter.process(frame);
 
       // Now should be ready
       assert.ok(filter.isReady());
@@ -483,7 +478,7 @@ describe('High-Level Filter API', () => {
       assert.ok(!filter.isReady());
 
       // Initialize with a frame
-      const frame = new Frame();
+      using frame = new Frame();
       frame.alloc();
       frame.width = 1920;
       frame.height = 1080;
@@ -491,8 +486,7 @@ describe('High-Level Filter API', () => {
       frame.timeBase = new Rational(1, 30);
       frame.getBuffer();
 
-      filter.processSync(frame);
-      frame.free();
+      using _output = filter.processSync(frame);
 
       // Now should be ready
       assert.ok(filter.isReady());
@@ -529,7 +523,7 @@ describe('High-Level Filter API', () => {
       // Invalid configurations are detected when first frame is processed
       const filter = FilterAPI.create('volume=0.5');
 
-      const frame = new Frame();
+      using frame = new Frame();
       frame.alloc();
       frame.sampleRate = 0; // Invalid sample rate
       frame.format = AV_SAMPLE_FMT_FLTP;
@@ -538,10 +532,9 @@ describe('High-Level Filter API', () => {
       frame.timeBase = new Rational(1, 48000);
 
       await assert.rejects(async () => {
-        await filter.process(frame);
+        using _output = await filter.process(frame);
       });
 
-      frame.free();
       filter.close();
     });
 
@@ -549,7 +542,7 @@ describe('High-Level Filter API', () => {
       // Invalid configurations are detected when first frame is processed
       const filter = FilterAPI.create('volume=0.5');
 
-      const frame = new Frame();
+      using frame = new Frame();
       frame.alloc();
       frame.sampleRate = 0; // Invalid sample rate
       frame.format = AV_SAMPLE_FMT_FLTP;
@@ -558,10 +551,9 @@ describe('High-Level Filter API', () => {
       frame.timeBase = new Rational(1, 48000);
 
       assert.throws(() => {
-        filter.processSync(frame);
+        using _output = filter.processSync(frame);
       });
 
-      frame.free();
       filter.close();
     });
 
@@ -569,7 +561,7 @@ describe('High-Level Filter API', () => {
       const filter = FilterAPI.create('volume=0.5');
       filter.close();
 
-      const frame = new Frame();
+      using frame = new Frame();
       frame.alloc();
       frame.nbSamples = 1024;
       frame.format = AV_SAMPLE_FMT_FLTP;
@@ -578,16 +570,16 @@ describe('High-Level Filter API', () => {
       frame.timeBase = new Rational(1, 48000);
       frame.getBuffer();
 
-      await assert.doesNotReject(async () => await filter.process(frame));
-
-      frame.free();
+      await assert.doesNotReject(async () => {
+        using _output = await filter.process(frame);
+      });
     });
 
     it('should not throw when processing after free (sync)', () => {
       const filter = FilterAPI.create('volume=0.5');
       filter.close();
 
-      const frame = new Frame();
+      using frame = new Frame();
       frame.alloc();
       frame.nbSamples = 1024;
       frame.format = AV_SAMPLE_FMT_FLTP;
@@ -596,9 +588,9 @@ describe('High-Level Filter API', () => {
       frame.timeBase = new Rational(1, 48000);
       frame.getBuffer();
 
-      assert.doesNotThrow(() => filter.processSync(frame));
-
-      frame.free();
+      assert.doesNotThrow(() => {
+        using _output = filter.processSync(frame);
+      });
     });
 
     it('should handle flush after free', async () => {
@@ -633,7 +625,7 @@ describe('High-Level Filter API', () => {
     it('should handle video scaling and format conversion', async () => {
       const filter = FilterAPI.create('scale=1280:720,format=yuv420p');
 
-      const frame = new Frame();
+      using frame = new Frame();
       frame.alloc();
       frame.width = 1920;
       frame.height = 1080;
@@ -643,15 +635,13 @@ describe('High-Level Filter API', () => {
       const ret = frame.getBuffer();
       assert.ok(ret >= 0);
 
-      const output = await filter.process(frame);
+      using output = await filter.process(frame);
       if (output) {
         assert.equal(output.width, 1280);
         assert.equal(output.height, 720);
         assert.equal(output.format, AV_PIX_FMT_YUV420P);
-        output.free();
       }
 
-      frame.free();
       filter.close();
     });
 
@@ -666,7 +656,7 @@ describe('High-Level Filter API', () => {
 
   describe('Real Media Processing', () => {
     it('should process real video file', async () => {
-      const media = await MediaInput.open(testVideoPath);
+      const media = await Demuxer.open(testVideoPath);
       const videoStream = media.video();
       assert.ok(videoStream);
       const decoder = await Decoder.create(videoStream);
@@ -678,19 +668,23 @@ describe('High-Level Filter API', () => {
       let processedFrames = 0;
       const maxFrames = 5;
 
-      for await (const packet of media.packets()) {
+      for await (using packet of media.packets()) {
+        if (!packet) {
+          break;
+        }
+
         if (packet.streamIndex === videoStream.index) {
-          const frame = await decoder.decode(packet);
+          using frame = await decoder.decode(packet);
           if (frame) {
-            const filtered = await filter.process(frame);
+            using filtered = await filter.process(frame);
             if (filtered) {
               assert.equal(filtered.width, 640);
               assert.equal(filtered.height, 480);
-              filtered.free();
               processedFrames++;
             }
-            frame.free();
-            if (processedFrames >= maxFrames) break;
+            if (processedFrames >= maxFrames) {
+              break;
+            }
           }
         }
       }
@@ -716,7 +710,7 @@ describe('High-Level Filter API', () => {
     });
 
     it('should process real audio file', async () => {
-      const media = await MediaInput.open(testAudioPath);
+      const media = await Demuxer.open(testAudioPath);
 
       // Find audio stream
       const audioStream = media.audio();
@@ -730,19 +724,21 @@ describe('High-Level Filter API', () => {
       let processedFrames = 0;
       const maxFrames = 10;
 
-      for await (const packet of media.packets()) {
+      for await (using packet of media.packets()) {
+        if (!packet) {
+          break;
+        }
+
         if (packet.streamIndex === audioStream.index) {
-          const frame = await decoder.decode(packet);
+          using frame = await decoder.decode(packet);
           if (frame) {
-            const filtered = await filter.process(frame);
+            using filtered = await filter.process(frame);
             if (filtered) {
               // Check that the filter applied the correct format
               assert.equal(filtered.sampleRate, 44100);
               assert.equal(filtered.format, AV_SAMPLE_FMT_S16);
-              filtered.free();
               processedFrames++;
             }
-            frame.free();
             if (processedFrames >= maxFrames) break;
           }
         }
@@ -831,7 +827,7 @@ describe('High-Level Filter API', () => {
       const filter = FilterAPI.create('volume=0.5');
 
       // Initialize filter first with a frame
-      const frame = new Frame();
+      using frame = new Frame();
       frame.alloc();
       frame.sampleRate = 48000;
       frame.format = AV_SAMPLE_FMT_FLTP;
@@ -840,8 +836,7 @@ describe('High-Level Filter API', () => {
       frame.pts = 0n;
       frame.timeBase = new Rational(1, 48000);
       frame.getBuffer();
-      await filter.process(frame);
-      frame.free();
+      using _output = await filter.process(frame);
 
       try {
         // Send an invalid command

@@ -1,7 +1,7 @@
 import assert from 'node:assert';
 import { after, describe, it } from 'node:test';
 
-import { AVERROR_EAGAIN, AVERROR_EOF, AVMEDIA_TYPE_AUDIO, AVMEDIA_TYPE_VIDEO, MediaInput, Packet, SyncQueue, SyncQueueType } from '../src/index.js';
+import { AVERROR_EAGAIN, AVERROR_EOF, AVMEDIA_TYPE_AUDIO, AVMEDIA_TYPE_VIDEO, Demuxer, Packet, SyncQueue, SyncQueueType } from '../src/index.js';
 import { getInputFile, prepareTestEnvironment } from './index.js';
 
 prepareTestEnvironment();
@@ -9,7 +9,7 @@ prepareTestEnvironment();
 const inputFile = getInputFile('demux.mp4');
 
 describe('SyncQueue', () => {
-  const openInstances: MediaInput[] = [];
+  const openInstances: Demuxer[] = [];
   const queues: SyncQueue[] = [];
 
   after(async () => {
@@ -244,7 +244,7 @@ describe('SyncQueue', () => {
 
   describe('Real Media File Integration', () => {
     it('should synchronize packets from real media file', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
       openInstances.push(media);
 
       const sq = SyncQueue.create(SyncQueueType.PACKETS, 5000000);
@@ -270,6 +270,10 @@ describe('SyncQueue', () => {
       const sentPackets = [];
 
       for await (using packet of media.packets()) {
+        if (!packet) {
+          break;
+        }
+
         const sqIdx = streamMap.get(packet.streamIndex);
         if (sqIdx !== undefined) {
           // Set packet timeBase from stream (required by sync_queue)

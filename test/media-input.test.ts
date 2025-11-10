@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { after, describe, it } from 'node:test';
 
-import { MediaInput } from '../src/api/index.js';
+import { Demuxer } from '../src/api/index.js';
 import { StreamingUtils } from '../src/api/utilities/streaming.js';
 import { AV_CODEC_ID_H264, AV_CODEC_ID_OPUS } from '../src/constants/constants.js';
 import { AVMEDIA_TYPE_AUDIO, AVMEDIA_TYPE_VIDEO, AVSEEK_CUR, AVSEEK_END, AVSEEK_SET, AVSEEK_SIZE } from '../src/index.js';
@@ -16,9 +16,9 @@ prepareTestEnvironment();
 
 const inputFile = getInputFile('demux.mp4');
 
-describe('MediaInput', () => {
-  // Track all open MediaInput instances
-  const openInstances: MediaInput[] = [];
+describe('Demuxer', () => {
+  // Track all open Demuxer instances
+  const openInstances: Demuxer[] = [];
 
   // Ensure all instances are closed before test suite ends
   after(async () => {
@@ -42,9 +42,9 @@ describe('MediaInput', () => {
 
   describe('open', () => {
     it('should open from file path (async)', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
 
-      assert.ok(media, 'Should create MediaInput');
+      assert.ok(media, 'Should create Demuxer');
       assert.ok(media.streams.length > 0, 'Should have streams');
       assert.ok(media.duration > 0, 'Should have duration');
 
@@ -52,9 +52,9 @@ describe('MediaInput', () => {
     });
 
     it('should open from file path (sync)', () => {
-      const media = MediaInput.openSync(inputFile);
+      const media = Demuxer.openSync(inputFile);
 
-      assert.ok(media, 'Should create MediaInput');
+      assert.ok(media, 'Should create Demuxer');
       assert.ok(media.streams.length > 0, 'Should have streams');
       assert.ok(media.duration > 0, 'Should have duration');
 
@@ -63,9 +63,9 @@ describe('MediaInput', () => {
 
     it('should open from Buffer (async)', async () => {
       const buffer = await readFile(inputFile);
-      const media = await MediaInput.open(buffer);
+      const media = await Demuxer.open(buffer);
 
-      assert.ok(media, 'Should create MediaInput from Buffer');
+      assert.ok(media, 'Should create Demuxer from Buffer');
       assert.ok(media.streams.length > 0, 'Should have streams');
 
       await media.close();
@@ -73,20 +73,20 @@ describe('MediaInput', () => {
 
     it('should open from Buffer (sync)', () => {
       const buffer = readFileSync(inputFile);
-      const media = MediaInput.openSync(buffer);
+      const media = Demuxer.openSync(buffer);
 
-      assert.ok(media, 'Should create MediaInput from Buffer');
+      assert.ok(media, 'Should create Demuxer from Buffer');
       assert.ok(media.streams.length > 0, 'Should have streams');
 
       media.closeSync();
     });
 
     it('should throw on invalid file (async)', async () => {
-      await assert.rejects(async () => await MediaInput.open('nonexistent.mp4'), /Failed to open input/);
+      await assert.rejects(async () => await Demuxer.open('nonexistent.mp4'), /Failed to open input/);
     });
 
     it('should throw on invalid file (sync)', () => {
-      assert.throws(() => MediaInput.openSync('nonexistent.mp4'), /Failed to open input/);
+      assert.throws(() => Demuxer.openSync('nonexistent.mp4'), /Failed to open input/);
     });
 
     it('should open with IOInputCallbacks (async)', async () => {
@@ -117,20 +117,19 @@ describe('MediaInput', () => {
         },
       };
 
-      const media = await MediaInput.open(callbacks, {
+      const media = await Demuxer.open(callbacks, {
         format: 'mp4',
         bufferSize: 4096,
       });
 
-      assert.ok(media, 'Should create MediaInput from IOInputCallbacks');
+      assert.ok(media, 'Should create Demuxer from IOInputCallbacks');
       assert.ok(media.streams.length > 0, 'Should have streams');
       assert.ok(media.duration > 0, 'Should have duration');
 
       // Read some packets to verify it works
       let packetCount = 0;
-      for await (const packet of media.packets()) {
+      for await (using packet of media.packets()) {
         assert.ok(packet, 'Should have packet');
-        packet.free();
         packetCount++;
         if (packetCount >= 5) break;
       }
@@ -167,20 +166,19 @@ describe('MediaInput', () => {
         },
       };
 
-      const media = MediaInput.openSync(callbacks, {
+      const media = Demuxer.openSync(callbacks, {
         format: 'mp4',
         bufferSize: 4096,
       });
 
-      assert.ok(media, 'Should create MediaInput from IOInputCallbacks');
+      assert.ok(media, 'Should create Demuxer from IOInputCallbacks');
       assert.ok(media.streams.length > 0, 'Should have streams');
       assert.ok(media.duration > 0, 'Should have duration');
 
       // Read some packets to verify it works
       let packetCount = 0;
-      for (const packet of media.packetsSync()) {
+      for (using packet of media.packetsSync()) {
         assert.ok(packet, 'Should have packet');
-        packet.free();
         packetCount++;
         if (packetCount >= 5) break;
       }
@@ -195,7 +193,7 @@ describe('MediaInput', () => {
       };
 
       // @ts-expect-error Testing missing format
-      await assert.rejects(async () => await MediaInput.open(callbacks), /Format must be specified for custom I\/O/);
+      await assert.rejects(async () => await Demuxer.open(callbacks), /Format must be specified for custom I\/O/);
     });
 
     it('should require format for IOInputCallbacks (sync)', () => {
@@ -204,7 +202,7 @@ describe('MediaInput', () => {
       };
 
       // @ts-expect-error Testing missing format
-      assert.throws(() => MediaInput.openSync(callbacks), /Format must be specified for custom I\/O/);
+      assert.throws(() => Demuxer.openSync(callbacks), /Format must be specified for custom I\/O/);
     });
 
     it('should support IOInputCallbacks with using keyword (async)', async () => {
@@ -238,7 +236,7 @@ describe('MediaInput', () => {
 
       let streamCount = 0;
       {
-        await using media = await MediaInput.open(callbacks, { format: 'mp4' });
+        await using media = await Demuxer.open(callbacks, { format: 'mp4' });
         streamCount = media.streams.length;
         assert.ok(streamCount > 0, 'Should have streams');
         // Should auto-close when leaving scope - no deadlock!
@@ -246,7 +244,7 @@ describe('MediaInput', () => {
 
       // Verify it actually closed by trying again
       position = 0;
-      const media2 = await MediaInput.open(callbacks, { format: 'mp4' });
+      const media2 = await Demuxer.open(callbacks, { format: 'mp4' });
       assert.equal(media2.streams.length, streamCount, 'Should have same streams');
       await media2.close();
     });
@@ -282,7 +280,7 @@ describe('MediaInput', () => {
 
       let streamCount = 0;
       {
-        using media = MediaInput.openSync(callbacks, { format: 'mp4' });
+        using media = Demuxer.openSync(callbacks, { format: 'mp4' });
         streamCount = media.streams.length;
         assert.ok(streamCount > 0, 'Should have streams');
         // Should auto-close when leaving scope - no deadlock!
@@ -290,7 +288,7 @@ describe('MediaInput', () => {
 
       // Verify it actually closed by trying again
       position = 0;
-      const media2 = MediaInput.openSync(callbacks, { format: 'mp4' });
+      const media2 = Demuxer.openSync(callbacks, { format: 'mp4' });
       assert.equal(media2.streams.length, streamCount, 'Should have same streams');
       media2.closeSync();
     });
@@ -298,57 +296,57 @@ describe('MediaInput', () => {
 
   describe('options', () => {
     it('should open with dtsDeltaThreshold option', async () => {
-      const media = await MediaInput.open(inputFile, {
+      const media = await Demuxer.open(inputFile, {
         dtsDeltaThreshold: 10,
       });
 
-      assert.ok(media, 'Should create MediaInput with dtsDeltaThreshold');
+      assert.ok(media, 'Should create Demuxer with dtsDeltaThreshold');
       assert.ok(media.streams.length > 0, 'Should have streams');
 
       await media.close();
     });
 
     it('should open with dtsErrorThreshold option', async () => {
-      const media = await MediaInput.open(inputFile, {
+      const media = await Demuxer.open(inputFile, {
         dtsErrorThreshold: 30,
       });
 
-      assert.ok(media, 'Should create MediaInput with dtsErrorThreshold');
+      assert.ok(media, 'Should create Demuxer with dtsErrorThreshold');
       assert.ok(media.streams.length > 0, 'Should have streams');
 
       await media.close();
     });
 
     it('should open with copyTs option', async () => {
-      const media = await MediaInput.open(inputFile, {
+      const media = await Demuxer.open(inputFile, {
         copyTs: true,
       });
 
-      assert.ok(media, 'Should create MediaInput with copyTs');
+      assert.ok(media, 'Should create Demuxer with copyTs');
       assert.ok(media.streams.length > 0, 'Should have streams');
 
       await media.close();
     });
 
     it('should open with all timestamp options combined', async () => {
-      const media = await MediaInput.open(inputFile, {
+      const media = await Demuxer.open(inputFile, {
         dtsDeltaThreshold: 10,
         dtsErrorThreshold: 30,
         copyTs: true,
       });
 
-      assert.ok(media, 'Should create MediaInput with all timestamp options');
+      assert.ok(media, 'Should create Demuxer with all timestamp options');
       assert.ok(media.streams.length > 0, 'Should have streams');
 
       await media.close();
     });
 
     it('should open with copyTs (sync)', () => {
-      const media = MediaInput.openSync(inputFile, {
+      const media = Demuxer.openSync(inputFile, {
         copyTs: true,
       });
 
-      assert.ok(media, 'Should create MediaInput with copyTs (sync)');
+      assert.ok(media, 'Should create Demuxer with copyTs (sync)');
       assert.ok(media.streams.length > 0, 'Should have streams');
 
       media.closeSync();
@@ -357,7 +355,7 @@ describe('MediaInput', () => {
 
   describe('stream info', () => {
     it('should parse video stream info', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
 
       const video = media.video();
       assert.ok(video, 'Should find video stream');
@@ -371,7 +369,7 @@ describe('MediaInput', () => {
     });
 
     it('should parse audio stream info', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
 
       const audio = media.audio();
       if (audio) {
@@ -385,7 +383,7 @@ describe('MediaInput', () => {
     });
 
     it('should get all streams', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
 
       assert.ok(Array.isArray(media.streams), 'Streams should be array');
       assert.ok(media.streams.length > 0, 'Should have at least one stream');
@@ -403,7 +401,7 @@ describe('MediaInput', () => {
 
   describe('metadata', () => {
     it('should get container metadata', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
 
       const metadata = media.metadata;
       assert.ok(typeof metadata === 'object', 'Metadata should be object');
@@ -415,7 +413,7 @@ describe('MediaInput', () => {
     });
 
     it('should get format info', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
 
       const formatName = media.formatName;
       assert.ok(formatName, 'Should have format name');
@@ -431,7 +429,7 @@ describe('MediaInput', () => {
     });
 
     it('should get MIME type', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
 
       const mimeType = media.mimeType;
 
@@ -448,7 +446,7 @@ describe('MediaInput', () => {
     });
 
     it('should get input format', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
 
       const inputFormat = media.inputFormat();
       assert.ok(inputFormat, 'Should have input format');
@@ -463,7 +461,7 @@ describe('MediaInput', () => {
 
   describe('stream access', () => {
     it('should get stream by index', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
 
       const stream0 = media.getStream(0);
       assert.ok(stream0, 'Should get stream at index 0');
@@ -473,7 +471,7 @@ describe('MediaInput', () => {
     });
 
     it('should return undefined for invalid stream index', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
 
       const invalidStream = media.getStream(999);
       assert.equal(invalidStream, undefined, 'Should return undefined for invalid index');
@@ -482,7 +480,7 @@ describe('MediaInput', () => {
     });
 
     it('should get stream by index (negative)', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
 
       // Negative indices should return undefined
       const negativeStream = media.getStream(-1);
@@ -494,12 +492,12 @@ describe('MediaInput', () => {
 
   describe('packets', () => {
     it('should iterate packets', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
 
       let packetCount = 0;
       const maxPackets = 10; // Only read first 10 packets for test
 
-      for await (const packet of media.packets()) {
+      for await (using packet of media.packets()) {
         assert.ok(packet, 'Should have packet');
         assert.ok(typeof packet.streamIndex === 'number', 'Packet should have stream index');
         assert.ok(packet.size >= 0, 'Packet should have size');
@@ -514,12 +512,12 @@ describe('MediaInput', () => {
     });
 
     it('should iterate packets (sync)', () => {
-      const media = MediaInput.openSync(inputFile);
+      const media = Demuxer.openSync(inputFile);
 
       let packetCount = 0;
       const maxPackets = 10; // Only read first 10 packets for test
 
-      for (const packet of media.packetsSync()) {
+      for (using packet of media.packetsSync()) {
         assert.ok(packet, 'Should have packet');
         assert.ok(typeof packet.streamIndex === 'number', 'Packet should have stream index');
         assert.ok(packet.size >= 0, 'Packet should have size');
@@ -536,7 +534,7 @@ describe('MediaInput', () => {
 
   describe('seek', () => {
     it('should seek to timestamp (async)', async () => {
-      const media = await MediaInput.open(inputFile);
+      const media = await Demuxer.open(inputFile);
 
       // Try to seek to 1 second
       const ret = await media.seek(1.0);
@@ -548,7 +546,7 @@ describe('MediaInput', () => {
     });
 
     it('should seek to timestamp (sync)', () => {
-      const media = MediaInput.openSync(inputFile);
+      const media = Demuxer.openSync(inputFile);
 
       // Try to seek to 1 second
       const ret = media.seekSync(1.0);
@@ -564,7 +562,7 @@ describe('MediaInput', () => {
     it('should support multiple open/close cycles', async () => {
       // Open and close multiple times
       for (let i = 0; i < 3; i++) {
-        const media = await MediaInput.open(inputFile);
+        const media = await Demuxer.open(inputFile);
         assert.ok(media.streams.length > 0, `Cycle ${i}: Should have streams`);
         await media.close();
       }
@@ -574,14 +572,14 @@ describe('MediaInput', () => {
       let streamCount = 0;
 
       {
-        await using media = await MediaInput.open(inputFile);
+        await using media = await Demuxer.open(inputFile);
         streamCount = media.streams.length;
         assert.ok(streamCount > 0, 'Should have streams');
         // Should auto-close when leaving scope
       }
 
       // Open again to verify previous was properly closed
-      const media2 = await MediaInput.open(inputFile);
+      const media2 = await Demuxer.open(inputFile);
       assert.equal(media2.streams.length, streamCount, 'Should have same streams');
       await media2.close();
     });
@@ -589,7 +587,7 @@ describe('MediaInput', () => {
 
   describe('probeFormat', () => {
     it('should probe format from file path', async () => {
-      const info = await MediaInput.probeFormat(inputFile);
+      const info = await Demuxer.probeFormat(inputFile);
 
       assert.ok(info, 'Should detect format');
       assert.ok(info.format, 'Should have format name');
@@ -607,7 +605,7 @@ describe('MediaInput', () => {
 
     it('should probe format from buffer', async () => {
       const buffer = await readFile(inputFile);
-      const info = await MediaInput.probeFormat(buffer);
+      const info = await Demuxer.probeFormat(buffer);
 
       assert.ok(info, 'Should detect format from buffer');
       assert.ok(info.format, 'Should have format name');
@@ -626,7 +624,7 @@ describe('MediaInput', () => {
 
       for (const { path, expectedFormat } of testFiles) {
         try {
-          const info = await MediaInput.probeFormat(path);
+          const info = await Demuxer.probeFormat(path);
           if (info) {
             console.log(`Probed ${path}: ${info.format}`);
             // Check if the detected format matches or contains expected format
@@ -645,7 +643,7 @@ describe('MediaInput', () => {
     it('should return null for invalid data', async () => {
       // Test with random data that's not a valid media format
       const randomBuffer = Buffer.from('This is not a media file');
-      const info = await MediaInput.probeFormat(randomBuffer);
+      const info = await Demuxer.probeFormat(randomBuffer);
 
       assert.equal(info, null, 'Should return null for invalid media data');
     });
@@ -655,7 +653,7 @@ describe('MediaInput', () => {
       const buffer = await readFile(inputFile);
       const partialBuffer = buffer.subarray(0, 4096);
 
-      const info = await MediaInput.probeFormat(partialBuffer);
+      const info = await Demuxer.probeFormat(partialBuffer);
 
       // MP4 should be detectable from first 4KB
       assert.ok(info, 'Should detect format from partial buffer');
@@ -665,7 +663,7 @@ describe('MediaInput', () => {
     });
 
     it('should handle non-existent file', async () => {
-      const info = await MediaInput.probeFormat('nonexistent.mp4');
+      const info = await Demuxer.probeFormat('nonexistent.mp4');
 
       assert.equal(info, null, 'Should return null for non-existent file');
     });
@@ -675,8 +673,8 @@ describe('MediaInput', () => {
       const buffer = await readFile(inputFile);
 
       // Probe same buffer with and without hint
-      const withoutHint = await MediaInput.probeFormat(buffer);
-      const withHint = await MediaInput.probeFormat(inputFile);
+      const withoutHint = await Demuxer.probeFormat(buffer);
+      const withHint = await Demuxer.probeFormat(inputFile);
 
       assert.ok(withoutHint, 'Should detect without hint');
       assert.ok(withHint, 'Should detect with hint');
@@ -690,13 +688,13 @@ describe('MediaInput', () => {
   describe('edge cases', () => {
     it('should handle empty buffer', async () => {
       const emptyBuffer = Buffer.alloc(0);
-      await assert.rejects(async () => await MediaInput.open(emptyBuffer), Error, 'Should fail on empty buffer');
+      await assert.rejects(async () => await Demuxer.open(emptyBuffer), Error, 'Should fail on empty buffer');
     });
 
     it('should handle small video files', async () => {
       // Test with a small video file if available
       try {
-        const media = await MediaInput.open(inputFile);
+        const media = await Demuxer.open(inputFile);
         assert.ok(media, 'Should open small video');
         assert.ok(media.streams.length > 0, 'Should have streams');
         await media.close();
@@ -727,11 +725,11 @@ describe('MediaInput', () => {
       assert.ok(sdp.includes('m=audio 5004'), 'SDP should have audio media line');
       assert.ok(sdp.includes('a=rtpmap:111 opus/48000/2'), 'SDP should have Opus rtpmap');
 
-      // Open MediaInput with SDP
-      const rtpInput = await MediaInput.openSDP(sdp);
+      // Open Demuxer with SDP
+      const rtpInput = await Demuxer.openSDP(sdp);
 
       assert.ok(rtpInput, 'Should create RTP input');
-      assert.ok(rtpInput.input, 'Should have MediaInput instance');
+      assert.ok(rtpInput.input, 'Should have Demuxer instance');
       assert.ok(typeof rtpInput.sendPacket === 'function', 'Should have sendPacket function');
       assert.ok(typeof rtpInput.close === 'function', 'Should have close function');
 
@@ -760,11 +758,11 @@ describe('MediaInput', () => {
       assert.ok(sdp.includes('m=video 5006'), 'SDP should have video media line');
       assert.ok(sdp.includes('a=rtpmap:96 H264/90000'), 'SDP should have H.264 rtpmap');
 
-      // Open MediaInput with SDP
-      const rtpInput = await MediaInput.openSDP(sdp);
+      // Open Demuxer with SDP
+      const rtpInput = await Demuxer.openSDP(sdp);
 
       assert.ok(rtpInput, 'Should create RTP input');
-      assert.ok(rtpInput.input, 'Should have MediaInput instance');
+      assert.ok(rtpInput.input, 'Should have Demuxer instance');
 
       // Cleanup
       await rtpInput.close();
@@ -803,8 +801,8 @@ describe('MediaInput', () => {
       assert.equal(ports[0], 5008, 'First port should be 5008');
       assert.equal(ports[1], 5010, 'Second port should be 5010');
 
-      // Open MediaInput with multi-stream SDP
-      const rtpInput = await MediaInput.openSDP(sdp);
+      // Open Demuxer with multi-stream SDP
+      const rtpInput = await Demuxer.openSDP(sdp);
 
       assert.ok(rtpInput, 'Should create multi-stream RTP input');
 
@@ -850,8 +848,8 @@ describe('MediaInput', () => {
       assert.ok(sdp, 'Should generate SRTP SDP');
       assert.ok(sdp.includes('a=crypto:1 AES_CM_128_HMAC_SHA1_80'), 'SDP should have crypto line');
 
-      // Open MediaInput with SRTP SDP
-      const rtpInput = await MediaInput.openSDP(sdp);
+      // Open Demuxer with SRTP SDP
+      const rtpInput = await Demuxer.openSDP(sdp);
 
       assert.ok(rtpInput, 'Should create SRTP input');
 
@@ -875,8 +873,8 @@ describe('MediaInput', () => {
       assert.ok(sdp, 'Should generate SDP with fmtp');
       assert.ok(sdp.includes('a=fmtp:111 minptime=10;useinbandfec=1'), 'SDP should have fmtp line');
 
-      // Open MediaInput with fmtp
-      const rtpInput = await MediaInput.openSDP(sdp);
+      // Open Demuxer with fmtp
+      const rtpInput = await Demuxer.openSDP(sdp);
 
       assert.ok(rtpInput, 'Should create RTP input with fmtp');
 
@@ -887,13 +885,13 @@ describe('MediaInput', () => {
     it('should fail with invalid SDP', async () => {
       const invalidSdp = 'invalid sdp content';
 
-      await assert.rejects(async () => await MediaInput.openSDP(invalidSdp), /Failed to extract any ports from SDP/);
+      await assert.rejects(async () => await Demuxer.openSDP(invalidSdp), /Failed to extract any ports from SDP/);
     });
 
     it('should fail with empty SDP', async () => {
       const emptySdp = '';
 
-      await assert.rejects(async () => await MediaInput.openSDP(emptySdp), /Failed to extract any ports from SDP/);
+      await assert.rejects(async () => await Demuxer.openSDP(emptySdp), /Failed to extract any ports from SDP/);
     });
 
     it('should support different SRTP crypto suites', async () => {
@@ -918,7 +916,7 @@ describe('MediaInput', () => {
 
       assert.ok(sdp.includes('a=crypto:1 AES_CM_128_HMAC_SHA1_80'), 'SDP should use specified crypto suite');
 
-      const rtpInput = await MediaInput.openSDP(sdp);
+      const rtpInput = await Demuxer.openSDP(sdp);
       assert.ok(rtpInput, 'Should create RTP input with custom crypto suite');
 
       await rtpInput.close();
@@ -938,13 +936,13 @@ describe('MediaInput', () => {
 
       // Test with manual cleanup
       {
-        const rtpInput = await MediaInput.openSDP(sdp);
+        const rtpInput = await Demuxer.openSDP(sdp);
         assert.ok(rtpInput.input, 'Should have input');
         await rtpInput.close();
       }
 
       // Verify we can create another instance after cleanup
-      const rtpInput2 = await MediaInput.openSDP(sdp);
+      const rtpInput2 = await Demuxer.openSDP(sdp);
       assert.ok(rtpInput2, 'Should create another instance after cleanup');
       await rtpInput2.close();
     });
@@ -970,11 +968,11 @@ describe('MediaInput', () => {
       assert.ok(sdp.includes('m=audio 5020'), 'SDP should have audio media line');
       assert.ok(sdp.includes('a=rtpmap:111 opus/48000/2'), 'SDP should have Opus rtpmap');
 
-      // Open MediaInput with SDP (sync)
-      const rtpInput = MediaInput.openSDPSync(sdp);
+      // Open Demuxer with SDP (sync)
+      const rtpInput = Demuxer.openSDPSync(sdp);
 
       assert.ok(rtpInput, 'Should create RTP input');
-      assert.ok(rtpInput.input, 'Should have MediaInput instance');
+      assert.ok(rtpInput.input, 'Should have Demuxer instance');
       assert.ok(typeof rtpInput.sendPacket === 'function', 'Should have sendPacket function');
       assert.ok(typeof rtpInput.closeSync === 'function', 'Should have closeSync function');
 
@@ -1003,11 +1001,11 @@ describe('MediaInput', () => {
       assert.ok(sdp.includes('m=video 5022'), 'SDP should have video media line');
       assert.ok(sdp.includes('a=rtpmap:96 H264/90000'), 'SDP should have H.264 rtpmap');
 
-      // Open MediaInput with SDP (sync)
-      const rtpInput = MediaInput.openSDPSync(sdp);
+      // Open Demuxer with SDP (sync)
+      const rtpInput = Demuxer.openSDPSync(sdp);
 
       assert.ok(rtpInput, 'Should create RTP input');
-      assert.ok(rtpInput.input, 'Should have MediaInput instance');
+      assert.ok(rtpInput.input, 'Should have Demuxer instance');
 
       // Cleanup
       rtpInput.closeSync();
@@ -1046,8 +1044,8 @@ describe('MediaInput', () => {
       assert.equal(ports[0], 5024, 'First port should be 5024');
       assert.equal(ports[1], 5026, 'Second port should be 5026');
 
-      // Open MediaInput with multi-stream SDP (sync)
-      const rtpInput = MediaInput.openSDPSync(sdp);
+      // Open Demuxer with multi-stream SDP (sync)
+      const rtpInput = Demuxer.openSDPSync(sdp);
 
       assert.ok(rtpInput, 'Should create multi-stream RTP input');
 
@@ -1093,8 +1091,8 @@ describe('MediaInput', () => {
       assert.ok(sdp, 'Should generate SRTP SDP');
       assert.ok(sdp.includes('a=crypto:1 AES_CM_128_HMAC_SHA1_80'), 'SDP should have crypto line');
 
-      // Open MediaInput with SRTP SDP (sync)
-      const rtpInput = MediaInput.openSDPSync(sdp);
+      // Open Demuxer with SRTP SDP (sync)
+      const rtpInput = Demuxer.openSDPSync(sdp);
 
       assert.ok(rtpInput, 'Should create SRTP input');
 
@@ -1118,8 +1116,8 @@ describe('MediaInput', () => {
       assert.ok(sdp, 'Should generate SDP with fmtp');
       assert.ok(sdp.includes('a=fmtp:111 minptime=10;useinbandfec=1'), 'SDP should have fmtp line');
 
-      // Open MediaInput with fmtp (sync)
-      const rtpInput = MediaInput.openSDPSync(sdp);
+      // Open Demuxer with fmtp (sync)
+      const rtpInput = Demuxer.openSDPSync(sdp);
 
       assert.ok(rtpInput, 'Should create RTP input with fmtp');
 
@@ -1130,13 +1128,13 @@ describe('MediaInput', () => {
     it('should fail with invalid SDP (sync)', () => {
       const invalidSdp = 'invalid sdp content';
 
-      assert.throws(() => MediaInput.openSDPSync(invalidSdp), /Failed to extract any ports from SDP/);
+      assert.throws(() => Demuxer.openSDPSync(invalidSdp), /Failed to extract any ports from SDP/);
     });
 
     it('should fail with empty SDP (sync)', () => {
       const emptySdp = '';
 
-      assert.throws(() => MediaInput.openSDPSync(emptySdp), /Failed to extract any ports from SDP/);
+      assert.throws(() => Demuxer.openSDPSync(emptySdp), /Failed to extract any ports from SDP/);
     });
 
     it('should support different SRTP crypto suites (sync)', () => {
@@ -1161,7 +1159,7 @@ describe('MediaInput', () => {
 
       assert.ok(sdp.includes('a=crypto:1 AES_CM_128_HMAC_SHA1_80'), 'SDP should use specified crypto suite');
 
-      const rtpInput = MediaInput.openSDPSync(sdp);
+      const rtpInput = Demuxer.openSDPSync(sdp);
       assert.ok(rtpInput, 'Should create RTP input with custom crypto suite');
 
       rtpInput.closeSync();
@@ -1180,13 +1178,13 @@ describe('MediaInput', () => {
       ]);
 
       {
-        const rtpInput = MediaInput.openSDPSync(sdp);
+        const rtpInput = Demuxer.openSDPSync(sdp);
         assert.ok(rtpInput.input, 'Should have input');
         rtpInput.closeSync();
       }
 
       // Verify we can create another instance after cleanup
-      const rtpInput2 = MediaInput.openSDPSync(sdp);
+      const rtpInput2 = Demuxer.openSDPSync(sdp);
       assert.ok(rtpInput2, 'Should create another instance after cleanup');
       rtpInput2.closeSync();
     });

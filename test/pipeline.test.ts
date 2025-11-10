@@ -8,14 +8,14 @@ import {
   AV_PIX_FMT_YUV420P,
   BitStreamFilterAPI,
   Decoder,
+  Demuxer,
   Encoder,
   FF_ENCODER_AAC,
   FF_ENCODER_LIBX264,
   FilterAPI,
   Frame,
   HardwareContext,
-  MediaInput,
-  MediaOutput,
+  Muxer,
   Packet,
   pipeline,
   Rational,
@@ -68,8 +68,8 @@ describe('Pipeline - Comprehensive Tests', () => {
       const outputFile = getTestOutputPath('copy.mp4');
 
       try {
-        await using input = await MediaInput.open(inputFile);
-        const output = await MediaOutput.open(outputFile);
+        await using input = await Demuxer.open(inputFile);
+        const output = await Muxer.open(outputFile);
 
         // Simple stream copy
         const control = pipeline(input, output);
@@ -83,7 +83,7 @@ describe('Pipeline - Comprehensive Tests', () => {
         assert.ok(existsSync(outputFile), 'Output file should exist');
 
         // Verify output has same streams as input
-        await using verifyInput = await MediaInput.open(outputFile);
+        await using verifyInput = await Demuxer.open(outputFile);
         assert.ok(verifyInput.video(), 'Output should have video stream');
         assert.ok(verifyInput.audio(), 'Output should have audio stream');
       } finally {
@@ -95,8 +95,8 @@ describe('Pipeline - Comprehensive Tests', () => {
       const outputFile = getTestOutputPath('copy-stopped.mp4');
 
       try {
-        await using input = await MediaInput.open(inputFile);
-        const output = await MediaOutput.open(outputFile);
+        await using input = await Demuxer.open(inputFile);
+        const output = await Muxer.open(outputFile);
 
         const control = pipeline(input, output);
 
@@ -121,8 +121,8 @@ describe('Pipeline - Comprehensive Tests', () => {
       const outputFile = getTestOutputPath('transcode.mp4');
 
       try {
-        await using input = await MediaInput.open(inputFile);
-        const output = await MediaOutput.open(outputFile);
+        await using input = await Demuxer.open(inputFile);
+        const output = await Muxer.open(outputFile);
 
         const videoStream = input.video();
         if (!videoStream) {
@@ -145,7 +145,7 @@ describe('Pipeline - Comprehensive Tests', () => {
         // Verify output
         assert.ok(existsSync(outputFile), 'Output file should exist');
 
-        await using verifyInput = await MediaInput.open(outputFile);
+        await using verifyInput = await Demuxer.open(outputFile);
         const verifyStream = verifyInput.video();
         assert.ok(verifyStream, 'Output should have video stream');
         assert.equal(verifyStream.codecpar.width, 320, 'Width should be 320');
@@ -159,8 +159,8 @@ describe('Pipeline - Comprehensive Tests', () => {
       const outputFile = getTestOutputPath('transcode-filter.mp4');
 
       try {
-        await using input = await MediaInput.open(inputFile);
-        const output = await MediaOutput.open(outputFile);
+        await using input = await Demuxer.open(inputFile);
+        const output = await Muxer.open(outputFile);
 
         const videoStream = input.video();
         if (!videoStream) {
@@ -188,7 +188,7 @@ describe('Pipeline - Comprehensive Tests', () => {
         // Verify output
         assert.ok(existsSync(outputFile), 'Output file should exist');
 
-        await using verifyInput = await MediaInput.open(outputFile);
+        await using verifyInput = await Demuxer.open(outputFile);
         const verifyStream = verifyInput.video();
         assert.ok(verifyStream, 'Output should have video stream');
         assert.equal(verifyStream.codecpar.width, 320, 'Width should be 320');
@@ -204,7 +204,7 @@ describe('Pipeline - Comprehensive Tests', () => {
       const outputFile = getTestOutputPath('copy-bsf.mp4');
 
       try {
-        await using input = await MediaInput.open(inputFile);
+        await using input = await Demuxer.open(inputFile);
         const videoStream = input.video();
 
         if (videoStream?.codecpar.codecId !== AV_CODEC_ID_H264) {
@@ -212,7 +212,7 @@ describe('Pipeline - Comprehensive Tests', () => {
           return;
         }
 
-        const output = await MediaOutput.open(outputFile);
+        const output = await Muxer.open(outputFile);
 
         // Create h264_mp4toannexb filter for the video stream
         using bsf = BitStreamFilterAPI.create('h264_mp4toannexb', videoStream);
@@ -233,8 +233,8 @@ describe('Pipeline - Comprehensive Tests', () => {
       const outputFile = getTestOutputPath('transcode-bsf.mp4');
 
       try {
-        await using input = await MediaInput.open(inputFile);
-        const output = await MediaOutput.open(outputFile);
+        await using input = await Demuxer.open(inputFile);
+        const output = await Muxer.open(outputFile);
 
         const videoStream = input.video();
         if (!videoStream) {
@@ -269,9 +269,9 @@ describe('Pipeline - Comprehensive Tests', () => {
       const outputFile = getTestOutputPath('named-multi.mp4');
 
       try {
-        await using videoInput = await MediaInput.open(inputFile);
-        await using audioInput = await MediaInput.open(inputFile);
-        const output = await MediaOutput.open(outputFile);
+        await using videoInput = await Demuxer.open(inputFile);
+        await using audioInput = await Demuxer.open(inputFile);
+        const output = await Muxer.open(outputFile);
 
         const videoStream = videoInput.video();
         const audioStream = audioInput.audio();
@@ -311,7 +311,7 @@ describe('Pipeline - Comprehensive Tests', () => {
         // Verify output
         assert.ok(existsSync(outputFile), 'Output file should exist');
 
-        await using verifyInput = await MediaInput.open(outputFile);
+        await using verifyInput = await Demuxer.open(outputFile);
         assert.ok(verifyInput.video(), 'Output should have video stream');
         assert.ok(verifyInput.audio(), 'Output should have audio stream');
       } finally {
@@ -323,8 +323,8 @@ describe('Pipeline - Comprehensive Tests', () => {
       const outputFile = getTestOutputPath('named-passthrough.mp4');
 
       try {
-        await using input = await MediaInput.open(inputFile);
-        const output = await MediaOutput.open(outputFile);
+        await using input = await Demuxer.open(inputFile);
+        const output = await Muxer.open(outputFile);
 
         const videoStream = input.video();
         const audioStream = input.audio();
@@ -356,7 +356,7 @@ describe('Pipeline - Comprehensive Tests', () => {
         // Verify output
         assert.ok(existsSync(outputFile), 'Output file should exist');
 
-        await using verifyInput = await MediaInput.open(outputFile);
+        await using verifyInput = await Demuxer.open(outputFile);
         const verifyVideo = verifyInput.video();
         const verifyAudio = verifyInput.audio();
 
@@ -378,8 +378,8 @@ describe('Pipeline - Comprehensive Tests', () => {
       const outputFile = getTestOutputPath('named-filter.mp4');
 
       try {
-        await using input = await MediaInput.open(inputFile);
-        const output = await MediaOutput.open(outputFile);
+        await using input = await Demuxer.open(inputFile);
+        const output = await Muxer.open(outputFile);
 
         const videoStream = input.video();
         if (!videoStream) {
@@ -414,8 +414,8 @@ describe('Pipeline - Comprehensive Tests', () => {
       const outputFile = getTestOutputPath('named-shared-single.mp4');
 
       try {
-        await using input = await MediaInput.open(inputFile);
-        const output = await MediaOutput.open(outputFile);
+        await using input = await Demuxer.open(inputFile);
+        const output = await Muxer.open(outputFile);
 
         const videoStream = input.video();
         const audioStream = input.audio();
@@ -454,7 +454,7 @@ describe('Pipeline - Comprehensive Tests', () => {
         // Verify output
         assert.ok(existsSync(outputFile), 'Output file should exist');
 
-        await using verifyInput = await MediaInput.open(outputFile);
+        await using verifyInput = await Demuxer.open(outputFile);
         assert.ok(verifyInput.video(), 'Output should have video stream');
         assert.ok(verifyInput.audio(), 'Output should have audio stream');
       } finally {
@@ -467,9 +467,9 @@ describe('Pipeline - Comprehensive Tests', () => {
       const audioOutputFile = getTestOutputPath('named-shared-audio.mkv');
 
       try {
-        await using input = await MediaInput.open(inputFile);
-        const videoOutput = await MediaOutput.open(videoOutputFile);
-        const audioOutput = await MediaOutput.open(audioOutputFile);
+        await using input = await Demuxer.open(inputFile);
+        const videoOutput = await Muxer.open(videoOutputFile);
+        const audioOutput = await Muxer.open(audioOutputFile);
 
         const videoStream = input.video();
         const audioStream = input.audio();
@@ -507,12 +507,12 @@ describe('Pipeline - Comprehensive Tests', () => {
 
         // Verify video output
         assert.ok(existsSync(videoOutputFile), 'Video output file should exist');
-        await using verifyVideoInput = await MediaInput.open(videoOutputFile);
+        await using verifyVideoInput = await Demuxer.open(videoOutputFile);
         assert.ok(verifyVideoInput.video(), 'Video output should have video stream');
 
         // Verify audio output
         assert.ok(existsSync(audioOutputFile), 'Audio output file should exist');
-        await using verifyAudioInput = await MediaInput.open(audioOutputFile);
+        await using verifyAudioInput = await Demuxer.open(audioOutputFile);
         assert.ok(verifyAudioInput.audio(), 'Audio output should have audio stream');
       } finally {
         cleanupTestFile(videoOutputFile);
@@ -524,8 +524,8 @@ describe('Pipeline - Comprehensive Tests', () => {
       const outputFile = getTestOutputPath('named-shared-passthrough.mp4');
 
       try {
-        await using input = await MediaInput.open(inputFile);
-        const output = await MediaOutput.open(outputFile);
+        await using input = await Demuxer.open(inputFile);
+        const output = await Muxer.open(outputFile);
 
         const videoStream = input.video();
         const audioStream = input.audio();
@@ -558,7 +558,7 @@ describe('Pipeline - Comprehensive Tests', () => {
         // Verify output
         assert.ok(existsSync(outputFile), 'Output file should exist');
 
-        await using verifyInput = await MediaInput.open(outputFile);
+        await using verifyInput = await Demuxer.open(outputFile);
         const verifyVideo = verifyInput.video();
         const verifyAudio = verifyInput.audio();
 
@@ -579,7 +579,7 @@ describe('Pipeline - Comprehensive Tests', () => {
 
   describe('Partial Pipelines', () => {
     it('should return generator for decoder only', async () => {
-      await using input = await MediaInput.open(inputFile);
+      await using input = await Demuxer.open(inputFile);
       const videoStream = input.video();
 
       if (!videoStream) {
@@ -606,7 +606,7 @@ describe('Pipeline - Comprehensive Tests', () => {
     });
 
     it('should return generator for decoder + filter', async () => {
-      await using input = await MediaInput.open(inputFile);
+      await using input = await Demuxer.open(inputFile);
       const videoStream = input.video();
 
       if (!videoStream) {
@@ -635,7 +635,7 @@ describe('Pipeline - Comprehensive Tests', () => {
     });
 
     it('should return packets for decoder + encoder partial pipeline', async () => {
-      await using input = await MediaInput.open(inputFile);
+      await using input = await Demuxer.open(inputFile);
       const videoStream = input.video();
 
       if (!videoStream) {
@@ -659,7 +659,7 @@ describe('Pipeline - Comprehensive Tests', () => {
 
       // Get first few packets
       let packetCount = 0;
-      for await (const packet of packetGenerator) {
+      for await (using packet of packetGenerator) {
         assert.ok(packet instanceof Packet, 'Should yield Packet objects');
         packetCount++;
         if (packetCount >= 5) break;
@@ -669,7 +669,7 @@ describe('Pipeline - Comprehensive Tests', () => {
     });
 
     it('should return generator for named partial pipeline', async () => {
-      await using input = await MediaInput.open(inputFile);
+      await using input = await Demuxer.open(inputFile);
       const videoStream = input.video();
 
       if (!videoStream) {
@@ -691,7 +691,7 @@ describe('Pipeline - Comprehensive Tests', () => {
 
       // Get first few packets
       let packetCount = 0;
-      for await (const packet of generators.video) {
+      for await (using packet of generators.video) {
         assert.ok(packet instanceof Packet, 'Should yield Packet objects');
         packetCount++;
         if (packetCount >= 5) break;
@@ -706,8 +706,8 @@ describe('Pipeline - Comprehensive Tests', () => {
       const outputFile = getTestOutputPath('multi-filter.mp4');
 
       try {
-        await using input = await MediaInput.open(inputFile);
-        const output = await MediaOutput.open(outputFile);
+        await using input = await Demuxer.open(inputFile);
+        const output = await Muxer.open(outputFile);
 
         const videoStream = input.video();
         if (!videoStream) {
@@ -745,8 +745,8 @@ describe('Pipeline - Comprehensive Tests', () => {
       const outputFile = getTestOutputPath('filter-array.mp4');
 
       try {
-        await using input = await MediaInput.open(inputFile);
-        const output = await MediaOutput.open(outputFile);
+        await using input = await Demuxer.open(inputFile);
+        const output = await Muxer.open(outputFile);
 
         const videoStream = input.video();
         if (!videoStream) {
@@ -792,7 +792,7 @@ describe('Pipeline - Comprehensive Tests', () => {
       const outputFile = getTestOutputPath('frames-source.mp4');
 
       try {
-        const output = await MediaOutput.open(outputFile);
+        const output = await Muxer.open(outputFile);
 
         // Create a simple frame generator
         async function* generateFrames() {
@@ -836,7 +836,7 @@ describe('Pipeline - Comprehensive Tests', () => {
 
   describe('Error Handling', () => {
     it('should not throw if decoder is closed', async () => {
-      await using input = await MediaInput.open(inputFile);
+      await using input = await Demuxer.open(inputFile);
       const videoStream = input.video();
 
       if (!videoStream) {
@@ -851,9 +851,8 @@ describe('Pipeline - Comprehensive Tests', () => {
       const frameGenerator = pipeline(input, decoder);
 
       await assert.doesNotReject(async () => {
-        for await (const frame of frameGenerator) {
+        for await (using _frame of frameGenerator) {
           // Should throw before getting here
-          frame.free();
           break;
         }
       });
@@ -873,8 +872,8 @@ describe('Pipeline - Comprehensive Tests', () => {
       const outputFile = getTestOutputPath('hw-decode.mp4');
 
       try {
-        await using input = await MediaInput.open(inputFile2);
-        const output = await MediaOutput.open(outputFile);
+        await using input = await Demuxer.open(inputFile2);
+        const output = await Muxer.open(outputFile);
 
         const videoStream = input.video();
         if (!videoStream) {
@@ -912,13 +911,13 @@ describe('Pipeline - Comprehensive Tests', () => {
         const outputFile = getTestOutputPath('stream-copy-bsf.mp4');
 
         try {
-          await using input = await MediaInput.open(inputFile);
+          await using input = await Demuxer.open(inputFile);
           const videoStream = input.video();
           if (!videoStream) {
             assert.fail('No video stream found');
           }
 
-          const output = await MediaOutput.open(outputFile);
+          const output = await Muxer.open(outputFile);
 
           // Create BSF for the stream
           using bsf = BitStreamFilterAPI.create('null', videoStream);
@@ -939,7 +938,7 @@ describe('Pipeline - Comprehensive Tests', () => {
         const outputFile = getTestOutputPath('frames-filter-encode.mp4');
 
         try {
-          const output = await MediaOutput.open(outputFile);
+          const output = await Muxer.open(outputFile);
 
           // Create a frame generator
           async function* generateFrames() {
@@ -1010,12 +1009,14 @@ describe('Pipeline - Comprehensive Tests', () => {
         const filteredFrames = pipeline(generateFrames(), filter);
 
         let frameCount = 0;
-        for await (const frame of filteredFrames) {
+        for await (using frame of filteredFrames) {
+          if (!frame) {
+            continue;
+          }
           assert.ok(frame instanceof Frame, 'Should yield Frame objects');
           assert.equal(frame.width, 160, 'Frame should be scaled to 160 width');
           assert.equal(frame.height, 120, 'Frame should be scaled to 120 height');
           frameCount++;
-          frame.free();
         }
 
         assert.ok(frameCount > 0, 'Should have yielded filtered frames');
@@ -1052,10 +1053,9 @@ describe('Pipeline - Comprehensive Tests', () => {
         const packets = pipeline(generateFrames(), encoder);
 
         let packetCount = 0;
-        for await (const packet of packets) {
+        for await (using packet of packets) {
           assert.ok(packet instanceof Packet, 'Should yield Packet objects');
           packetCount++;
-          packet.free();
           if (packetCount >= 5) break;
         }
 
@@ -1096,10 +1096,9 @@ describe('Pipeline - Comprehensive Tests', () => {
         const packets = pipeline(generateFrames(), filter, encoder);
 
         let packetCount = 0;
-        for await (const packet of packets) {
+        for await (using packet of packets) {
           assert.ok(packet instanceof Packet, 'Should yield Packet objects');
           packetCount++;
-          packet.free();
           if (packetCount >= 5) break;
         }
 
@@ -1118,9 +1117,9 @@ describe('Pipeline - Comprehensive Tests', () => {
         const audioOutputFile = getTestOutputPath('multi-out-audio.aac');
 
         try {
-          await using input = await MediaInput.open(inputFile2);
-          const videoOutput = await MediaOutput.open(videoOutputFile);
-          const audioOutput = await MediaOutput.open(audioOutputFile);
+          await using input = await Demuxer.open(inputFile2);
+          const videoOutput = await Muxer.open(videoOutputFile);
+          const audioOutput = await Muxer.open(audioOutputFile);
 
           const videoStream = input.video();
           const audioStream = input.audio();
@@ -1175,8 +1174,8 @@ describe('Pipeline - Comprehensive Tests', () => {
         const outputFile = getTestOutputPath('stopped-early.mp4');
 
         try {
-          await using input = await MediaInput.open(inputFile);
-          const output = await MediaOutput.open(outputFile);
+          await using input = await Demuxer.open(inputFile);
+          const output = await Muxer.open(outputFile);
 
           const videoStream = input.video();
           if (!videoStream) {
@@ -1224,9 +1223,11 @@ describe('Pipeline - Comprehensive Tests', () => {
         const packets = pipeline(emptyFrames(), encoder);
 
         let packetCount = 0;
-        for await (const packet of packets) {
+        for await (using _packet of packets) {
+          if (!_packet) {
+            break;
+          }
           packetCount++;
-          packet.free();
         }
 
         assert.equal(packetCount, 0, 'Should yield no packets for empty input');
@@ -1238,7 +1239,7 @@ describe('Pipeline - Comprehensive Tests', () => {
         const outputFile = getTestOutputPath('large-frames.mp4');
 
         try {
-          const output = await MediaOutput.open(outputFile);
+          const output = await Muxer.open(outputFile);
 
           // Generate many frames
           async function* generateManyFrames() {

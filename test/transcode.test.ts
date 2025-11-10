@@ -1,7 +1,7 @@
 import assert from 'node:assert';
 import { describe, it } from 'node:test';
 
-import { AV_PIX_FMT_NV12, AV_PIX_FMT_YUV420P, Decoder, Encoder, FF_ENCODER_LIBX264, FilterAPI, FilterPreset, HardwareContext, MediaInput } from '../src/index.js';
+import { AV_PIX_FMT_NV12, AV_PIX_FMT_YUV420P, Decoder, Demuxer, Encoder, FF_ENCODER_LIBX264, FilterAPI, FilterPreset, HardwareContext } from '../src/index.js';
 import { getInputFile, prepareTestEnvironment, skipInCI } from './index.js';
 
 prepareTestEnvironment();
@@ -9,10 +9,14 @@ prepareTestEnvironment();
 const inputFile = getInputFile('video.mp4');
 
 // Helper to count processed frames
-async function processFrames(input: MediaInput, decoder: Decoder, filter: FilterAPI | null, encoder: Encoder, videoStreamIndex: number, maxFrames = 5): Promise<number> {
+async function processFrames(input: Demuxer, decoder: Decoder, filter: FilterAPI | null, encoder: Encoder, videoStreamIndex: number, maxFrames = 5): Promise<number> {
   let frameCount = 0;
 
-  for await (const packet of input.packets()) {
+  for await (using packet of input.packets()) {
+    if (!packet) {
+      break;
+    }
+
     if (packet.streamIndex === videoStreamIndex) {
       using decodedFrame = await decoder.decode(packet);
       if (decodedFrame) {
@@ -73,7 +77,7 @@ async function processFrames(input: MediaInput, decoder: Decoder, filter: Filter
 
 describe('Transcode Scenarios', () => {
   it('should handle SW Decode -> SW Filter -> SW Encode', async () => {
-    await using input = await MediaInput.open(inputFile);
+    await using input = await Demuxer.open(inputFile);
     const videoStream = input.video();
     assert.ok(videoStream, 'Should have video stream');
 
@@ -98,7 +102,7 @@ describe('Transcode Scenarios', () => {
   });
 
   it('should handle SW Decode -> SW Encode (no filter)', async () => {
-    await using input = await MediaInput.open(inputFile);
+    await using input = await Demuxer.open(inputFile);
     const videoStream = input.video();
     assert.ok(videoStream, 'Should have video stream');
 
@@ -124,7 +128,7 @@ describe('Transcode Scenarios', () => {
 
     console.log('Using Hardware:', hw.deviceTypeName);
 
-    await using input = await MediaInput.open(inputFile);
+    await using input = await Demuxer.open(inputFile);
     const videoStream = input.video();
     assert.ok(videoStream, 'Should have video stream');
 
@@ -158,7 +162,7 @@ describe('Transcode Scenarios', () => {
 
     console.log('Using Hardware:', hw.deviceTypeName);
 
-    await using input = await MediaInput.open(inputFile);
+    await using input = await Demuxer.open(inputFile);
     const videoStream = input.video();
     assert.ok(videoStream, 'Should have video stream');
 
@@ -205,7 +209,7 @@ describe('Transcode Scenarios', () => {
 
     console.log('Using Hardware:', hw.deviceTypeName);
 
-    await using input = await MediaInput.open(inputFile);
+    await using input = await Demuxer.open(inputFile);
     const videoStream = input.video();
     assert.ok(videoStream, 'Should have video stream');
 
@@ -249,7 +253,7 @@ describe('Transcode Scenarios', () => {
 
     console.log('Using Hardware:', hw.deviceTypeName);
 
-    await using input = await MediaInput.open(inputFile);
+    await using input = await Demuxer.open(inputFile);
     const videoStream = input.video();
     assert.ok(videoStream, 'Should have video stream');
 
@@ -284,7 +288,7 @@ describe('Transcode Scenarios', () => {
 
     console.log('Using Hardware:', hw.deviceTypeName);
 
-    await using input = await MediaInput.open(inputFile);
+    await using input = await Demuxer.open(inputFile);
     const videoStream = input.video();
     assert.ok(videoStream, 'Should have video stream');
 
@@ -330,7 +334,7 @@ describe('Transcode Scenarios', () => {
         return;
       }
 
-      await using input = await MediaInput.open(inputFile);
+      await using input = await Demuxer.open(inputFile);
       const videoStream = input.video();
       assert.ok(videoStream, 'Should have video stream');
 
@@ -348,7 +352,11 @@ describe('Transcode Scenarios', () => {
           });
 
           // Try to process a software frame with hardware filter
-          for await (const packet of input.packets()) {
+          for await (using packet of input.packets()) {
+            if (!packet) {
+              break;
+            }
+
             if (packet.streamIndex === videoStream.index) {
               using decodedFrame = await decoder.decode(packet);
               if (decodedFrame) {
@@ -369,7 +377,7 @@ describe('Transcode Scenarios', () => {
     });
 
     it('should handle encoder/decoder mismatch gracefully', async () => {
-      await using input = await MediaInput.open(inputFile);
+      await using input = await Demuxer.open(inputFile);
       const videoStream = input.video();
       assert.ok(videoStream, 'Should have video stream');
 
@@ -382,7 +390,11 @@ describe('Transcode Scenarios', () => {
       });
 
       // Should still work, encoder will handle the mismatch
-      for await (const packet of input.packets()) {
+      for await (using packet of input.packets()) {
+        if (!packet) {
+          break;
+        }
+
         if (packet.streamIndex === videoStream.index) {
           using decodedFrame = await decoder.decode(packet);
           if (decodedFrame) {

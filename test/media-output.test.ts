@@ -2,7 +2,7 @@ import assert from 'node:assert';
 import { readFile, stat, unlink } from 'node:fs/promises';
 import { describe, it } from 'node:test';
 
-import { AVSEEK_CUR, AVSEEK_END, AVSEEK_SET, AVSEEK_SIZE, Decoder, Encoder, FF_ENCODER_AAC, FF_ENCODER_LIBX264, MediaInput, MediaOutput, Packet } from '../src/index.js';
+import { AVSEEK_CUR, AVSEEK_END, AVSEEK_SET, AVSEEK_SIZE, Decoder, Demuxer, Encoder, FF_ENCODER_AAC, FF_ENCODER_LIBX264, Muxer, Packet } from '../src/index.js';
 import { getInputFile, getOutputFile, prepareTestEnvironment } from './index.js';
 
 import type { IOOutputCallbacks } from '../src/api/types.js';
@@ -12,7 +12,7 @@ prepareTestEnvironment();
 
 const inputFile = getInputFile('demux.mp4');
 
-describe('MediaOutput', () => {
+describe('Muxer', () => {
   let tempFiles: string[] = [];
 
   const cleanup = async () => {
@@ -35,11 +35,11 @@ describe('MediaOutput', () => {
   describe('open', () => {
     it('should open output file (async)', async () => {
       const outputFile = getTempFile('mp4');
-      const output = await MediaOutput.open(outputFile);
+      const output = await Muxer.open(outputFile);
 
-      assert(output instanceof MediaOutput);
-      assert.equal(output.isOutputOpen, true, 'Output should be open');
-      assert.equal(output.isOutputInitialized, false, 'Output should not be initialized yet');
+      assert(output instanceof Muxer);
+      assert.equal(output.isOpen, true, 'Output should be open');
+      assert.equal(output.streamsInitialized, false, 'Should not be initialized yet');
 
       await output.close();
       await cleanup();
@@ -47,18 +47,18 @@ describe('MediaOutput', () => {
 
     it('should open output file (sync)', () => {
       const outputFile = getTempFile('mp4');
-      const output = MediaOutput.openSync(outputFile);
+      const output = Muxer.openSync(outputFile);
 
-      assert(output instanceof MediaOutput);
+      assert(output instanceof Muxer);
 
       output.closeSync();
     });
 
     it('should open output file with explicit format (async)', async () => {
       const outputFile = getTempFile('mkv');
-      const output = await MediaOutput.open(outputFile, { format: 'matroska' });
+      const output = await Muxer.open(outputFile, { format: 'matroska' });
 
-      assert(output instanceof MediaOutput);
+      assert(output instanceof Muxer);
       const formatContext = output.getFormatContext();
       assert(formatContext.oformat);
       assert(formatContext.oformat.name?.includes('matroska'));
@@ -69,9 +69,9 @@ describe('MediaOutput', () => {
 
     it('should open output file with explicit format (sync)', () => {
       const outputFile = getTempFile('mkv');
-      const output = MediaOutput.openSync(outputFile, { format: 'matroska' });
+      const output = Muxer.openSync(outputFile, { format: 'matroska' });
 
-      assert(output instanceof MediaOutput);
+      assert(output instanceof Muxer);
       const formatContext = output.getFormatContext();
       assert(formatContext.oformat);
       assert(formatContext.oformat.name?.includes('matroska'));
@@ -93,8 +93,8 @@ describe('MediaOutput', () => {
         },
       };
 
-      const output = await MediaOutput.open(callbacks, { format: 'mp4' });
-      assert(output instanceof MediaOutput);
+      const output = await Muxer.open(callbacks, { format: 'mp4' });
+      assert(output instanceof Muxer);
 
       await output.close();
     });
@@ -105,7 +105,7 @@ describe('MediaOutput', () => {
       };
 
       // @ts-expect-error Testing missing format
-      await assert.rejects(async () => await MediaOutput.open(callbacks), /Format must be specified for custom IO/);
+      await assert.rejects(async () => await Muxer.open(callbacks), /Format must be specified for custom IO/);
     });
 
     it('should support custom buffer size for custom IO (async)', async () => {
@@ -113,12 +113,12 @@ describe('MediaOutput', () => {
         write: (buffer: Buffer) => buffer.length,
       };
 
-      const output = await MediaOutput.open(callbacks, {
+      const output = await Muxer.open(callbacks, {
         format: 'mp4',
         bufferSize: 8192,
       });
 
-      assert(output instanceof MediaOutput);
+      assert(output instanceof Muxer);
       await output.close();
     });
   });
@@ -126,12 +126,12 @@ describe('MediaOutput', () => {
   describe('options', () => {
     it('should open with maxMuxingQueueSize option', async () => {
       const outputFile = getTempFile('mp4');
-      const output = await MediaOutput.open(outputFile, {
+      const output = await Muxer.open(outputFile, {
         maxMuxingQueueSize: 2048,
       });
 
-      assert(output instanceof MediaOutput);
-      assert.equal(output.isOutputOpen, true);
+      assert(output instanceof Muxer);
+      assert.equal(output.isOpen, true);
 
       await output.close();
       await cleanup();
@@ -139,12 +139,12 @@ describe('MediaOutput', () => {
 
     it('should open with muxingQueueDataThreshold option', async () => {
       const outputFile = getTempFile('mp4');
-      const output = await MediaOutput.open(outputFile, {
+      const output = await Muxer.open(outputFile, {
         muxingQueueDataThreshold: 100 * 1024 * 1024, // 100MB
       });
 
-      assert(output instanceof MediaOutput);
-      assert.equal(output.isOutputOpen, true);
+      assert(output instanceof Muxer);
+      assert.equal(output.isOpen, true);
 
       await output.close();
       await cleanup();
@@ -152,12 +152,12 @@ describe('MediaOutput', () => {
 
     it('should open with syncQueueBufferDuration option', async () => {
       const outputFile = getTempFile('mp4');
-      const output = await MediaOutput.open(outputFile, {
+      const output = await Muxer.open(outputFile, {
         syncQueueBufferDuration: 2.0, // 2 seconds
       });
 
-      assert(output instanceof MediaOutput);
-      assert.equal(output.isOutputOpen, true);
+      assert(output instanceof Muxer);
+      assert.equal(output.isOpen, true);
 
       await output.close();
       await cleanup();
@@ -165,12 +165,12 @@ describe('MediaOutput', () => {
 
     it('should open with startTime option', async () => {
       const outputFile = getTempFile('mp4');
-      const output = await MediaOutput.open(outputFile, {
+      const output = await Muxer.open(outputFile, {
         startTime: 10.0, // Start at 10 seconds
       });
 
-      assert(output instanceof MediaOutput);
-      assert.equal(output.isOutputOpen, true);
+      assert(output instanceof Muxer);
+      assert.equal(output.isOpen, true);
 
       await output.close();
       await cleanup();
@@ -178,12 +178,12 @@ describe('MediaOutput', () => {
 
     it('should open with copyInitialNonkeyframes option', async () => {
       const outputFile = getTempFile('mp4');
-      const output = await MediaOutput.open(outputFile, {
+      const output = await Muxer.open(outputFile, {
         copyInitialNonkeyframes: true,
       });
 
-      assert(output instanceof MediaOutput);
-      assert.equal(output.isOutputOpen, true);
+      assert(output instanceof Muxer);
+      assert.equal(output.isOpen, true);
 
       await output.close();
       await cleanup();
@@ -191,12 +191,12 @@ describe('MediaOutput', () => {
 
     it('should open with copyPriorStart option', async () => {
       const outputFile = getTempFile('mp4');
-      const output = await MediaOutput.open(outputFile, {
+      const output = await Muxer.open(outputFile, {
         copyPriorStart: 1, // 1 = copy frames before start time
       });
 
-      assert(output instanceof MediaOutput);
-      assert.equal(output.isOutputOpen, true);
+      assert(output instanceof Muxer);
+      assert.equal(output.isOpen, true);
 
       await output.close();
       await cleanup();
@@ -204,7 +204,7 @@ describe('MediaOutput', () => {
 
     it('should open with all sync queue options combined', async () => {
       const outputFile = getTempFile('mp4');
-      const output = await MediaOutput.open(outputFile, {
+      const output = await Muxer.open(outputFile, {
         maxMuxingQueueSize: 2048,
         muxingQueueDataThreshold: 100 * 1024 * 1024,
         syncQueueBufferDuration: 2.0,
@@ -213,8 +213,8 @@ describe('MediaOutput', () => {
         copyPriorStart: 1,
       });
 
-      assert(output instanceof MediaOutput);
-      assert.equal(output.isOutputOpen, true);
+      assert(output instanceof Muxer);
+      assert.equal(output.isOpen, true);
 
       await output.close();
       await cleanup();
@@ -222,12 +222,12 @@ describe('MediaOutput', () => {
 
     it('should open with options (sync)', () => {
       const outputFile = getTempFile('mp4');
-      const output = MediaOutput.openSync(outputFile, {
+      const output = Muxer.openSync(outputFile, {
         maxMuxingQueueSize: 1024,
         syncQueueBufferDuration: 1.5,
       });
 
-      assert(output instanceof MediaOutput);
+      assert(output instanceof Muxer);
 
       output.closeSync();
     });
@@ -236,7 +236,7 @@ describe('MediaOutput', () => {
   describe('properties', () => {
     it('should get format name and long name (async)', async () => {
       const outputFile = getTempFile('mp4');
-      const output = await MediaOutput.open(outputFile);
+      const output = await Muxer.open(outputFile);
 
       const formatName = output.formatName;
       assert.ok(formatName, 'Should have format name');
@@ -254,7 +254,7 @@ describe('MediaOutput', () => {
 
     it('should get MIME type (async)', async () => {
       const outputFile = getTempFile('mp4');
-      const output = await MediaOutput.open(outputFile);
+      const output = await Muxer.open(outputFile);
 
       const mimeType = output.mimeType;
 
@@ -272,9 +272,9 @@ describe('MediaOutput', () => {
     });
 
     it('should get streams (async)', async () => {
-      const input = await MediaInput.open(inputFile);
+      const input = await Demuxer.open(inputFile);
       const outputFile = getTempFile('mp4');
-      const output = await MediaOutput.open(outputFile);
+      const output = await Muxer.open(outputFile);
 
       // Initially no streams
       assert.ok(Array.isArray(output.streams), 'Streams should be array');
@@ -298,12 +298,12 @@ describe('MediaOutput', () => {
     });
 
     it('should track initialization state (async)', async () => {
-      const input = await MediaInput.open(inputFile);
+      const input = await Demuxer.open(inputFile);
       const outputFile = getTempFile('mp4');
-      const output = await MediaOutput.open(outputFile);
+      const output = await Muxer.open(outputFile);
 
       // Initially not initialized
-      assert.equal(output.isOutputInitialized, false, 'Should not be initialized');
+      assert.equal(output.streamsInitialized, false, 'Should not be initialized');
 
       const videoStream = input.video();
       assert(videoStream);
@@ -316,24 +316,25 @@ describe('MediaOutput', () => {
       const streamIdx = output.addStream(videoStream, { encoder });
 
       // Still not initialized until first packet
-      assert.equal(output.isOutputInitialized, false, 'Should not be initialized before first packet');
+      assert.equal(output.streamsInitialized, false, 'Should not be initialized before first packet');
 
       // Write first packet to trigger initialization
-      for await (const packet of input.packets()) {
+      for await (using packet of input.packets()) {
+        if (!packet) {
+          break;
+        }
+
         if (packet.streamIndex === 0) {
-          const frame = await decoder.decode(packet);
+          using frame = await decoder.decode(packet);
           if (frame) {
-            const encoded = await encoder.encode(frame);
+            using encoded = await encoder.encode(frame);
             if (encoded) {
               await output.writePacket(encoded, streamIdx);
               // Now should be initialized
-              assert.equal(output.isOutputInitialized, true, 'Should be initialized after first packet');
-              encoded.free();
+              assert.equal(output.streamsInitialized, true, 'Should be initialized after first packet');
               break;
             }
-            frame.free();
           }
-          packet.free();
         }
       }
 
@@ -346,13 +347,13 @@ describe('MediaOutput', () => {
 
     it('should track open state (async)', async () => {
       const outputFile = getTempFile('mp4');
-      const output = await MediaOutput.open(outputFile);
+      const output = await Muxer.open(outputFile);
 
-      assert.equal(output.isOutputOpen, true, 'Should be open initially');
+      assert.equal(output.isOpen, true, 'Should be open initially');
 
       await output.close();
 
-      assert.equal(output.isOutputOpen, false, 'Should be closed after close()');
+      assert.equal(output.isOpen, false, 'Should be closed after close()');
       await cleanup();
     });
   });
@@ -360,7 +361,7 @@ describe('MediaOutput', () => {
   describe('addStream', () => {
     it('should add stream from encoder only (async)', async () => {
       const outputFile = getTempFile('mp4');
-      const output = await MediaOutput.open(outputFile);
+      const output = await Muxer.open(outputFile);
 
       const encoder = await Encoder.create(FF_ENCODER_LIBX264, {
         bitrate: '1M',
@@ -377,7 +378,7 @@ describe('MediaOutput', () => {
 
     it('should add stream from encoder only (sync)', () => {
       const outputFile = getTempFile('mp4');
-      const output = MediaOutput.openSync(outputFile);
+      const output = Muxer.openSync(outputFile);
 
       const encoder = Encoder.createSync(FF_ENCODER_LIBX264, {
         bitrate: '1M',
@@ -392,9 +393,9 @@ describe('MediaOutput', () => {
     });
 
     it('should add stream from encoder with input stream for metadata (async)', async () => {
-      const input = await MediaInput.open(inputFile);
+      const input = await Demuxer.open(inputFile);
       const outputFile = getTempFile('mp4');
-      const output = await MediaOutput.open(outputFile);
+      const output = await Muxer.open(outputFile);
 
       const videoStream = input.video();
       assert(videoStream);
@@ -413,9 +414,9 @@ describe('MediaOutput', () => {
     });
 
     it('should add stream from encoder with input stream for metadata (sync)', () => {
-      const input = MediaInput.openSync(inputFile);
+      const input = Demuxer.openSync(inputFile);
       const outputFile = getTempFile('mp4');
-      const output = MediaOutput.openSync(outputFile);
+      const output = Muxer.openSync(outputFile);
 
       const videoStream = input.video();
       assert(videoStream);
@@ -433,9 +434,9 @@ describe('MediaOutput', () => {
     });
 
     it('should add stream with transcoding (async)', async () => {
-      const input = await MediaInput.open(inputFile);
+      const input = await Demuxer.open(inputFile);
       const outputFile = getTempFile('mp4');
-      const output = await MediaOutput.open(outputFile);
+      const output = await Muxer.open(outputFile);
 
       const videoStream = input.video();
       assert(videoStream);
@@ -454,9 +455,9 @@ describe('MediaOutput', () => {
     });
 
     it('should add stream with transcoding (sync)', () => {
-      const input = MediaInput.openSync(inputFile);
+      const input = Demuxer.openSync(inputFile);
       const outputFile = getTempFile('mp4');
-      const output = MediaOutput.openSync(outputFile);
+      const output = Muxer.openSync(outputFile);
 
       const videoStream = input.video();
       assert(videoStream);
@@ -474,9 +475,9 @@ describe('MediaOutput', () => {
     });
 
     it('should add stream for copy from input stream (async)', async () => {
-      const input = await MediaInput.open(inputFile);
+      const input = await Demuxer.open(inputFile);
       const outputFile = getTempFile('mp4');
-      const output = await MediaOutput.open(outputFile);
+      const output = await Muxer.open(outputFile);
 
       const inputStream = input.video();
       assert(inputStream);
@@ -490,9 +491,9 @@ describe('MediaOutput', () => {
     });
 
     it('should add stream for copy from input stream (sync)', () => {
-      const input = MediaInput.openSync(inputFile);
+      const input = Demuxer.openSync(inputFile);
       const outputFile = getTempFile('mp4');
-      const output = MediaOutput.openSync(outputFile);
+      const output = Muxer.openSync(outputFile);
 
       const inputStream = input.video();
       assert(inputStream);
@@ -505,9 +506,9 @@ describe('MediaOutput', () => {
     });
 
     it('should support custom timebase override (async)', async () => {
-      const input = await MediaInput.open(inputFile);
+      const input = await Demuxer.open(inputFile);
       const outputFile = getTempFile('mp4');
-      const output = await MediaOutput.open(outputFile);
+      const output = await Muxer.open(outputFile);
 
       const videoStream = input.video();
       assert(videoStream);
@@ -515,7 +516,6 @@ describe('MediaOutput', () => {
 
       output.addStream(videoStream, {
         encoder,
-        timeBase: { num: 1, den: 90000 },
       });
 
       encoder.close();
@@ -525,9 +525,9 @@ describe('MediaOutput', () => {
     });
 
     it('should support custom timebase override (sync)', () => {
-      const input = MediaInput.openSync(inputFile);
+      const input = Demuxer.openSync(inputFile);
       const outputFile = getTempFile('mp4');
-      const output = MediaOutput.openSync(outputFile);
+      const output = Muxer.openSync(outputFile);
 
       const videoStream = input.video();
       assert(videoStream);
@@ -535,7 +535,6 @@ describe('MediaOutput', () => {
 
       output.addStream(videoStream, {
         encoder,
-        timeBase: { num: 1, den: 90000 },
       });
 
       encoder.close();
@@ -544,9 +543,9 @@ describe('MediaOutput', () => {
     });
 
     it('should add multiple streams (async)', async () => {
-      const input = await MediaInput.open(inputFile);
+      const input = await Demuxer.open(inputFile);
       const outputFile = getTempFile('mp4');
-      const output = await MediaOutput.open(outputFile);
+      const output = await Muxer.open(outputFile);
 
       const videoStream = input.video();
       const audioStream = input.audio();
@@ -570,9 +569,9 @@ describe('MediaOutput', () => {
     });
 
     it('should add multiple streams (sync)', () => {
-      const input = MediaInput.openSync(inputFile);
+      const input = Demuxer.openSync(inputFile);
       const outputFile = getTempFile('mp4');
-      const output = MediaOutput.openSync(outputFile);
+      const output = Muxer.openSync(outputFile);
 
       const videoStream = input.video();
       const audioStream = input.audio();
@@ -595,9 +594,9 @@ describe('MediaOutput', () => {
     });
 
     it('should throw when adding stream after header (async)', async () => {
-      const input = await MediaInput.open(inputFile);
+      const input = await Demuxer.open(inputFile);
       const outputFile = getTempFile('mp4');
-      const output = await MediaOutput.open(outputFile);
+      const output = await Muxer.open(outputFile);
 
       const videoStream = input.video();
       assert(videoStream);
@@ -612,12 +611,15 @@ describe('MediaOutput', () => {
 
       // Get first packet and decode/encode to initialize encoder and write header
       for await (using packet of input.packets(videoStream.index)) {
+        if (!packet) {
+          break;
+        }
+
         using frame = await decoder.decode(packet);
         if (frame) {
           using encoded = await encoder.encode(frame);
           if (encoded) {
             await output.writePacket(encoded, streamIdx); // This triggers header write
-            encoded.free();
             headerWritten = true;
             break; // Just process one packet
           }
@@ -648,16 +650,16 @@ describe('MediaOutput', () => {
     });
 
     it('should throw when output is closed (async)', async () => {
-      const input = await MediaInput.open(inputFile);
+      const input = await Demuxer.open(inputFile);
       const outputFile = getTempFile('mp4');
-      const output = await MediaOutput.open(outputFile);
+      const output = await Muxer.open(outputFile);
       await output.close();
 
       const videoStream = input.video();
       assert(videoStream);
       const encoder = await Encoder.create(FF_ENCODER_LIBX264);
 
-      assert.throws(() => output.addStream(videoStream, { encoder }), /MediaOutput is closed/);
+      assert.throws(() => output.addStream(videoStream, { encoder }), /Muxer is closed/);
 
       encoder.close();
       await input.close();
@@ -665,16 +667,16 @@ describe('MediaOutput', () => {
     });
 
     it('should throw when output is closed (sync)', () => {
-      const input = MediaInput.openSync(inputFile);
+      const input = Demuxer.openSync(inputFile);
       const outputFile = getTempFile('mp4');
-      const output = MediaOutput.openSync(outputFile);
+      const output = Muxer.openSync(outputFile);
       output.closeSync();
 
       const videoStream = input.video();
       assert(videoStream);
       const encoder = Encoder.createSync(FF_ENCODER_LIBX264);
 
-      assert.throws(() => output.addStream(videoStream, { encoder }), /MediaOutput is closed/);
+      assert.throws(() => output.addStream(videoStream, { encoder }), /Muxer is closed/);
 
       encoder.close();
       input.closeSync();
@@ -683,9 +685,9 @@ describe('MediaOutput', () => {
 
   describe('automatic header/trailer', () => {
     it('should write header automatically on first packet and trailer on close (async)', async () => {
-      const input = await MediaInput.open(inputFile);
+      const input = await Demuxer.open(inputFile);
       const outputFile = getTempFile('mp4');
-      const output = await MediaOutput.open(outputFile);
+      const output = await Muxer.open(outputFile);
 
       const videoStream = input.video();
       assert(videoStream);
@@ -711,9 +713,9 @@ describe('MediaOutput', () => {
     // Tests for manual header/trailer writing removed - now handled automatically
 
     it('should auto-write header and trailer (async)', async () => {
-      const input = await MediaInput.open(inputFile);
+      const input = await Demuxer.open(inputFile);
       const outputFile = getTempFile('mp4');
-      const output = await MediaOutput.open(outputFile);
+      const output = await Muxer.open(outputFile);
 
       const videoStream = input.video();
       assert(videoStream);
@@ -727,28 +729,28 @@ describe('MediaOutput', () => {
 
       // Process just one frame to test header/trailer writing
       let processed = false;
-      for await (const packet of input.packets()) {
+      for await (using packet of input.packets()) {
+        if (!packet) {
+          break;
+        }
+
         if (packet.streamIndex === 0 && !processed) {
-          const frame = await decoder.decode(packet);
+          using frame = await decoder.decode(packet);
           if (frame) {
-            const encoded = await encoder.encode(frame);
+            using encoded = await encoder.encode(frame);
             if (encoded) {
               // Header written automatically on first packet
               await output.writePacket(encoded, streamIdx);
-              encoded.free();
               processed = true;
             }
-            frame.free();
           }
         }
-        packet.free();
         if (processed) break;
       }
 
       if (!processed) {
-        for await (const encoded of encoder.flushPackets()) {
+        for await (using encoded of encoder.flushPackets()) {
           await output.writePacket(encoded, streamIdx);
-          encoded.free();
           break;
         }
       }
@@ -770,9 +772,9 @@ describe('MediaOutput', () => {
 
   describe('writePacket', () => {
     it('should write packet to stream (async)', async () => {
-      const input = await MediaInput.open(inputFile);
+      const input = await Demuxer.open(inputFile);
       const outputFile = getTempFile('mp4');
-      const output = await MediaOutput.open(outputFile);
+      const output = await Muxer.open(outputFile);
 
       const videoStream = input.video();
       assert(videoStream);
@@ -786,20 +788,21 @@ describe('MediaOutput', () => {
 
       // Process a few packets
       let packetCount = 0;
-      for await (const packet of input.packets()) {
+      for await (using packet of input.packets()) {
+        if (!packet) {
+          break;
+        }
+
         if (packet.streamIndex === 0 && packetCount < 3) {
-          const frame = await decoder.decode(packet);
+          using frame = await decoder.decode(packet);
           if (frame) {
-            const encoded = await encoder.encode(frame);
+            using encoded = await encoder.encode(frame);
             if (encoded) {
               await output.writePacket(encoded, streamIdx);
-              encoded.free();
               packetCount++;
             }
-            frame.free();
           }
         }
-        packet.free();
         if (packetCount >= 3) break;
       }
 
@@ -815,9 +818,9 @@ describe('MediaOutput', () => {
     });
 
     it('should write packet to stream (sync)', () => {
-      const input = MediaInput.openSync(inputFile);
+      const input = Demuxer.openSync(inputFile);
       const outputFile = getTempFile('mp4');
-      const output = MediaOutput.openSync(outputFile);
+      const output = Muxer.openSync(outputFile);
 
       const videoStream = input.video();
       assert(videoStream);
@@ -831,20 +834,21 @@ describe('MediaOutput', () => {
 
       // Process a few packets
       let packetCount = 0;
-      for (const packet of input.packetsSync()) {
+      for (using packet of input.packetsSync()) {
+        if (!packet) {
+          break;
+        }
+
         if (packet.streamIndex === 0 && packetCount < 3) {
-          const frame = decoder.decodeSync(packet);
+          using frame = decoder.decodeSync(packet);
           if (frame) {
-            const encoded = encoder.encodeSync(frame);
+            using encoded = encoder.encodeSync(frame);
             if (encoded) {
               output.writePacketSync(encoded, streamIdx);
-              encoded.free();
               packetCount++;
             }
-            frame.free();
           }
         }
-        packet.free();
         if (packetCount >= 3) break;
       }
 
@@ -855,9 +859,9 @@ describe('MediaOutput', () => {
     });
 
     it('should throw for invalid stream index (async)', async () => {
-      const input = await MediaInput.open(inputFile);
+      const input = await Demuxer.open(inputFile);
       const outputFile = getTempFile('mp4');
-      const output = await MediaOutput.open(outputFile);
+      const output = await Muxer.open(outputFile);
 
       const videoStream = input.video();
       assert(videoStream);
@@ -877,9 +881,9 @@ describe('MediaOutput', () => {
     });
 
     it('should throw for invalid stream index (sync)', () => {
-      const input = MediaInput.openSync(inputFile);
+      const input = Demuxer.openSync(inputFile);
       const outputFile = getTempFile('mp4');
-      const output = MediaOutput.openSync(outputFile);
+      const output = Muxer.openSync(outputFile);
 
       const videoStream = input.video();
       assert(videoStream);
@@ -900,15 +904,15 @@ describe('MediaOutput', () => {
 
   describe('AsyncDisposable', () => {
     it('should support await using syntax (async)', async () => {
-      const input = await MediaInput.open(inputFile);
+      const input = await Demuxer.open(inputFile);
       const outputFile = getTempFile('mp4');
-      let output: MediaOutput | null = null;
+      let output: Muxer | null = null;
 
       // Use async context to test disposal
       await (async () => {
-        await using o = await MediaOutput.open(outputFile);
+        await using o = await Muxer.open(outputFile);
         output = o;
-        assert(output instanceof MediaOutput);
+        assert(output instanceof Muxer);
 
         const videoStream = input.video();
         assert(videoStream);
@@ -925,7 +929,7 @@ describe('MediaOutput', () => {
         const p = new Packet();
         p.alloc();
         await output!.writePacket(p, 0);
-      }, /MediaOutput is closed/);
+      }, /Muxer is closed/);
 
       await input.close();
       await cleanup();
@@ -944,26 +948,29 @@ describe('MediaOutput', () => {
       };
 
       {
-        using output = MediaOutput.openSync(callbacks, {
+        using output = Muxer.openSync(callbacks, {
           format: 'mp4',
           options: {
             movflags: '+frag_keyframe+empty_moov',
           },
         });
 
-        const input = MediaInput.openSync(inputFile);
+        const input = Demuxer.openSync(inputFile);
         const videoStream = input.video();
         assert(videoStream);
 
         const streamIdx = output.addStream(videoStream);
 
         let packetCount = 0;
-        for (const packet of input.packetsSync()) {
+        for (using packet of input.packetsSync()) {
+          if (!packet) {
+            break;
+          }
+
           if (packet.streamIndex === videoStream.index && packetCount < 3) {
             output.writePacketSync(packet, streamIdx);
             packetCount++;
           }
-          packet.free();
           if (packetCount >= 3) break;
         }
 
@@ -985,26 +992,29 @@ describe('MediaOutput', () => {
       };
 
       {
-        await using output = await MediaOutput.open(callbacks, {
+        await using output = await Muxer.open(callbacks, {
           format: 'mp4',
           options: {
             movflags: '+frag_keyframe+empty_moov',
           },
         });
 
-        const input = await MediaInput.open(inputFile);
+        const input = await Demuxer.open(inputFile);
         const videoStream = input.video();
         assert(videoStream);
 
         const streamIdx = output.addStream(videoStream);
 
         let packetCount = 0;
-        for await (const packet of input.packets()) {
+        for await (using packet of input.packets()) {
+          if (!packet) {
+            break;
+          }
+
           if (packet.streamIndex === videoStream.index && packetCount < 3) {
             await output.writePacket(packet, streamIdx);
             packetCount++;
           }
-          packet.free();
           if (packetCount >= 3) break;
         }
 
@@ -1016,7 +1026,7 @@ describe('MediaOutput', () => {
     });
 
     it('should handle errors correctly with using keyword and IOOutputCallbacks', async () => {
-      const input = MediaInput.openSync(inputFile);
+      const input = Demuxer.openSync(inputFile);
       const chunks: Buffer[] = [];
 
       const callbacks: IOOutputCallbacks = {
@@ -1028,7 +1038,7 @@ describe('MediaOutput', () => {
 
       let errorCaught = false;
       try {
-        using output = MediaOutput.openSync(callbacks, { format: 'mp4' });
+        using output = Muxer.openSync(callbacks, { format: 'mp4' });
 
         const videoStream = input.video();
         assert(videoStream);
@@ -1058,26 +1068,29 @@ describe('MediaOutput', () => {
         },
       };
 
-      const output = MediaOutput.openSync(callbacks, {
+      const output = Muxer.openSync(callbacks, {
         format: 'mp4',
         options: {
           movflags: '+frag_keyframe+empty_moov',
         },
       });
 
-      const input = MediaInput.openSync(inputFile);
+      const input = Demuxer.openSync(inputFile);
       const videoStream = input.video();
       assert(videoStream);
 
       const streamIdx = output.addStream(videoStream);
 
       let packetCount = 0;
-      for (const packet of input.packetsSync()) {
+      for (using packet of input.packetsSync()) {
+        if (!packet) {
+          break;
+        }
+
         if (packet.streamIndex === videoStream.index && packetCount < 3) {
           output.writePacketSync(packet, streamIdx);
           packetCount++;
         }
-        packet.free();
         if (packetCount >= 3) break;
       }
 
@@ -1134,8 +1147,8 @@ describe('MediaOutput', () => {
 
       // Test with using keyword - no deadlock!
       try {
-        await using input = await MediaInput.open(inputCallbacks as any, { format: 'mp4' });
-        await using output = await MediaOutput.open(outputCallbacks, {
+        await using input = await Demuxer.open(inputCallbacks as any, { format: 'mp4' });
+        await using output = await Muxer.open(outputCallbacks, {
           format: 'mp4',
           options: {
             movflags: '+frag_keyframe+separate_moof+default_base_moof+empty_moov',
@@ -1149,12 +1162,15 @@ describe('MediaOutput', () => {
 
         // Copy some packets
         let packetCount = 0;
-        for await (const packet of input.packets()) {
+        for await (using packet of input.packets()) {
+          if (!packet) {
+            break;
+          }
+
           if (packet.streamIndex === videoStream.index && packetCount < 10) {
             await output.writePacket(packet, streamIdx);
             packetCount++;
           }
-          packet.free();
           if (packetCount >= 10) break;
         }
 
@@ -1174,9 +1190,9 @@ describe('MediaOutput', () => {
 
   describe('coded_side_data copying', () => {
     it('should copy all coded_side_data when adding stream from input (async)', async () => {
-      const input = await MediaInput.open(inputFile);
+      const input = await Demuxer.open(inputFile);
       const outputFile = getTempFile('mp4');
-      const output = await MediaOutput.open(outputFile);
+      const output = await Muxer.open(outputFile);
 
       const videoStream = input.video();
       assert(videoStream);
@@ -1206,9 +1222,9 @@ describe('MediaOutput', () => {
     });
 
     it('should copy all coded_side_data when adding stream from input (sync)', () => {
-      const input = MediaInput.openSync(inputFile);
+      const input = Demuxer.openSync(inputFile);
       const outputFile = getTempFile('mp4');
-      const output = MediaOutput.openSync(outputFile);
+      const output = Muxer.openSync(outputFile);
 
       const videoStream = input.video();
       assert(videoStream);
@@ -1237,10 +1253,10 @@ describe('MediaOutput', () => {
   });
 
   describe('Integration', () => {
-    it('should transcode video with MediaInput/Output (async)', async () => {
-      const input = await MediaInput.open(inputFile);
+    it('should transcode video with Demuxer/Output (async)', async () => {
+      const input = await Demuxer.open(inputFile);
       const outputFile = getTempFile('mp4');
-      const output = await MediaOutput.open(outputFile);
+      const output = await Muxer.open(outputFile);
 
       // Get video stream for timebase
       const videoStream = input.video();
@@ -1257,17 +1273,19 @@ describe('MediaOutput', () => {
 
       // Process some packets - header written automatically on first packet
       let packetCount = 0;
-      for await (const packet of input.packets()) {
+      for await (using packet of input.packets()) {
+        if (!packet) {
+          break;
+        }
+
         if (packet.streamIndex === 0 && packetCount < 10) {
-          const frame = await decoder.decode(packet);
+          using frame = await decoder.decode(packet);
           if (frame) {
-            const encoded = await encoder.encode(frame);
+            using encoded = await encoder.encode(frame);
             if (encoded) {
               await output.writePacket(encoded, streamIdx);
-              encoded.free();
               packetCount++;
             }
-            frame.free();
           }
         }
       }
@@ -1293,9 +1311,9 @@ describe('MediaOutput', () => {
     });
 
     it('should support stream copy (async)', async () => {
-      const input = await MediaInput.open(inputFile);
+      const input = await Demuxer.open(inputFile);
       const outputFile = getTempFile('mkv');
-      const output = await MediaOutput.open(outputFile);
+      const output = await Muxer.open(outputFile);
 
       // Copy video stream directly
       const videoStream = input.video();
@@ -1309,7 +1327,11 @@ describe('MediaOutput', () => {
 
       // Copy packets without decoding/encoding - header written automatically
       let packetCount = 0;
-      for await (const packet of input.packets()) {
+      for await (using packet of input.packets()) {
+        if (!packet) {
+          break;
+        }
+
         if (packet.streamIndex === videoStream.index && packetCount < 20) {
           await output.writePacket(packet, streamIdx);
           packetCount++;
@@ -1325,7 +1347,7 @@ describe('MediaOutput', () => {
       assert(stats.size > 0);
 
       // Verify we can open and read the copied file
-      const verifyInput = await MediaInput.open(outputFile);
+      const verifyInput = await Demuxer.open(outputFile);
       const verifyVideo = verifyInput.video();
       assert(verifyVideo);
       assert.equal(verifyVideo.codecpar?.width, originalWidth);
