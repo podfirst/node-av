@@ -15,12 +15,12 @@ import type { IOInputCallbacks, MediaInputOptions } from './types.js';
  *
  * @example
  * ```typescript
- * import { IOStream, MediaInput } from 'node-av/api';
+ * import { IOStream, Demuxer } from 'node-av/api';
  *
  * // From buffer
  * const buffer = await fs.readFile('video.mp4');
  * const ioContext = IOStream.create(buffer);
- * const input = await MediaInput.open(buffer);
+ * const input = await Demuxer.open(buffer);
  * ```
  *
  * @example
@@ -43,7 +43,7 @@ import type { IOInputCallbacks, MediaInputOptions } from './types.js';
  * ```
  *
  * @see {@link IOContext} For low-level I/O operations
- * @see {@link MediaInput} For using I/O contexts
+ * @see {@link Demuxer} For using I/O contexts
  * @see {@link IOInputCallbacks} For callback interface
  */
 export class IOStream {

@@ -3,21 +3,21 @@ import type { Packet } from '../lib/packet.js';
 import type { Stream } from '../lib/stream.js';
 import type { BitStreamFilterAPI } from './bitstream-filter.js';
 import type { Decoder } from './decoder.js';
+import type { Demuxer } from './demuxer.js';
 import type { Encoder } from './encoder.js';
 import type { FilterAPI } from './filter.js';
-import type { MediaInput } from './media-input.js';
-import type { MediaOutput } from './media-output.js';
+import type { Muxer } from './muxer.js';
 
 // Restrict stream names to known types
 export type StreamName = 'video' | 'audio';
 
 // Better type definitions with proper inference
-export type NamedInputs<K extends StreamName = StreamName> = Pick<Record<StreamName, MediaInput>, K>;
+export type NamedInputs<K extends StreamName = StreamName> = Pick<Record<StreamName, Demuxer>, K>;
 export type NamedStages<K extends StreamName = StreamName> = Pick<
   Record<StreamName, (Decoder | FilterAPI | FilterAPI[] | Encoder | BitStreamFilterAPI | BitStreamFilterAPI[] | undefined)[] | 'passthrough'>,
   K
 >;
-export type NamedOutputs<K extends StreamName = StreamName> = Pick<Record<StreamName, MediaOutput>, K>;
+export type NamedOutputs<K extends StreamName = StreamName> = Pick<Record<StreamName, Muxer>, K>;
 
 /**
  * Internal metadata for tracking stream components.
@@ -30,7 +30,7 @@ interface StreamMetadata {
   bitStreamFilter?: BitStreamFilterAPI;
   streamIndex?: number;
   type?: 'video' | 'audio';
-  mediaInput?: MediaInput; // Track source MediaInput for stream copy
+  mediaInput?: Demuxer; // Track source Demuxer for stream copy
 }
 
 /**
@@ -92,7 +92,7 @@ export interface PipelineControl {
  * await control.completion;
  * ```
  */
-export function pipeline(source: MediaInput, decoder: Decoder, encoder: Encoder, output: MediaOutput): PipelineControl;
+export function pipeline(source: Demuxer, decoder: Decoder, encoder: Encoder, output: Muxer): PipelineControl;
 
 /**
  * Full transcoding pipeline with filter: input → decoder → filter → encoder → output.
@@ -115,7 +115,7 @@ export function pipeline(source: MediaInput, decoder: Decoder, encoder: Encoder,
  * await control.completion;
  * ```
  */
-export function pipeline(source: MediaInput, decoder: Decoder, filter: FilterAPI | FilterAPI[], encoder: Encoder, output: MediaOutput): PipelineControl;
+export function pipeline(source: Demuxer, decoder: Decoder, filter: FilterAPI | FilterAPI[], encoder: Encoder, output: Muxer): PipelineControl;
 
 /**
  * Transcoding with bitstream filter: input → decoder → encoder → bsf → output.
@@ -141,7 +141,7 @@ export function pipeline(source: MediaInput, decoder: Decoder, filter: FilterAPI
  * await control.completion;
  * ```
  */
-export function pipeline(source: MediaInput, decoder: Decoder, encoder: Encoder, bsf: BitStreamFilterAPI | BitStreamFilterAPI[], output: MediaOutput): PipelineControl;
+export function pipeline(source: Demuxer, decoder: Decoder, encoder: Encoder, bsf: BitStreamFilterAPI | BitStreamFilterAPI[], output: Muxer): PipelineControl;
 
 /**
  * Full pipeline with filter and bsf: input → decoder → filter → encoder → bsf → output.
@@ -171,12 +171,12 @@ export function pipeline(source: MediaInput, decoder: Decoder, encoder: Encoder,
  * ```
  */
 export function pipeline(
-  source: MediaInput,
+  source: Demuxer,
   decoder: Decoder,
   filter: FilterAPI | FilterAPI[],
   encoder: Encoder,
   bsf: BitStreamFilterAPI | BitStreamFilterAPI[],
-  output: MediaOutput,
+  output: Muxer,
 ): PipelineControl;
 
 /**
@@ -206,7 +206,7 @@ export function pipeline(
  * await control.completion;
  * ```
  */
-export function pipeline(source: MediaInput, decoder: Decoder, filter1: FilterAPI, filter2: FilterAPI, encoder: Encoder, output: MediaOutput): PipelineControl;
+export function pipeline(source: Demuxer, decoder: Decoder, filter1: FilterAPI, filter2: FilterAPI, encoder: Encoder, output: Muxer): PipelineControl;
 
 /**
  * Stream copy pipeline: input → output (copies all streams).
@@ -224,7 +224,7 @@ export function pipeline(source: MediaInput, decoder: Decoder, filter1: FilterAP
  * await control.completion;
  * ```
  */
-export function pipeline(source: MediaInput, output: MediaOutput): PipelineControl;
+export function pipeline(source: Demuxer, output: Muxer): PipelineControl;
 
 /**
  * Stream copy with bitstream filter: input → bsf → output.
@@ -245,7 +245,7 @@ export function pipeline(source: MediaInput, output: MediaOutput): PipelineContr
  * await control.completion;
  * ```
  */
-export function pipeline(source: MediaInput, bsf: BitStreamFilterAPI | BitStreamFilterAPI[], output: MediaOutput): PipelineControl;
+export function pipeline(source: Demuxer, bsf: BitStreamFilterAPI | BitStreamFilterAPI[], output: Muxer): PipelineControl;
 
 /**
  * Filter + encode + output: frames → filter → encoder → output.
@@ -270,7 +270,7 @@ export function pipeline(source: MediaInput, bsf: BitStreamFilterAPI | BitStream
  * await control.completion;
  * ```
  */
-export function pipeline(source: AsyncIterable<Frame>, filter: FilterAPI | FilterAPI[], encoder: Encoder, output: MediaOutput): PipelineControl;
+export function pipeline(source: AsyncIterable<Frame>, filter: FilterAPI | FilterAPI[], encoder: Encoder, output: Muxer): PipelineControl;
 
 /**
  * Encode + output: frames → encoder → output.
@@ -292,7 +292,7 @@ export function pipeline(source: AsyncIterable<Frame>, filter: FilterAPI | Filte
  * await control.completion;
  * ```
  */
-export function pipeline(source: AsyncIterable<Frame>, encoder: Encoder, output: MediaOutput): PipelineControl;
+export function pipeline(source: AsyncIterable<Frame>, encoder: Encoder, output: Muxer): PipelineControl;
 
 /**
  * Partial pipeline: input → decoder (returns frames).
@@ -314,7 +314,7 @@ export function pipeline(source: AsyncIterable<Frame>, encoder: Encoder, output:
  * }
  * ```
  */
-export function pipeline(source: MediaInput, decoder: Decoder): AsyncGenerator<Frame>;
+export function pipeline(source: Demuxer, decoder: Decoder): AsyncGenerator<Frame | null>;
 
 /**
  * Partial pipeline: input → decoder → filter (returns frames).
@@ -339,7 +339,7 @@ export function pipeline(source: MediaInput, decoder: Decoder): AsyncGenerator<F
  * }
  * ```
  */
-export function pipeline(source: MediaInput, decoder: Decoder, filter: FilterAPI | FilterAPI[]): AsyncGenerator<Frame>;
+export function pipeline(source: Demuxer, decoder: Decoder, filter: FilterAPI | FilterAPI[]): AsyncGenerator<Frame | null>;
 
 /**
  * Partial pipeline: input → decoder → filter → encoder (returns packets).
@@ -367,7 +367,7 @@ export function pipeline(source: MediaInput, decoder: Decoder, filter: FilterAPI
  * }
  * ```
  */
-export function pipeline(source: MediaInput, decoder: Decoder, filter: FilterAPI | FilterAPI[], encoder: Encoder): AsyncGenerator<Packet>;
+export function pipeline(source: Demuxer, decoder: Decoder, filter: FilterAPI | FilterAPI[], encoder: Encoder): AsyncGenerator<Packet | null>;
 
 /**
  * Partial pipeline: input → decoder → encoder (returns packets).
@@ -392,7 +392,7 @@ export function pipeline(source: MediaInput, decoder: Decoder, filter: FilterAPI
  * }
  * ```
  */
-export function pipeline(source: MediaInput, decoder: Decoder, encoder: Encoder): AsyncGenerator<Packet>;
+export function pipeline(source: Demuxer, decoder: Decoder, encoder: Encoder): AsyncGenerator<Packet | null>;
 
 /**
  * Partial pipeline: frames → filter (returns frames).
@@ -415,7 +415,7 @@ export function pipeline(source: MediaInput, decoder: Decoder, encoder: Encoder)
  * }
  * ```
  */
-export function pipeline(source: AsyncIterable<Frame>, filter: FilterAPI | FilterAPI[]): AsyncGenerator<Frame>;
+export function pipeline(source: AsyncIterable<Frame | null>, filter: FilterAPI | FilterAPI[]): AsyncGenerator<Frame | null>;
 
 /**
  * Partial pipeline: frames → encoder (returns packets).
@@ -438,7 +438,7 @@ export function pipeline(source: AsyncIterable<Frame>, filter: FilterAPI | Filte
  * }
  * ```
  */
-export function pipeline(source: AsyncIterable<Frame>, encoder: Encoder): AsyncGenerator<Packet>;
+export function pipeline(source: AsyncIterable<Frame | null>, encoder: Encoder): AsyncGenerator<Packet | null>;
 
 /**
  * Partial pipeline: frames → filter → encoder (returns packets).
@@ -464,7 +464,7 @@ export function pipeline(source: AsyncIterable<Frame>, encoder: Encoder): AsyncG
  * }
  * ```
  */
-export function pipeline(source: AsyncIterable<Frame>, filter: FilterAPI | FilterAPI[], encoder: Encoder): AsyncGenerator<Packet>;
+export function pipeline(source: AsyncIterable<Frame | null>, filter: FilterAPI | FilterAPI[], encoder: Encoder): AsyncGenerator<Packet | null>;
 
 // ============================================================================
 // Named Pipeline Overloads (multiple streams, variable parameters)
@@ -495,7 +495,7 @@ export function pipeline(source: AsyncIterable<Frame>, filter: FilterAPI | Filte
  * await control.completion;
  * ```
  */
-export function pipeline<K extends StreamName>(input: MediaInput, stages: NamedStages<K>, output: MediaOutput): PipelineControl;
+export function pipeline<K extends StreamName>(input: Demuxer, stages: NamedStages<K>, output: Muxer): PipelineControl;
 
 /**
  * Named pipeline with single output - all streams go to the same output.
@@ -522,7 +522,7 @@ export function pipeline<K extends StreamName>(input: MediaInput, stages: NamedS
  * await control.completion;
  * ```
  */
-export function pipeline<K extends StreamName>(inputs: NamedInputs<K>, stages: NamedStages<K>, output: MediaOutput): PipelineControl;
+export function pipeline<K extends StreamName>(inputs: NamedInputs<K>, stages: NamedStages<K>, output: Muxer): PipelineControl;
 
 /**
  * Named pipeline with shared input and multiple outputs.
@@ -549,7 +549,7 @@ export function pipeline<K extends StreamName>(inputs: NamedInputs<K>, stages: N
  * await control.completion;
  * ```
  */
-export function pipeline<K extends StreamName>(input: MediaInput, stages: NamedStages<K>, outputs: NamedOutputs<K>): PipelineControl;
+export function pipeline<K extends StreamName>(input: Demuxer, stages: NamedStages<K>, outputs: NamedOutputs<K>): PipelineControl;
 
 /**
  * Named pipeline with multiple outputs - each stream has its own output.
@@ -611,7 +611,10 @@ export function pipeline<K extends StreamName>(inputs: NamedInputs<K>, stages: N
  * }
  * ```
  */
-export function pipeline<K extends StreamName, T extends Packet | Frame = Packet | Frame>(inputs: NamedInputs<K>, stages: NamedStages<K>): Record<K, AsyncGenerator<T>>;
+export function pipeline<K extends StreamName, T extends Packet | Frame | null = Packet | Frame | null>(
+  inputs: NamedInputs<K>,
+  stages: NamedStages<K>,
+): Record<K, AsyncGenerator<T>>;
 
 // ============================================================================
 // Implementation
@@ -651,12 +654,12 @@ export function pipeline<K extends StreamName, T extends Packet | Frame = Packet
  * await control.completion;
  * ```
  */
-export function pipeline(...args: any[]): PipelineControl | AsyncGenerator<Packet | Frame> | Record<StreamName, AsyncGenerator<Packet | Frame>> {
+export function pipeline(...args: any[]): PipelineControl | AsyncGenerator<Packet | Frame | null> | Record<StreamName, AsyncGenerator<Packet | Frame | null>> {
   // Detect pipeline type based on first argument
   const firstArg = args[0];
   const secondArg = args[1];
 
-  // Check for shared MediaInput + NamedStages pattern
+  // Check for shared Demuxer + NamedStages pattern
   if (isMediaInput(firstArg) && isNamedStages(secondArg)) {
     // Convert shared input to NamedInputs based on stages keys
     const sharedInput = firstArg;
@@ -687,12 +690,12 @@ export function pipeline(...args: any[]): PipelineControl | AsyncGenerator<Packe
       return runNamedPipeline(args[0], args[1], args[2]);
     }
   } else if (isMediaInput(firstArg)) {
-    // Check if this is a stream copy (MediaInput → MediaOutput)
+    // Check if this is a stream copy (Demuxer → Muxer)
     if (args.length === 2 && isMediaOutput(args[1])) {
       // Stream copy all streams
       return runMediaInputPipeline(args[0], args[1]);
     } else {
-      // Simple pipeline starting with MediaInput
+      // Simple pipeline starting with Demuxer
       return runSimplePipeline(args);
     }
   } else {
@@ -765,11 +768,11 @@ class PipelineControlImpl implements PipelineControl {
 }
 
 // ============================================================================
-// MediaInput Pipeline Implementation
+// Demuxer Pipeline Implementation
 // ============================================================================
 
 /**
- * Run a media input pipeline for stream copy.
+ * Run a demuxer pipeline for stream copy.
  *
  * @param input - Media input source
  *
@@ -779,7 +782,7 @@ class PipelineControlImpl implements PipelineControl {
  *
  * @internal
  */
-function runMediaInputPipeline(input: MediaInput, output: MediaOutput): PipelineControl {
+function runMediaInputPipeline(input: Demuxer, output: Muxer): PipelineControl {
   let control: PipelineControl;
   // eslint-disable-next-line prefer-const
   control = new PipelineControlImpl(runMediaInputPipelineAsync(input, output, () => control?.isStopped() ?? false));
@@ -787,7 +790,7 @@ function runMediaInputPipeline(input: MediaInput, output: MediaOutput): Pipeline
 }
 
 /**
- * Run media input pipeline asynchronously.
+ * Run demuxer pipeline asynchronously.
  *
  * @param input - Media input source
  *
@@ -797,7 +800,7 @@ function runMediaInputPipeline(input: MediaInput, output: MediaOutput): Pipeline
  *
  * @internal
  */
-async function runMediaInputPipelineAsync(input: MediaInput, output: MediaOutput, shouldStop: () => boolean): Promise<void> {
+async function runMediaInputPipelineAsync(input: Demuxer, output: Muxer, shouldStop: () => boolean): Promise<void> {
   // Get all streams from input
   const videoStream = input.video();
   const audioStream = input.audio();
@@ -826,10 +829,18 @@ async function runMediaInputPipelineAsync(input: MediaInput, output: MediaOutput
   }
 
   // Copy all packets
-  for await (const packet of input.packets()) {
+  for await (using packet of input.packets()) {
     // Check if we should stop
     if (shouldStop()) {
-      packet.free();
+      break;
+    }
+
+    // Handle EOF signal (null packet from input means all streams are done)
+    if (packet === null) {
+      // Signal EOF for all streams
+      for (const mapping of streams) {
+        await output.writePacket(null, mapping.index);
+      }
       break;
     }
 
@@ -838,7 +849,6 @@ async function runMediaInputPipelineAsync(input: MediaInput, output: MediaOutput
     if (mapping) {
       await output.writePacket(packet, mapping.index);
     }
-    packet.free(); // Free packet after processing
   }
 
   await output.close();
@@ -857,17 +867,17 @@ async function runMediaInputPipelineAsync(input: MediaInput, output: MediaOutput
  *
  * @internal
  */
-function runSimplePipeline(args: any[]): PipelineControl | AsyncGenerator<Packet | Frame> {
+function runSimplePipeline(args: any[]): PipelineControl | AsyncGenerator<Packet | Frame | null> {
   const [source, ...stages] = args;
 
-  // Check if last stage is MediaOutput (consumes stream)
+  // Check if last stage is Muxer (consumes stream)
   const lastStage = stages[stages.length - 1];
   const isOutput = isMediaOutput(lastStage);
 
   // Track metadata through pipeline
   const metadata: StreamMetadata = {};
 
-  // Store MediaInput reference if we have one
+  // Store Demuxer reference if we have one
   if (isMediaInput(source)) {
     metadata.mediaInput = source;
   }
@@ -887,9 +897,9 @@ function runSimplePipeline(args: any[]): PipelineControl | AsyncGenerator<Packet
     }
   }
 
-  // Convert MediaInput to packet stream if needed
+  // Convert Demuxer to packet stream if needed
   // If we have a decoder or BSF, filter packets by stream index
-  let actualSource: AsyncIterable<Packet | Frame>;
+  let actualSource: AsyncIterable<Packet | Frame | null>;
   if (isMediaInput(source)) {
     if (metadata.decoder) {
       // Filter packets for the decoder's stream
@@ -933,9 +943,9 @@ function runSimplePipeline(args: any[]): PipelineControl | AsyncGenerator<Packet
  * @internal
  */
 async function* buildSimplePipeline(
-  source: AsyncIterable<Packet | Frame>,
-  stages: (Decoder | Encoder | FilterAPI | FilterAPI[] | BitStreamFilterAPI | BitStreamFilterAPI[] | MediaOutput)[],
-): AsyncGenerator<Packet | Frame> {
+  source: AsyncIterable<Packet | Frame | null>,
+  stages: (Decoder | Encoder | FilterAPI | FilterAPI[] | BitStreamFilterAPI | BitStreamFilterAPI[] | Muxer)[],
+): AsyncGenerator<Packet | Frame | null> {
   let stream: AsyncIterable<any> = source;
 
   for (const stage of stages) {
@@ -975,7 +985,7 @@ async function* buildSimplePipeline(
  *
  * @internal
  */
-async function consumeSimplePipeline(stream: AsyncIterable<Packet | Frame>, output: MediaOutput, metadata: StreamMetadata, shouldStop: () => boolean): Promise<void> {
+async function consumeSimplePipeline(stream: AsyncIterable<Packet | Frame | null>, output: Muxer, metadata: StreamMetadata, shouldStop: () => boolean): Promise<void> {
   // Add stream to output if we have encoder or decoder info
   let streamIndex = 0;
 
@@ -998,29 +1008,28 @@ async function consumeSimplePipeline(stream: AsyncIterable<Packet | Frame>, outp
     const originalStream = metadata.bitStreamFilter.getStream();
     streamIndex = output.addStream(originalStream);
   } else {
-    // For direct MediaInput → MediaOutput, we redirect to runMediaInputPipeline
+    // For direct Demuxer → Muxer, we redirect to runMediaInputPipeline
     // This case shouldn't happen in simple pipeline
     throw new Error('Cannot determine stream configuration. This is likely a bug in the pipeline.');
   }
 
   // Process stream
-  for await (const item of stream) {
+  for await (using item of stream) {
     // Check if we should stop
     if (shouldStop()) {
-      if (isPacket(item)) {
-        item.free();
-      } else {
-        item.free();
-      }
       break;
     }
 
-    if (isPacket(item)) {
+    // Handle EOF signal
+    if (item === null) {
+      await output.writePacket(null, streamIndex);
+      break;
+    }
+
+    if (isPacket(item) || item === null) {
       await output.writePacket(item, streamIndex);
-      // Free the packet after writing
-      item.free();
     } else {
-      throw new Error('Cannot write frames directly to MediaOutput. Use an encoder first.');
+      throw new Error('Cannot write frames directly to Muxer. Use an encoder first.');
     }
   }
 
@@ -1042,14 +1051,14 @@ async function consumeSimplePipeline(stream: AsyncIterable<Packet | Frame>, outp
  *
  * @internal
  */
-function runNamedPartialPipeline<K extends StreamName>(inputs: NamedInputs<K>, stages: NamedStages<K>): Record<K, AsyncGenerator<Packet | Frame>> {
-  const result = {} as Record<K, AsyncGenerator<Packet | Frame>>;
+function runNamedPartialPipeline<K extends StreamName>(inputs: NamedInputs<K>, stages: NamedStages<K>): Record<K, AsyncGenerator<Packet | Frame | null>> {
+  const result = {} as Record<K, AsyncGenerator<Packet | Frame | null>>;
 
   for (const [streamName, streamStages] of Object.entries(stages) as [
     StreamName,
     (Decoder | FilterAPI | FilterAPI[] | Encoder | BitStreamFilterAPI | BitStreamFilterAPI[] | undefined)[] | 'passthrough',
   ][]) {
-    const input = (inputs as any)[streamName] as MediaInput;
+    const input = (inputs as any)[streamName] as Demuxer;
     if (!input) {
       throw new Error(`No input found for stream: ${streamName}`);
     }
@@ -1116,7 +1125,7 @@ function runNamedPartialPipeline<K extends StreamName>(inputs: NamedInputs<K>, s
  *
  * @internal
  */
-function runNamedPipeline<K extends StreamName>(inputs: NamedInputs<K>, stages: NamedStages<K>, output: MediaOutput | NamedOutputs<K>): PipelineControl {
+function runNamedPipeline<K extends StreamName>(inputs: NamedInputs<K>, stages: NamedStages<K>, output: Muxer | NamedOutputs<K>): PipelineControl {
   let control: PipelineControl;
   // eslint-disable-next-line prefer-const
   control = new PipelineControlImpl(runNamedPipelineAsync(inputs, stages, output, () => control?.isStopped() ?? false));
@@ -1139,11 +1148,11 @@ function runNamedPipeline<K extends StreamName>(inputs: NamedInputs<K>, stages: 
 async function runNamedPipelineAsync<K extends StreamName>(
   inputs: NamedInputs<K>,
   stages: NamedStages<K>,
-  output: MediaOutput | NamedOutputs<K>,
+  output: Muxer | NamedOutputs<K>,
   shouldStop: () => boolean,
 ): Promise<void> {
-  // Check if all inputs reference the same MediaInput instance
-  const inputValues: MediaInput[] = Object.values(inputs);
+  // Check if all inputs reference the same Demuxer instance
+  const inputValues: Demuxer[] = Object.values(inputs);
   const allSameInput = inputValues.length > 1 && inputValues.every((input) => input === inputValues[0]);
 
   // Track metadata for each stream
@@ -1152,7 +1161,7 @@ async function runNamedPipelineAsync<K extends StreamName>(
   // Process each named stream into generators
   const processedStreams: Record<StreamName, AsyncIterable<Packet>> = {} as any;
 
-  // If all inputs are the same instance, use MediaInput's built-in parallel packet generators
+  // If all inputs are the same instance, use Demuxer's built-in parallel packet generators
   if (allSameInput) {
     const sharedInput = inputValues[0];
 
@@ -1207,7 +1216,7 @@ async function runNamedPipelineAsync<K extends StreamName>(
         // Build pipeline with packets from this specific stream
         (processedStreams as any)[streamName] = buildNamedStreamPipeline(sharedInput.packets(streamIndex), stages, metadata);
       } else {
-        // Passthrough - use MediaInput's built-in stream filtering
+        // Passthrough - use Demuxer's built-in stream filtering
         metadata.type = streamName;
         metadata.mediaInput = sharedInput;
         const stream = streamName === 'video' ? sharedInput.video() : sharedInput.audio();
@@ -1229,7 +1238,7 @@ async function runNamedPipelineAsync<K extends StreamName>(
       const metadata: StreamMetadata = {};
       (streamMetadata as any)[streamName] = metadata;
 
-      const input = (inputs as any)[streamName] as MediaInput;
+      const input = (inputs as any)[streamName] as Demuxer;
       if (!input) {
         throw new Error(`No input found for stream: ${streamName}`);
       }
@@ -1266,7 +1275,7 @@ async function runNamedPipelineAsync<K extends StreamName>(
         }
 
         (processedStreams as any)[streamName] = input.packets(stream.index);
-        metadata.mediaInput = input; // Track MediaInput for passthrough
+        metadata.mediaInput = input; // Track Demuxer for passthrough
       } else {
         // Process the stream - normalizedStages is guaranteed to be an array here
         const stages = normalizedStages;
@@ -1283,7 +1292,7 @@ async function runNamedPipelineAsync<K extends StreamName>(
         }
 
         // Get packets - filter by stream index based on decoder, BSF, or stream type
-        let packets: AsyncIterable<Packet>;
+        let packets: AsyncIterable<Packet | null>;
         if (metadata.decoder) {
           const streamIndex = metadata.decoder.getStream().index;
           packets = input.packets(streamIndex);
@@ -1317,7 +1326,7 @@ async function runNamedPipelineAsync<K extends StreamName>(
 
   // Write to output(s)
   if (isMediaOutput(output)) {
-    // Always write streams in parallel - MediaOutput's SyncQueue handles interleaving internally
+    // Always write streams in parallel - Muxer's SyncQueue handles interleaving internally
     const streamIndices: Record<StreamName, number> = {} as any;
 
     // Add all streams to output first
@@ -1341,10 +1350,10 @@ async function runNamedPipelineAsync<K extends StreamName>(
         const originalStream = meta.bitStreamFilter.getStream();
         streamIndices[name] = output.addStream(originalStream);
       } else if (meta.mediaInput) {
-        // Passthrough from MediaInput
+        // Passthrough from Demuxer
         const stream = name.includes('video') ? meta.mediaInput.video() : meta.mediaInput.audio();
         if (!stream) {
-          throw new Error(`No matching stream found in MediaInput for ${name}`);
+          throw new Error(`No matching stream found in Demuxer for ${name}`);
         }
         streamIndices[name] = output.addStream(stream);
       } else {
@@ -1352,7 +1361,7 @@ async function runNamedPipelineAsync<K extends StreamName>(
       }
     }
 
-    // Write all streams in parallel - MediaOutput's SyncQueue handles interleaving
+    // Write all streams in parallel - Muxer's SyncQueue handles interleaving
     const promises: Promise<void>[] = [];
     for (const [name, stream] of Object.entries(processedStreams) as [StreamName, AsyncIterable<Packet>][]) {
       const streamIndex = streamIndices[name];
@@ -1367,7 +1376,7 @@ async function runNamedPipelineAsync<K extends StreamName>(
     const promises: Promise<void>[] = [];
 
     for (const [streamName, stream] of Object.entries(processedStreams) as [StreamName, AsyncIterable<Packet>][]) {
-      const streamOutput = (outputs as any)[streamName] as MediaOutput | undefined;
+      const streamOutput = (outputs as any)[streamName] as Muxer | undefined;
       if (streamOutput) {
         const metadata = streamMetadata[streamName];
         promises.push(consumeNamedStream(stream, streamOutput, metadata, shouldStop));
@@ -1392,10 +1401,10 @@ async function runNamedPipelineAsync<K extends StreamName>(
  * @internal
  */
 async function* buildFlexibleNamedStreamPipeline(
-  source: AsyncIterable<Packet>,
+  source: AsyncIterable<Packet | null>,
   stages: (Decoder | FilterAPI | FilterAPI[] | Encoder | BitStreamFilterAPI | BitStreamFilterAPI[] | undefined)[],
   metadata: StreamMetadata,
-): AsyncGenerator<Packet | Frame> {
+): AsyncGenerator<Packet | Frame | null> {
   let stream: AsyncIterable<any> = source;
 
   for (const stage of stages) {
@@ -1440,10 +1449,10 @@ async function* buildFlexibleNamedStreamPipeline(
  * @internal
  */
 async function* buildNamedStreamPipeline(
-  source: AsyncIterable<Packet>,
+  source: AsyncIterable<Packet | null>,
   stages: (Decoder | FilterAPI | FilterAPI[] | Encoder | BitStreamFilterAPI | BitStreamFilterAPI[] | undefined)[],
   metadata: StreamMetadata,
-): AsyncGenerator<Packet> {
+): AsyncGenerator<Packet | null> {
   let stream: AsyncIterable<any> = source;
 
   for (const stage of stages) {
@@ -1472,7 +1481,7 @@ async function* buildNamedStreamPipeline(
 
   // Ensure we're yielding packets
   for await (const item of stream) {
-    if (isPacket(item)) {
+    if (isPacket(item) || item === null) {
       yield item;
     } else {
       throw new Error('Named pipeline must end with packets (use encoder after filters)');
@@ -1494,8 +1503,8 @@ async function* buildNamedStreamPipeline(
  *
  * @internal
  */
-async function consumeStreamInParallel(stream: AsyncIterable<Packet>, output: MediaOutput, streamIndex: number, shouldStop: () => boolean): Promise<void> {
-  // Write all packets
+async function consumeStreamInParallel(stream: AsyncIterable<Packet | null>, output: Muxer, streamIndex: number, shouldStop: () => boolean): Promise<void> {
+  // Write all packets (including EOF null)
   for await (using packet of stream) {
     // Check if we should stop
     if (shouldStop()) {
@@ -1521,7 +1530,7 @@ async function consumeStreamInParallel(stream: AsyncIterable<Packet>, output: Me
  *
  * @internal
  */
-async function consumeNamedStream(stream: AsyncIterable<Packet>, output: MediaOutput, metadata: StreamMetadata, shouldStop: () => boolean): Promise<void> {
+async function consumeNamedStream(stream: AsyncIterable<Packet | null>, output: Muxer, metadata: StreamMetadata, shouldStop: () => boolean): Promise<void> {
   // Add stream to output
   let streamIndex = 0;
 
@@ -1544,10 +1553,10 @@ async function consumeNamedStream(stream: AsyncIterable<Packet>, output: MediaOu
     const originalStream = metadata.bitStreamFilter.getStream();
     streamIndex = output.addStream(originalStream);
   } else if (metadata.mediaInput) {
-    // Passthrough from MediaInput - use type hint from metadata
+    // Passthrough from Demuxer - use type hint from metadata
     const inputStream = metadata.type === 'video' ? metadata.mediaInput.video() : metadata.mediaInput.audio();
     if (!inputStream) {
-      throw new Error(`No ${metadata.type} stream found in MediaInput`);
+      throw new Error(`No ${metadata.type} stream found in Demuxer`);
     }
     streamIndex = output.addStream(inputStream);
   } else {
@@ -1558,19 +1567,14 @@ async function consumeNamedStream(stream: AsyncIterable<Packet>, output: MediaOu
   // Store for later use
   metadata.streamIndex = streamIndex;
 
-  // Write all packets
-  for await (const packet of stream) {
+  // Write all packets (including EOF null)
+  for await (using packet of stream) {
     // Check if we should stop
     if (shouldStop()) {
-      packet.free();
       break;
     }
 
-    try {
-      await output.writePacket(packet, streamIndex);
-    } finally {
-      packet.free(); // Free packet after writing
-    }
+    await output.writePacket(packet, streamIndex);
   }
 
   // Note: Output is closed by the caller after all streams finish
@@ -1626,15 +1630,15 @@ function isAsyncIterable(obj: any): obj is AsyncIterable<any> {
 }
 
 /**
- * Check if object is MediaInput.
+ * Check if object is Demuxer.
  *
  * @param obj - Object to check
  *
- * @returns True if object is MediaInput
+ * @returns True if object is Demuxer
  *
  * @internal
  */
-function isMediaInput(obj: any): obj is MediaInput {
+function isMediaInput(obj: any): obj is Demuxer {
   return obj && typeof obj.packets === 'function' && typeof obj.video === 'function' && typeof obj.audio === 'function';
 }
 
@@ -1687,19 +1691,19 @@ function isFilterAPI(obj: any): obj is FilterAPI {
  * @internal
  */
 function isBitStreamFilterAPI(obj: any): obj is BitStreamFilterAPI {
-  return obj && typeof obj.process === 'function' && typeof obj.flushPackets === 'function' && typeof obj.reset === 'function';
+  return obj && typeof obj.filter === 'function' && typeof obj.flushPackets === 'function' && typeof obj.reset === 'function';
 }
 
 /**
- * Check if object is MediaOutput.
+ * Check if object is Muxer.
  *
  * @param obj - Object to check
  *
- * @returns True if object is MediaOutput
+ * @returns True if object is Muxer
  *
  * @internal
  */
-function isMediaOutput(obj: any): obj is MediaOutput {
+function isMediaOutput(obj: any): obj is Muxer {
   return obj && typeof obj.writePacket === 'function' && typeof obj.addStream === 'function';
 }
 

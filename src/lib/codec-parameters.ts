@@ -634,7 +634,7 @@ export class CodecParameters implements NativeWrapper<NativeCodecParameters> {
    * import { FFmpegError } from 'node-av';
    *
    * // After opening RTSP with low probesize
-   * const input = await MediaInput.open('rtsp://...', {
+   * const input = await Demuxer.open('rtsp://...', {
    *   options: { probesize: 32 }
    * });
    *

@@ -11,12 +11,12 @@ import {
 import { FF_ENCODER_AAC, FF_ENCODER_LIBX264 } from '../constants/encoders.js';
 import { avGetCodecStringHls } from '../lib/utilities.js';
 import { Decoder } from './decoder.js';
+import { Demuxer } from './demuxer.js';
 import { Encoder } from './encoder.js';
 import { FilterPreset } from './filter-presets.js';
 import { FilterAPI } from './filter.js';
 import { HardwareContext } from './hardware.js';
-import { MediaInput } from './media-input.js';
-import { MediaOutput } from './media-output.js';
+import { Muxer } from './muxer.js';
 import { pipeline } from './pipeline.js';
 
 import type { AVCodecID, AVHWDeviceType, FFHWDeviceType } from '../constants/index.js';
@@ -103,7 +103,7 @@ export interface FMP4StreamOptions {
   hardware?: 'auto' | { deviceType: AVHWDeviceType | FFHWDeviceType; device?: string; options?: Record<string, string> };
 
   /**
-   * Input media options passed to MediaInput.
+   * Input media options passed to Demuxer.
    */
   inputOptions?: MediaInputOptions;
 
@@ -182,8 +182,8 @@ export class FMP4Stream {
   private options: Required<FMP4StreamOptions>;
   private inputUrl: string;
   private inputOptions: MediaInputOptions;
-  private input?: MediaInput;
-  private output?: MediaOutput;
+  private input?: Demuxer;
+  private output?: Muxer;
   private hardwareContext?: HardwareContext | null;
   private videoDecoder?: Decoder;
   private videoEncoder?: Encoder;
@@ -275,12 +275,12 @@ export class FMP4Stream {
   }
 
   /**
-   * Get the media input instance.
+   * Get the demuxer instance.
    *
-   * Used for accessing the underlying media input.
+   * Used for accessing the underlying demuxer.
    * Only available after start() is called.
    *
-   * @returns MediaInput instance or undefined if not started
+   * @returns Demuxer instance or undefined if not started
    *
    * @example
    * ```typescript
@@ -289,7 +289,7 @@ export class FMP4Stream {
    * console.log('Bitrate:', input?.bitRate);
    * ```
    */
-  getInput(): MediaInput | undefined {
+  getInput(): Demuxer | undefined {
     return this.input;
   }
 
@@ -412,7 +412,7 @@ export class FMP4Stream {
     }
 
     // Open input if not already open
-    this.input ??= await MediaInput.open(this.inputUrl, this.inputOptions);
+    this.input ??= await Demuxer.open(this.inputUrl, this.inputOptions);
 
     const videoStream = this.input.video();
     const audioStream = this.input.audio();
@@ -435,7 +435,6 @@ export class FMP4Stream {
       });
 
       this.videoEncoder = await Encoder.create(FF_ENCODER_LIBX264, {
-        maxBFrames: 0,
         decoder: this.videoDecoder,
       });
     }
@@ -476,12 +475,11 @@ export class FMP4Stream {
       },
     };
 
-    this.output = await MediaOutput.open(cb, {
+    this.output = await Muxer.open(cb, {
       input: this.input,
       format: 'mp4',
       bufferSize: this.options.bufferSize,
       exitOnError: false,
-      useAsyncWrite: true,
       options: {
         movflags: '+frag_keyframe+separate_moof+default_base_moof+empty_moov',
         frag_duration: this.options.fragDuration,
@@ -526,26 +524,27 @@ export class FMP4Stream {
     }
 
     // Close all resources
-    await this.output?.close();
-    this.output = undefined;
 
-    this.videoEncoder?.close();
-    this.videoEncoder = undefined;
+    await this.input?.close();
+    this.input = undefined;
+
     this.videoDecoder?.close();
     this.videoDecoder = undefined;
+    this.videoEncoder?.close();
+    this.videoEncoder = undefined;
 
-    this.audioEncoder?.close();
-    this.audioEncoder = undefined;
-    this.audioFilter?.close();
-    this.audioFilter = undefined;
     this.audioDecoder?.close();
     this.audioDecoder = undefined;
+    this.audioFilter?.close();
+    this.audioFilter = undefined;
+    this.audioEncoder?.close();
+    this.audioEncoder = undefined;
 
     this.hardwareContext?.dispose();
     this.hardwareContext = undefined;
 
-    await this.input?.close();
-    this.input = undefined;
+    await this.output?.close();
+    this.output = undefined;
   }
 
   /**

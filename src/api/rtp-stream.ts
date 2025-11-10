@@ -5,12 +5,12 @@ import { FF_ENCODER_LIBOPUS, FF_ENCODER_LIBX264, FF_ENCODER_LIBX265 } from '../c
 import { Codec } from '../lib/codec.js';
 import { MAX_PACKET_SIZE } from './constants.js';
 import { Decoder } from './decoder.js';
+import { Demuxer } from './demuxer.js';
 import { Encoder } from './encoder.js';
 import { FilterPreset } from './filter-presets.js';
 import { FilterAPI } from './filter.js';
 import { HardwareContext } from './hardware.js';
-import { MediaInput } from './media-input.js';
-import { MediaOutput } from './media-output.js';
+import { Muxer } from './muxer.js';
 import { pipeline } from './pipeline.js';
 
 import type { AVCodecID, AVHWDeviceType, AVSampleFormat, FFAudioEncoder, FFHWDeviceType, FFVideoEncoder } from '../constants/index.js';
@@ -69,7 +69,7 @@ export interface RTPStreamOptions {
   hardware?: 'auto' | { deviceType: AVHWDeviceType | FFHWDeviceType; device?: string; options?: Record<string, string> };
 
   /**
-   * Input media options passed to MediaInput.
+   * Input media options passed to Demuxer.
    */
   inputOptions?: MediaInputOptions;
 
@@ -127,16 +127,16 @@ export interface RTPStreamOptions {
  * await stream.start();
  * ```
  *
- * @see {@link MediaInput} For input media handling
+ * @see {@link Demuxer} For input media handling
  * @see {@link HardwareContext} For GPU acceleration
  */
 export class RTPStream {
   private options: Required<RTPStreamOptions>;
   private inputUrl: string;
   private inputOptions: MediaInputOptions;
-  private input?: MediaInput;
-  private videoOutput?: MediaOutput;
-  private audioOutput?: MediaOutput;
+  private input?: Demuxer;
+  private videoOutput?: Muxer;
+  private audioOutput?: Muxer;
   private hardwareContext?: HardwareContext | null;
   private videoDecoder?: Decoder;
   private videoEncoder?: Encoder;
@@ -250,12 +250,12 @@ export class RTPStream {
   }
 
   /**
-   * Get the media input instance.
+   * Get the demuxer instance.
    *
-   * Used for accessing the underlying media input.
+   * Used for accessing the underlying demuxer.
    * Only available after start() is called.
    *
-   * @returns MediaInput instance or undefined if not started
+   * @returns Demuxer instance or undefined if not started
    *
    * @example
    * ```typescript
@@ -267,7 +267,7 @@ export class RTPStream {
    * console.log('Bitrate:', input?.bitRate);
    * ```
    */
-  getInput(): MediaInput | undefined {
+  getInput(): Demuxer | undefined {
     return this.input;
   }
 
@@ -303,7 +303,7 @@ export class RTPStream {
       return;
     }
 
-    this.input ??= await MediaInput.open(this.inputUrl, this.inputOptions);
+    this.input ??= await Demuxer.open(this.inputUrl, this.inputOptions);
 
     const videoStream = this.input.video();
     const audioStream = this.input.audio();
@@ -372,7 +372,7 @@ export class RTPStream {
     const videoTimestampIncrement = 90000 / fps;
 
     // Setup video output
-    this.videoOutput = await MediaOutput.open(
+    this.videoOutput = await Muxer.open(
       {
         write: (buffer: Buffer) => {
           if (isRtcp(buffer)) {
@@ -482,7 +482,7 @@ export class RTPStream {
 
     // Setup audio output if available
     if (audioStream) {
-      this.audioOutput = await MediaOutput.open(
+      this.audioOutput = await Muxer.open(
         {
           write: (buffer: Buffer) => {
             if (isRtcp(buffer)) {

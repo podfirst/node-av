@@ -1,11 +1,11 @@
 // IOStream
 export { IOStream } from './io-stream.js';
 
-// MediaInput
-export { MediaInput } from './media-input.js';
+// Demuxer
+export { Demuxer } from './demuxer.js';
 
-// MediaOutput
-export { MediaOutput, type AddStreamOptionsWithEncoder, type AddStreamOptionsWithInputStream } from './media-output.js';
+// Muxer
+export { Muxer, type AddStreamOptionsWithEncoder, type AddStreamOptionsWithInputStream } from './muxer.js';
 
 // Decoder
 export { Decoder } from './decoder.js';

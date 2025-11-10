@@ -5,7 +5,7 @@ import { Rational } from '../../lib/rational.js';
 import { avSdpCreate } from '../../lib/utilities.js';
 
 import type { AVCodecID } from '../../constants/index.js';
-import type { MediaOutput } from '../media-output.js';
+import type { Muxer } from '../muxer.js';
 
 /**
  * Streaming protocol utilities.
@@ -15,11 +15,11 @@ import type { MediaOutput } from '../media-output.js';
  *
  * @example
  * ```typescript
- * import { StreamingUtils, MediaOutput } from 'node-av/api';
+ * import { StreamingUtils, Muxer } from 'node-av/api';
  *
  * // Create RTP outputs
- * const videoOutput = await MediaOutput.open('rtp://127.0.0.1:5004');
- * const audioOutput = await MediaOutput.open('rtp://127.0.0.1:5006');
+ * const videoOutput = await Muxer.open('rtp://127.0.0.1:5004');
+ * const audioOutput = await Muxer.open('rtp://127.0.0.1:5006');
  *
  * // Generate SDP for streaming
  * const sdp = StreamingUtils.createSdp([videoOutput, audioOutput]);
@@ -31,23 +31,23 @@ import type { MediaOutput } from '../media-output.js';
  */
 export class StreamingUtils {
   /**
-   * Create an SDP (Session Description Protocol) string from media inputs/outputs
+   * Create an SDP (Session Description Protocol) string from demuxer/muxer
    *
    * Generates an SDP description for RTP/RTSP streaming from one or more
-   * configured media inputs/outputs. The inputs/outputs should be configured with RTP
+   * configured demuxer/muxer. The inputs/outputs should be configured with RTP
    * format and have their streams set up before calling this method.
    *
-   * @param inouts - Array of MediaInput or MediaOutput objects configured for RTP
+   * @param inouts - Array of Demuxer or Muxer objects configured for RTP
    *
    * @returns SDP string if successful, null if failed
    *
    * @example
    * ```typescript
    * // Set up RTP outputs with streams
-   * const output1 = await MediaOutput.open('rtp://239.0.0.1:5004');
+   * const output1 = await Muxer.open('rtp://239.0.0.1:5004');
    * await output1.addStream(encoder1);
    *
-   * const output2 = await MediaOutput.open('rtp://239.0.0.1:5006');
+   * const output2 = await Muxer.open('rtp://239.0.0.1:5006');
    * await output2.addStream(encoder2);
    *
    * // Generate SDP for multicast streaming
@@ -227,18 +227,18 @@ export class StreamingUtils {
   /**
    * Validate if an output is configured for RTP streaming
    *
-   * @param output - MediaOutput to check
+   * @param output - Muxer to check
    * @returns true if configured for RTP
    *
    * @example
    * ```typescript
-   * const output = await MediaOutput.open('rtp://127.0.0.1:5004');
+   * const output = await Muxer.open('rtp://127.0.0.1:5004');
    * if (StreamingUtils.isRtpOutput(output)) {
    *   const sdp = StreamingUtils.createSdpForOutput(output);
    * }
    * ```
    */
-  static isRtpOutput(output: MediaOutput): boolean {
+  static isRtpOutput(output: Muxer): boolean {
     // Check if the output format is RTP
     const formatContext = output.getFormatContext();
     const oformat = formatContext?.oformat;

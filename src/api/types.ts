@@ -2,9 +2,9 @@ import type { RtpPacket } from 'werift';
 import type { AVPixelFormat, AVSampleFormat, AVSeekWhence } from '../constants/index.js';
 import type { IRational } from '../lib/index.js';
 import type { Decoder } from './decoder.js';
+import type { Demuxer } from './demuxer.js';
 import type { FilterAPI } from './filter.js';
 import type { HardwareContext } from './hardware.js';
-import type { MediaInput } from './media-input.js';
 
 /**
  * Base codec names supported across different hardware types.
@@ -115,7 +115,7 @@ export interface AudioRawData {
 export type RawData = VideoRawData | AudioRawData;
 
 /**
- * Options for MediaInput opening.
+ * Options for Demuxer opening.
  *
  * Configures how media files are opened and packets are read.
  * Supports format detection, buffering, and FFmpeg options.
@@ -207,7 +207,7 @@ export interface MediaInputOptions {
 }
 
 /**
- * Options for MediaOutput creation.
+ * Options for Muxer creation.
  *
  * Configures output container format and buffering.
  */
@@ -215,7 +215,7 @@ export interface MediaOutputOptions {
   /**
    * Input media for automatic metadata and property copying.
    *
-   * When provided, MediaOutput will automatically copy:
+   * When provided, Muxer will automatically copy:
    * - Container-level metadata (title, artist, etc.)
    * - Stream-level metadata
    * - Disposition flags (DEFAULT, FORCED, etc.)
@@ -223,7 +223,7 @@ export interface MediaOutputOptions {
    *
    * This matches FFmpeg CLI behavior which copies metadata by default.
    */
-  input?: MediaInput | RTPMediaInput;
+  input?: Demuxer | RTPMediaInput;
 
   /**
    * Preferred output format.
@@ -693,7 +693,7 @@ export interface IOInputCallbacks {
  * Custom I/O callbacks for implementing custom output targets.
  *
  * Defines callback functions for custom write operations with FFmpeg.
- * Used internally by MediaOutput for custom output protocols.
+ * Used internally by Muxer for custom output protocols.
  *
  */
 export interface IOOutputCallbacks {
@@ -729,11 +729,11 @@ export interface IOOutputCallbacks {
 
 export interface RTPMediaInput {
   /**
-   * MediaInput configured for RTP/SRTP reception.
+   * Demuxer configured for RTP/SRTP reception.
    *
    * Receives RTP packets via localhost UDP and feeds them to FFmpeg for decoding.
    */
-  input: MediaInput;
+  input: Demuxer;
 
   /**
    * Send RTP packet to FFmpeg for decoding.
@@ -747,14 +747,14 @@ export interface RTPMediaInput {
   /**
    * Cleanup function.
    *
-   * Closes the media input and UDP socket asynchronously.
+   * Closes the demuxer and UDP socket asynchronously.
    */
   close: () => Promise<void>;
 
   /**
    * Synchronous cleanup function.
    *
-   * Closes the media input and UDP socket synchronously.
+   * Closes the demuxer and UDP socket synchronously.
    */
   closeSync: () => void;
 }
