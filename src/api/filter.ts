@@ -62,6 +62,7 @@ export class FilterAPI implements Disposable {
   private buffersrcCtx: FilterContext | null = null;
   private buffersinkCtx: FilterContext | null = null;
   private frame: Frame = new Frame(); // Reusable frame for receive operations
+  private initializePromise: Promise<void> | null = null;
   private initialized = false;
   private isClosed = false;
 
@@ -561,8 +562,10 @@ export class FilterAPI implements Disposable {
         return null;
       }
 
-      await this.initialize(frame);
+      this.initializePromise ??= this.initialize(frame);
     }
+
+    await this.initializePromise;
 
     if (!this.initialized) {
       return null;
@@ -580,7 +583,8 @@ export class FilterAPI implements Disposable {
 
     // If reinitialized, reinitialize now
     if (!this.initialized && frame) {
-      await this.initialize(frame);
+      this.initializePromise = this.initialize(frame);
+      await this.initializePromise;
       if (!this.buffersrcCtx || !this.buffersinkCtx) {
         throw new Error('Could not reinitialize filter contexts');
       }
@@ -756,8 +760,10 @@ export class FilterAPI implements Disposable {
         return [];
       }
 
-      await this.initialize(frame);
+      this.initializePromise ??= this.initialize(frame);
     }
+
+    await this.initializePromise;
 
     if (!this.initialized) {
       return [];
@@ -918,19 +924,32 @@ export class FilterAPI implements Disposable {
    * @see {@link Decoder.frames} For frames source
    * @see {@link framesSync} For sync version
    */
-  async *frames(frames: AsyncIterable<Frame>): AsyncGenerator<Frame> {
+  async *frames(frames: AsyncIterable<Frame | null>): AsyncGenerator<Frame | null> {
     for await (using frame of frames) {
+      // Handle EOF signal
+      if (frame === null) {
+        // Flush filter
+        await this.flush();
+        while (true) {
+          const remaining = await this.receive();
+          if (!remaining) break;
+          yield remaining;
+        }
+        // Signal EOF and stop processing
+        yield null;
+        return;
+      }
+
       if (this.isClosed) {
         break;
       }
 
       // Open filter if not already done
       if (!this.initialized) {
-        if (!frame) {
-          continue;
-        }
-        await this.initialize(frame);
+        this.initializePromise ??= this.initialize(frame);
       }
+
+      await this.initializePromise;
 
       if (!this.initialized) {
         continue;
@@ -960,13 +979,16 @@ export class FilterAPI implements Disposable {
       }
     }
 
-    // Flush and get remaining frames
+    // Flush and get remaining frames (fallback if no null was sent)
     await this.flush();
     while (true) {
       const remaining = await this.receive();
       if (!remaining) break;
       yield remaining;
     }
+
+    // Signal EOF
+    yield null;
   }
 
   /**
@@ -1014,17 +1036,28 @@ export class FilterAPI implements Disposable {
    * @see {@link Decoder.framesSync} For frames source
    * @see {@link frames} For async version
    */
-  *framesSync(frames: Generator<Frame>): Generator<Frame> {
+  *framesSync(frames: Generator<Frame | null>): Generator<Frame | null> {
     for (using frame of frames) {
+      // Handle EOF signal
+      if (frame === null) {
+        // Flush filter
+        this.flushSync();
+        while (true) {
+          const remaining = this.receiveSync();
+          if (!remaining) break;
+          yield remaining;
+        }
+        // Signal EOF and stop processing
+        yield null;
+        return;
+      }
+
       if (this.isClosed) {
         break;
       }
 
       // Open filter if not already done
       if (!this.initialized) {
-        if (!frame) {
-          continue;
-        }
         this.initializeSync(frame);
       }
 
@@ -1056,13 +1089,16 @@ export class FilterAPI implements Disposable {
       }
     }
 
-    // Flush and get remaining frames
+    // Flush and get remaining frames (fallback if no null was sent)
     this.flushSync();
     while (true) {
       const remaining = this.receiveSync();
       if (!remaining) break;
       yield remaining;
     }
+
+    // Signal EOF
+    yield null;
   }
 
   /**
@@ -1471,6 +1507,7 @@ export class FilterAPI implements Disposable {
     this.buffersinkCtx = null;
 
     this.initialized = false;
+    this.initializePromise = null;
   }
 
   /**
@@ -1487,8 +1524,10 @@ export class FilterAPI implements Disposable {
 
         // Open filter if not already done
         if (!this.initialized) {
-          await this.initialize(frame);
+          this.initializePromise ??= this.initialize(frame);
         }
+
+        await this.initializePromise;
 
         if (!this.initialized) {
           continue;
@@ -1754,6 +1793,7 @@ export class FilterAPI implements Disposable {
     this.buffersrcCtx = null;
     this.buffersinkCtx = null;
     this.initialized = false;
+    this.initializePromise = null;
     this.calculatedTimeBase = null;
 
     return true; // Will be reinitialized on next process

@@ -48,8 +48,8 @@ import { HardwareDeviceContext } from '../lib/hardware-device-context.js';
 import { Stream } from '../lib/stream.js';
 import { avGetHardwareDeviceTypeFromName } from '../lib/utilities.js';
 import { Decoder } from './decoder.js';
+import { Demuxer } from './demuxer.js';
 import { Encoder } from './encoder.js';
-import { MediaInput } from './media-input.js';
 
 import type { AVCodecID, AVHWDeviceType, AVPixelFormat, FFDecoderCodec, FFEncoderCodec, FFHWDeviceType } from '../constants/index.js';
 import type { Packet } from '../lib/packet.js';
@@ -923,7 +923,7 @@ export class HardwareContext implements Disposable {
       }
 
       // Read test bitstream
-      using input = MediaInput.openSync(testFilePath);
+      using input = Demuxer.openSync(testFilePath);
       const videoStream = input.video()!;
 
       using decoder = Decoder.createSync(videoStream, {
@@ -932,7 +932,7 @@ export class HardwareContext implements Disposable {
 
       const inputGenerator = input.packetsSync();
       const frameGenerator = decoder.framesSync(inputGenerator);
-      let packetGenerator: Generator<Packet> | null = null;
+      let packetGenerator: Generator<Packet | null> | null = null;
       let encoder: Encoder | null = null;
 
       if (encoderCodec) {

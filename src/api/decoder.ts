@@ -39,10 +39,10 @@ import type { SchedulableComponent } from './utilities/scheduler.js';
  *
  * @example
  * ```typescript
- * import { MediaInput, Decoder } from 'node-av/api';
+ * import { Demuxer, Decoder } from 'node-av/api';
  *
  * // Open media and create decoder
- * await using input = await MediaInput.open('video.mp4');
+ * await using input = await Demuxer.open('video.mp4');
  * using decoder = await Decoder.create(input.video());
  *
  * // Decode frames
@@ -68,7 +68,7 @@ import type { SchedulableComponent } from './utilities/scheduler.js';
  * ```
  *
  * @see {@link Encoder} For encoding frames to packets
- * @see {@link MediaInput} For reading media files
+ * @see {@link Demuxer} For reading media files
  * @see {@link HardwareContext} For GPU acceleration
  */
 export class Decoder implements Disposable {
@@ -140,9 +140,9 @@ export class Decoder implements Disposable {
    *
    * @example
    * ```typescript
-   * import { MediaInput, Decoder } from 'node-av/api';
+   * import { Demuxer, Decoder } from 'node-av/api';
    *
-   * await using input = await MediaInput.open('video.mp4');
+   * await using input = await Demuxer.open('video.mp4');
    * using decoder = await Decoder.create(input.video());
    * ```
    *
@@ -322,9 +322,9 @@ export class Decoder implements Disposable {
    *
    * @example
    * ```typescript
-   * import { MediaInput, Decoder } from 'node-av/api';
+   * import { Demuxer, Decoder } from 'node-av/api';
    *
-   * await using input = await MediaInput.open('video.mp4');
+   * await using input = await Demuxer.open('video.mp4');
    * using decoder = Decoder.createSync(input.video());
    * ```
    *
@@ -870,7 +870,7 @@ export class Decoder implements Disposable {
    *
    * @example
    * ```typescript
-   * await using input = await MediaInput.open('video.mp4');
+   * await using input = await Demuxer.open('video.mp4');
    * using decoder = await Decoder.create(input.video());
    *
    * for await (const frame of decoder.frames(input.packets())) {
@@ -904,11 +904,25 @@ export class Decoder implements Disposable {
    * ```
    *
    * @see {@link decode} For single packet decoding
-   * @see {@link MediaInput.packets} For packet source
+   * @see {@link Demuxer.packets} For packet source
    * @see {@link framesSync} For sync version
    */
-  async *frames(packets: AsyncIterable<Packet>): AsyncGenerator<Frame> {
+  async *frames(packets: AsyncIterable<Packet | null>): AsyncGenerator<Frame | null> {
     for await (using packet of packets) {
+      // Handle EOF signal
+      if (packet === null) {
+        // Flush decoder
+        await this.flush();
+        while (true) {
+          const remaining = await this.receive();
+          if (!remaining) break;
+          yield remaining;
+        }
+        // Signal EOF and stop processing
+        yield null;
+        return;
+      }
+
       // Only process packets for our stream
       if (packet.streamIndex === this.stream.index) {
         if (this.isClosed) {
@@ -945,13 +959,16 @@ export class Decoder implements Disposable {
       }
     }
 
-    // Flush decoder after all packets
+    // Flush decoder after all packets (fallback if no null was sent)
     await this.flush();
     while (true) {
       const remaining = await this.receive();
       if (!remaining) break;
       yield remaining;
     }
+
+    // Signal EOF
+    yield null;
   }
 
   /**
@@ -979,11 +996,25 @@ export class Decoder implements Disposable {
    * ```
    *
    * @see {@link decodeSync} For single packet decoding
-   * @see {@link MediaInput.packetsSync} For packet source
+   * @see {@link Demuxer.packetsSync} For packet source
    * @see {@link frames} For async version
    */
-  *framesSync(packets: Iterable<Packet>): Generator<Frame> {
+  *framesSync(packets: Iterable<Packet | null>): Generator<Frame | null> {
     for (using packet of packets) {
+      // Handle EOF signal
+      if (packet === null) {
+        // Flush decoder
+        this.flushSync();
+        while (true) {
+          const remaining = this.receiveSync();
+          if (!remaining) break;
+          yield remaining;
+        }
+        // Signal EOF and stop processing
+        yield null;
+        return;
+      }
+
       // Only process packets for our stream
       if (packet.streamIndex === this.stream.index) {
         if (this.isClosed) {
@@ -1020,13 +1051,16 @@ export class Decoder implements Disposable {
       }
     }
 
-    // Flush decoder after all packets
+    // Flush decoder after all packets (fallback if no null was sent)
     this.flushSync();
     while (true) {
       const remaining = this.receiveSync();
       if (!remaining) break;
       yield remaining;
     }
+
+    // Signal EOF
+    yield null;
   }
 
   /**

@@ -19,6 +19,7 @@ import { Dictionary } from '../lib/dictionary.js';
 import { FFmpegError } from '../lib/error.js';
 import { Packet } from '../lib/packet.js';
 import { Rational } from '../lib/rational.js';
+import { avRescaleQ } from '../lib/utilities.js';
 import { AudioFrameBuffer } from './audio-frame-buffer.js';
 import { FRAME_THREAD_QUEUE_SIZE, PACKET_THREAD_QUEUE_SIZE } from './constants.js';
 import { AsyncQueue } from './utilities/async-queue.js';
@@ -27,7 +28,7 @@ import { parseBitrate } from './utils.js';
 
 import type { AVCodecFlag, AVCodecID, AVPixelFormat, AVSampleFormat, FFEncoderCodec } from '../constants/index.js';
 import type { Frame } from '../lib/frame.js';
-import type { MediaOutput } from './media-output.js';
+import type { Muxer } from './muxer.js';
 import type { EncoderOptions } from './types.js';
 import type { SchedulableComponent } from './utilities/scheduler.js';
 
@@ -86,13 +87,14 @@ import type { SchedulableComponent } from './utilities/scheduler.js';
  * ```
  *
  * @see {@link Decoder} For decoding packets to frames
- * @see {@link MediaOutput} For writing encoded packets
+ * @see {@link Muxer} For writing encoded packets
  * @see {@link HardwareContext} For GPU acceleration
  */
 export class Encoder implements Disposable {
   private codecContext: CodecContext;
   private packet: Packet;
   private codec: Codec;
+  private initializePromise: Promise<void> | null = null;
   private initialized = false;
   private isClosed = false;
   private opts?: Dictionary | null;
@@ -601,8 +603,10 @@ export class Encoder implements Disposable {
         return null;
       }
 
-      await this.initialize(frame);
+      this.initializePromise ??= this.initialize(frame);
     }
+
+    await this.initializePromise;
 
     // Prepare frame for encoding (set quality, validate channel count)
     if (frame) {
@@ -781,7 +785,14 @@ export class Encoder implements Disposable {
         return [];
       }
 
-      await this.initialize(frame);
+      this.initializePromise ??= this.initialize(frame);
+    }
+
+    await this.initializePromise;
+
+    // Prepare frame for encoding (set quality, validate channel count)
+    if (frame) {
+      this.prepareFrameForEncoding(frame);
     }
 
     // If audio encoder with fixed frame size, use AudioFrameBuffer
@@ -794,9 +805,6 @@ export class Encoder implements Disposable {
       let _bufferedFrame;
       while (!this.isClosed && (_bufferedFrame = await this.audioFrameBuffer.pull()) !== null) {
         using bufferedFrame = _bufferedFrame;
-
-        // Prepare buffered frame for encoding (set quality, validate channel count)
-        this.prepareFrameForEncoding(bufferedFrame);
 
         // Send buffered frame to encoder
         const sendRet = await this.codecContext.sendFrame(bufferedFrame);
@@ -812,12 +820,6 @@ export class Encoder implements Disposable {
         }
       }
       return packets;
-    }
-
-    // Standard encoding path (video or audio without fixed frame size)
-    // Prepare frame for encoding (set quality, validate channel count)
-    if (frame) {
-      this.prepareFrameForEncoding(frame);
     }
 
     // Send frame first, error immediately if send fails
@@ -896,6 +898,11 @@ export class Encoder implements Disposable {
       this.initializeSync(frame);
     }
 
+    // Prepare frame for encoding (set quality, validate channel count)
+    if (frame) {
+      this.prepareFrameForEncoding(frame);
+    }
+
     // If audio encoder with fixed frame size, use AudioFrameBuffer
     if (this.audioFrameBuffer && frame) {
       // Push frame into buffer
@@ -906,9 +913,6 @@ export class Encoder implements Disposable {
       let _bufferedFrame;
       while (!this.isClosed && (_bufferedFrame = this.audioFrameBuffer.pullSync()) !== null) {
         using bufferedFrame = _bufferedFrame;
-
-        // Prepare buffered frame for encoding (set quality, validate channel count)
-        this.prepareFrameForEncoding(bufferedFrame);
 
         // Send buffered frame to encoder
         const sendRet = this.codecContext.sendFrameSync(bufferedFrame);
@@ -924,12 +928,6 @@ export class Encoder implements Disposable {
         }
       }
       return packets;
-    }
-
-    // Standard encoding path (video or audio without fixed frame size)
-    // Prepare frame for encoding (set quality, validate channel count)
-    if (frame) {
-      this.prepareFrameForEncoding(frame);
     }
 
     // Send frame first, error immediately if send fails
@@ -1009,16 +1007,37 @@ export class Encoder implements Disposable {
    * @see {@link Decoder.frames} For frame source
    * @see {@link packetsSync} For sync version
    */
-  async *packets(frames: AsyncIterable<Frame>): AsyncGenerator<Packet> {
+  async *packets(frames: AsyncIterable<Frame | null>): AsyncGenerator<Packet | null> {
     // Process frames
     for await (using frame of frames) {
+      // Handle EOF signal
+      if (frame === null) {
+        // Flush encoder (audio frame buffer doesn't need explicit flush)
+        await this.flush();
+        while (true) {
+          const remaining = await this.receive();
+          if (!remaining) break;
+          yield remaining;
+        }
+        // Signal EOF and stop processing
+        yield null;
+        return;
+      }
+
       if (this.isClosed) {
         break;
       }
 
       // Open encoder if not already done
       if (!this.initialized) {
-        await this.initialize(frame);
+        this.initializePromise ??= this.initialize(frame);
+      }
+
+      await this.initializePromise;
+
+      // Prepare frame for encoding (set quality, validate channel count)
+      if (frame) {
+        this.prepareFrameForEncoding(frame);
       }
 
       // If audio encoder with fixed frame size, use AudioFrameBuffer
@@ -1030,9 +1049,6 @@ export class Encoder implements Disposable {
         let _bufferedFrame;
         while (!this.isClosed && (_bufferedFrame = await this.audioFrameBuffer.pull()) !== null) {
           using bufferedFrame = _bufferedFrame;
-
-          // Prepare buffered frame for encoding (set quality, validate channel count)
-          this.prepareFrameForEncoding(bufferedFrame);
 
           // Send buffered frame to encoder
           const sendRet = await this.codecContext.sendFrame(bufferedFrame);
@@ -1048,9 +1064,6 @@ export class Encoder implements Disposable {
           }
         }
       } else {
-        // Prepare frame for encoding (set quality, validate channel count)
-        this.prepareFrameForEncoding(frame);
-
         // Send frame to encoder
         const sendRet = await this.codecContext.sendFrame(frame);
         if (sendRet < 0 && sendRet !== AVERROR_EOF && sendRet !== AVERROR_EAGAIN) {
@@ -1067,13 +1080,16 @@ export class Encoder implements Disposable {
       }
     }
 
-    // Flush encoder after all frames
+    // Flush encoder after all frames (fallback if no null was sent)
     await this.flush();
     while (true) {
       const remaining = await this.receive();
       if (!remaining) break;
       yield remaining;
     }
+
+    // Signal EOF
+    yield null;
   }
 
   /**
@@ -1123,9 +1139,23 @@ export class Encoder implements Disposable {
    * @see {@link Decoder.framesSync} For frame source
    * @see {@link packets} For async version
    */
-  *packetsSync(frames: Iterable<Frame>): Generator<Packet> {
+  *packetsSync(frames: Iterable<Frame | null>): Generator<Packet | null> {
     // Process frames
     for (using frame of frames) {
+      // Handle EOF signal
+      if (frame === null) {
+        // Flush encoder (audio frame buffer doesn't need explicit flush)
+        this.flushSync();
+        while (true) {
+          const remaining = this.receiveSync();
+          if (!remaining) break;
+          yield remaining;
+        }
+        // Signal EOF and stop processing
+        yield null;
+        return;
+      }
+
       if (this.isClosed) {
         break;
       }
@@ -1133,6 +1163,11 @@ export class Encoder implements Disposable {
       // Open encoder if not already done
       if (!this.initialized) {
         this.initializeSync(frame);
+      }
+
+      // Prepare frame for encoding (set quality, validate channel count)
+      if (frame) {
+        this.prepareFrameForEncoding(frame);
       }
 
       // If audio encoder with fixed frame size, use AudioFrameBuffer
@@ -1144,9 +1179,6 @@ export class Encoder implements Disposable {
         let _bufferedFrame;
         while (!this.isClosed && (_bufferedFrame = this.audioFrameBuffer.pullSync()) !== null) {
           using bufferedFrame = _bufferedFrame;
-
-          // Prepare buffered frame for encoding (set quality, validate channel count)
-          this.prepareFrameForEncoding(bufferedFrame);
 
           // Send buffered frame to encoder
           const sendRet = this.codecContext.sendFrameSync(bufferedFrame);
@@ -1162,9 +1194,6 @@ export class Encoder implements Disposable {
           }
         }
       } else {
-        // Prepare frame for encoding (set quality, validate channel count)
-        this.prepareFrameForEncoding(frame);
-
         // Send frame to encoder
         const sendRet = this.codecContext.sendFrameSync(frame);
         if (sendRet < 0 && sendRet !== AVERROR_EOF && sendRet !== AVERROR_EAGAIN) {
@@ -1181,13 +1210,16 @@ export class Encoder implements Disposable {
       }
     }
 
-    // Flush encoder after all frames
+    // Flush encoder after all frames (fallback if no null was sent)
     this.flushSync();
     while (true) {
       const remaining = this.receiveSync();
       if (!remaining) break;
       yield remaining;
     }
+
+    // Signal EOF
+    yield null;
   }
 
   /**
@@ -1502,7 +1534,7 @@ export class Encoder implements Disposable {
   }
 
   /**
-   * Pipe encoded packets to media output.
+   * Pipe encoded packets to muxer.
    *
    * @param target - Media output component to write packets to
    *
@@ -1515,7 +1547,7 @@ export class Encoder implements Disposable {
    * decoder.pipeTo(filter).pipeTo(encoder)
    * ```
    */
-  pipeTo(target: MediaOutput, streamIndex: number): SchedulerControl<Frame> {
+  pipeTo(target: Muxer, streamIndex: number): SchedulerControl<Frame> {
     // Start worker if not already running
     this.workerPromise ??= this.runWorker();
 
@@ -1615,8 +1647,13 @@ export class Encoder implements Disposable {
 
         // Open encoder if not already done
         if (!this.initialized) {
-          await this.initialize(frame);
+          this.initializePromise ??= this.initialize(frame);
         }
+
+        await this.initializePromise;
+
+        // Prepare frame for encoding (set quality, validate channel count)
+        this.prepareFrameForEncoding(frame);
 
         // If audio encoder with fixed frame size, use AudioFrameBuffer
         if (this.audioFrameBuffer) {
@@ -1627,9 +1664,6 @@ export class Encoder implements Disposable {
           let _bufferedFrame;
           while ((_bufferedFrame = await this.audioFrameBuffer.pull()) !== null) {
             using bufferedFrame = _bufferedFrame;
-
-            // Prepare buffered frame for encoding (set quality, validate channel count)
-            this.prepareFrameForEncoding(bufferedFrame);
 
             // Send buffered frame to encoder
             const sendRet = await this.codecContext.sendFrame(bufferedFrame);
@@ -1645,9 +1679,6 @@ export class Encoder implements Disposable {
             }
           }
         } else {
-          // Prepare frame for encoding (set quality, validate channel count)
-          this.prepareFrameForEncoding(frame);
-
           // Send frame to encoder
           const sendRet = await this.codecContext.sendFrame(frame);
           if (sendRet < 0 && sendRet !== AVERROR_EOF && sendRet !== AVERROR_EAGAIN) {
@@ -1745,10 +1776,6 @@ export class Encoder implements Disposable {
    * @internal
    */
   private async initialize(frame: Frame): Promise<void> {
-    // FFmpeg CLI sets time_base from first frame
-    // This ensures encoder timeBase matches the actual frame timeBase from filter/decoder
-    this.codecContext.timeBase = frame.timeBase;
-
     // Get bits_per_raw_sample from decoder if available
     if (this.options.decoder) {
       const decoderCtx = this.options.decoder.getCodecContext();
@@ -1757,7 +1784,7 @@ export class Encoder implements Disposable {
       }
     }
 
-    // Get framerate from filter if available
+    // Get framerate from filter if available, otherwise from decoder
     // This matches FFmpeg CLI behavior where encoder gets frame_rate_filter from FrameData
     if (this.options.filter && frame.isVideo()) {
       const filterFrameRate = this.options.filter.frameRate;
@@ -1766,7 +1793,25 @@ export class Encoder implements Disposable {
       }
     }
 
+    // If no filter framerate, try to get from decoder stream
+    if ((!this.codecContext.framerate || this.codecContext.framerate.num === 0) && this.options.decoder && frame.isVideo()) {
+      const decoderCtx = this.options.decoder.getCodecContext();
+      if (decoderCtx?.framerate && decoderCtx.framerate.num > 0) {
+        this.codecContext.framerate = decoderCtx.framerate;
+      }
+    }
+
     if (frame.isVideo()) {
+      // FFmpeg CLI sets encoder time_base to 1/framerate (inverse of framerate)
+      // This allows encoder to produce sequential PTS (0, 1, 2, 3...) which enables
+      // proper B-frame DTS generation (negative DTS values)
+      if (this.codecContext.framerate && this.codecContext.framerate.num > 0) {
+        // Use inverse of framerate (e.g., framerate=30/1 → timebase=1/30)
+        this.codecContext.timeBase = new Rational(this.codecContext.framerate.den, this.codecContext.framerate.num);
+      } else {
+        // Fallback: use frame timebase if framerate not available
+        this.codecContext.timeBase = frame.timeBase;
+      }
       this.codecContext.width = frame.width;
       this.codecContext.height = frame.height;
       this.codecContext.pixelFormat = frame.format as AVPixelFormat;
@@ -1781,6 +1826,10 @@ export class Encoder implements Disposable {
         this.codecContext.chromaLocation = frame.chromaLocation;
       }
     } else {
+      // Audio: Always use frame timebase (which is typically 1/sample_rate)
+      // This ensures correct PTS progression for audio frames
+      this.codecContext.timeBase = frame.timeBase;
+
       this.codecContext.sampleRate = frame.sampleRate;
       this.codecContext.sampleFormat = frame.format as AVSampleFormat;
       this.codecContext.channelLayout = frame.channelLayout;
@@ -1836,10 +1885,6 @@ export class Encoder implements Disposable {
    * @see {@link initialize} For async version
    */
   private initializeSync(frame: Frame): void {
-    // FFmpeg CLI sets time_base from first frame
-    // This ensures encoder timeBase matches the actual frame timeBase from filter/decoder
-    this.codecContext.timeBase = frame.timeBase;
-
     // Get bits_per_raw_sample from decoder if available
     if (this.options.decoder) {
       const decoderCtx = this.options.decoder.getCodecContext();
@@ -1848,7 +1893,7 @@ export class Encoder implements Disposable {
       }
     }
 
-    // Get framerate from filter if available
+    // Get framerate from filter if available, otherwise from decoder
     // This matches FFmpeg CLI behavior where encoder gets frame_rate_filter from FrameData
     if (this.options.filter && frame.isVideo()) {
       const filterFrameRate = this.options.filter.frameRate;
@@ -1857,7 +1902,25 @@ export class Encoder implements Disposable {
       }
     }
 
+    // If no filter framerate, try to get from decoder stream
+    if ((!this.codecContext.framerate || this.codecContext.framerate.num === 0) && this.options.decoder && frame.isVideo()) {
+      const decoderCtx = this.options.decoder.getCodecContext();
+      if (decoderCtx?.framerate && decoderCtx.framerate.num > 0) {
+        this.codecContext.framerate = decoderCtx.framerate;
+      }
+    }
+
     if (frame.isVideo()) {
+      // FFmpeg CLI sets encoder time_base to 1/framerate (inverse of framerate)
+      // This allows encoder to produce sequential PTS (0, 1, 2, 3...) which enables
+      // proper B-frame DTS generation (negative DTS values)
+      if (this.codecContext.framerate && this.codecContext.framerate.num > 0) {
+        // Use inverse of framerate (e.g., framerate=30/1 → timebase=1/30)
+        this.codecContext.timeBase = new Rational(this.codecContext.framerate.den, this.codecContext.framerate.num);
+      } else {
+        // Fallback: use frame timebase if framerate not available
+        this.codecContext.timeBase = frame.timeBase;
+      }
       this.codecContext.width = frame.width;
       this.codecContext.height = frame.height;
       this.codecContext.pixelFormat = frame.format as AVPixelFormat;
@@ -1872,6 +1935,10 @@ export class Encoder implements Disposable {
         this.codecContext.chromaLocation = frame.chromaLocation;
       }
     } else {
+      // Audio: Always use frame timebase (which is typically 1/sample_rate)
+      // This ensures correct PTS progression for audio frames
+      this.codecContext.timeBase = frame.timeBase;
+
       this.codecContext.sampleRate = frame.sampleRate;
       this.codecContext.sampleFormat = frame.format as AVSampleFormat;
       this.codecContext.channelLayout = frame.channelLayout;
@@ -2000,6 +2067,50 @@ export class Encoder implements Disposable {
    * @internal
    */
   private prepareFrameForEncoding(frame: Frame): void {
+    // Adjust frame PTS and timebase to encoder timebase
+    // This matches FFmpeg's adjust_frame_pts_to_encoder_tb() behavior which:
+    // 1. Converts PTS from frame's timebase to encoder's timebase (av_rescale_q)
+    // 2. Sets frame->time_base = tb_dst (so encoder gets correct timebase)
+
+    // Note: prepareFrameForEncoding is always called AFTER initialize(),
+    // so codecContext.timeBase is already set correctly:
+    // - Video: 1/framerate (if available)
+    // - Audio: frame.timeBase from first frame (typically 1/sample_rate)
+    const encoderTimebase = this.codecContext.timeBase;
+    const oldTimebase = frame.timeBase;
+
+    // IMPORTANT: Calculate duration BEFORE converting frame timebase
+    // This matches FFmpeg's video_sync_process() which calculates:
+    //   duration = frame->duration * av_q2d(frame->time_base) / av_q2d(ofp->tb_out)
+    // We need the OLD timebase to convert duration properly
+    let frameDuration: bigint;
+
+    if (frame.duration && frame.duration > 0n) {
+      // Convert duration from frame timebase to encoder timebase
+      // This ensures encoder gets correct frame duration for timestamps
+      frameDuration = avRescaleQ(frame.duration, oldTimebase, encoderTimebase);
+    } else {
+      // Default to 1 (constant frame rate behavior)
+      // Matches FFmpeg's CFR mode: frame->duration = 1
+      frameDuration = 1n;
+    }
+
+    if (frame.pts !== null && frame.pts !== undefined) {
+      // Convert PTS to encoder timebase
+      frame.pts = avRescaleQ(frame.pts, oldTimebase, encoderTimebase);
+
+      // IMPORTANT: Set frame timebase to encoder timebase
+      // FFmpeg does this in adjust_frame_pts_to_encoder_tb(): frame->time_base = tb_dst
+      // This ensures encoder gets frames with correct timebase (1/framerate for video, 1/sample_rate for audio)
+      frame.timeBase = encoderTimebase;
+    }
+
+    // Set frame duration in encoder timebase
+    // This matches FFmpeg's video_sync_process() which sets frame->duration
+    // based on vsync_method (CFR: 1, VFR: calculated, PASSTHROUGH: calculated)
+    // Since we don't have automatic filter like FFmpeg, we always set it here
+    frame.duration = frameDuration;
+
     if (this.codecContext.codecType === AVMEDIA_TYPE_VIDEO) {
       // Video: Set frame quality from encoder's global quality
       // Only set if encoder has globalQuality configured and frame doesn't already have quality set
