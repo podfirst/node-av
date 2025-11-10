@@ -70,6 +70,7 @@ public:
   // Rational arithmetic utilities
   static Napi::Value MulQ(const Napi::CallbackInfo& info);
   static Napi::Value InvQ(const Napi::CallbackInfo& info);
+  static Napi::Value AddQ(const Napi::CallbackInfo& info);
   static Napi::Value Gcd(const Napi::CallbackInfo& info);
   static Napi::Value RescaleQRnd(const Napi::CallbackInfo& info);
   

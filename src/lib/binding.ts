@@ -308,6 +308,7 @@ export interface NativeBinding {
   avRescaleDelta: (inTb: IRational, inTs: bigint | number, fsTb: IRational, duration: number, lastRef: { value: bigint }, outTb: IRational) => bigint;
   avMulQ: (a: IRational, b: IRational) => IRational;
   avInvQ: (q: IRational) => IRational;
+  avAddQ: (a: IRational, b: IRational) => IRational;
   avGcd: (a: bigint | number, b: bigint | number) => bigint;
   avRescaleQRnd: (a: bigint | number | null, bq: IRational, cq: IRational, rnd: number) => bigint;
   avGetAudioFrameDuration2: (codecpar: NativeCodecParameters, frameBytes: number) => number;

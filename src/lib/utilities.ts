@@ -986,6 +986,41 @@ export function avInvQ(q: IRational): IRational {
 }
 
 /**
+ * Add two rational numbers.
+ *
+ * Adds two rational numbers using FFmpeg's av_add_q() which normalizes the result.
+ * This is more accurate than manual addition as it reduces the fraction.
+ *
+ * Direct mapping to av_add_q().
+ *
+ * @param a - First rational number
+ *
+ * @param b - Second rational number
+ *
+ * @returns Sum of a and b as a normalized rational
+ *
+ * @example
+ * ```typescript
+ * // Add two fractions
+ * const a = { num: 1, den: 2 };  // 1/2
+ * const b = { num: 1, den: 4 };  // 1/4
+ * const sum = avAddQ(a, b);      // 3/4
+ * // Returns { num: 3, den: 4 }
+ *
+ * // Add timestamps with different timebases
+ * const ts1 = { num: 1000, den: 30000 };
+ * const ts2 = { num: 500, den: 30000 };
+ * const total = avAddQ(ts1, ts2);
+ * // Returns { num: 1, den: 20 } (normalized from 1500/30000)
+ * ```
+ *
+ * @see [av_add_q](https://ffmpeg.org/doxygen/trunk/group__lavu__math__rational.html#gac4af1feb227bd1095fc2cab42d933f52) - FFmpeg Doxygen
+ */
+export function avAddQ(a: IRational, b: IRational): IRational {
+  return bindings.avAddQ(a, b);
+}
+
+/**
  * Calculate greatest common divisor.
  *
  * Computes the GCD of two integers using FFmpeg's av_gcd().

@@ -74,6 +74,7 @@ Napi::Object Utilities::Init(Napi::Env env, Napi::Object exports) {
   // Rational arithmetic utilities
   exports.Set("avMulQ", Napi::Function::New(env, MulQ));
   exports.Set("avInvQ", Napi::Function::New(env, InvQ));
+  exports.Set("avAddQ", Napi::Function::New(env, AddQ));
   exports.Set("avGcd", Napi::Function::New(env, Gcd));
   exports.Set("avRescaleQRnd", Napi::Function::New(env, RescaleQRnd));
 
@@ -1844,6 +1845,46 @@ Napi::Value Utilities::InvQ(const Napi::CallbackInfo& info) {
 
   // Invert rational using FFmpeg's av_inv_q
   AVRational result = av_inv_q(q);
+
+  // Return as object
+  Napi::Object result_obj = Napi::Object::New(env);
+  result_obj.Set("num", Napi::Number::New(env, result.num));
+  result_obj.Set("den", Napi::Number::New(env, result.den));
+
+  return result_obj;
+}
+
+Napi::Value Utilities::AddQ(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+
+  if (info.Length() < 2) {
+    Napi::TypeError::New(env, "Expected 2 arguments (a, b)")
+        .ThrowAsJavaScriptException();
+    return env.Null();
+  }
+
+  // Parse first rational
+  if (!info[0].IsObject()) {
+    Napi::TypeError::New(env, "a must be an object with num and den").ThrowAsJavaScriptException();
+    return env.Null();
+  }
+  Napi::Object a_obj = info[0].As<Napi::Object>();
+  AVRational a;
+  a.num = a_obj.Get("num").As<Napi::Number>().Int32Value();
+  a.den = a_obj.Get("den").As<Napi::Number>().Int32Value();
+
+  // Parse second rational
+  if (!info[1].IsObject()) {
+    Napi::TypeError::New(env, "b must be an object with num and den").ThrowAsJavaScriptException();
+    return env.Null();
+  }
+  Napi::Object b_obj = info[1].As<Napi::Object>();
+  AVRational b;
+  b.num = b_obj.Get("num").As<Napi::Number>().Int32Value();
+  b.den = b_obj.Get("den").As<Napi::Number>().Int32Value();
+
+  // Add rationals using FFmpeg's av_add_q
+  AVRational result = av_add_q(a, b);
 
   // Return as object
   Napi::Object result_obj = Napi::Object::New(env);
