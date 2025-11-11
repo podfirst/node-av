@@ -90,10 +90,6 @@ decoderCtx.allocContext3(codec);
 ret = decoderCtx.parametersToContext(videoStream.codecpar);
 FFmpegError.throwIfError(ret, 'Could not copy codec parameters to decoder context');
 
-// Inform the decoder about the timebase for packet timestamps and the frame rate
-decoderCtx.pktTimebase = videoStream.timeBase;
-decoderCtx.framerate = videoStream.rFrameRate || videoStream.avgFrameRate || new Rational(25, 1);
-
 // Open decoder context
 ret = await decoderCtx.open2(codec, null);
 FFmpegError.throwIfError(ret, 'Could not open codec');
@@ -140,19 +136,16 @@ while (true) {
 Higher-level abstractions for common tasks like decoding, encoding, filtering, and transcoding. Easier to use while still providing access to low-level details when needed.
 
 ```typescript
-import { Decoder, Encoder, Muxer, Muxer, HardwareContext } from 'node-av/api';
+import { Decoder, Demuxer, Encoder, HardwareContext, Muxer } from 'node-av/api';
 import { FF_ENCODER_LIBX264 } from 'node-av/constants';
 
-// Open media
-await using input = await Muxer.open('input.mp4');
-await using output = await Muxer.open('output.mp4', {
-  input, // Optional, used to copy global headers and metadata
-});
+// Open Demuxer
+await using input = await Demuxer.open('input.mp4');
 
 // Get video stream
 const videoStream = input.video()!;
 
-// Setup hardware acceleration
+// Optional, setup hardware acceleration
 using hw = HardwareContext.auto();
 
 // Create decoder
@@ -163,6 +156,11 @@ using decoder = await Decoder.create(videoStream, {
 // Create encoder
 using encoder = await Encoder.create(FF_ENCODER_LIBX264, {
   decoder, // Optional, copy settings from decoder
+});
+
+// Open Muxer
+await using output = await Muxer.open('output.mp4', {
+  input, // Optional, used to copy global headers and metadata
 });
 
 // Add stream to output
@@ -188,16 +186,33 @@ for await (using packet of encoderGenerator) {
 A simple way to chain together multiple processing steps like decoding, filtering, encoding, and muxing.
 
 ```typescript
-import { pipeline, Muxer, Muxer, Decoder, Encoder } from 'node-av/api';
+import { Decoder, Demuxer, Encoder, HardwareContext, Muxer, pipeline } from 'node-av/api';
+import { FF_ENCODER_LIBX264 } from 'node-av/constants';
 
 // Simple transcode pipeline: input → decoder → encoder → output
-const input = await Muxer.open('input.mp4');
-const output = await Muxer.open('output.mp4', {
-  input,
+
+// Open Demuxer
+await using input = await Demuxer.open('input.mp4');
+
+// Get video stream
+const videoStream = input.video()!;
+
+// Optional, setup hardware acceleration
+using hw = HardwareContext.auto();
+
+// Create decoder
+using decoder = await Decoder.create(videoStream, {
+  hardware: hw, // Optional, use hardware acceleration if available
 });
-const decoder = await Decoder.create(input.video());
-const encoder = await Encoder.create(FF_ENCODER_LIBX264, {
-  decoder,
+
+// Create encoder
+using encoder = await Encoder.create(FF_ENCODER_LIBX264, {
+  decoder, // Optional, copy settings from decoder
+});
+
+// Open Muxer
+await using output = await Muxer.open('output.mp4', {
+  input, // Optional, used to copy global headers and metadata
 });
 
 const control = pipeline(input, decoder, encoder, output);
