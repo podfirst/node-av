@@ -413,8 +413,6 @@ export class RTPStream {
       {
         input: this.input,
         copyInitialNonkeyframes: true,
-        useSyncQueue: false,
-        useAsyncWrite: false,
         format: 'rtp',
         maxPacketSize: this.options.video.mtu,
         options: {
@@ -513,8 +511,6 @@ export class RTPStream {
         {
           input: this.input,
           copyInitialNonkeyframes: true,
-          useSyncQueue: false,
-          useAsyncWrite: false,
           format: 'rtp',
           maxPacketSize: this.options.audio.mtu,
           options: {
