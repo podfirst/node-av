@@ -1358,21 +1358,9 @@ export const AV_PIX_FMT_GBRP10MSBLE = 263 as AVPixelFormat;
 export const AV_PIX_FMT_GBRP12MSBBE = 264 as AVPixelFormat;
 export const AV_PIX_FMT_GBRP12MSBLE = 265 as AVPixelFormat;
 export const AV_PIX_FMT_OHCODEC = 266 as AVPixelFormat;
-export const AV_PIX_FMT_GRAY10MSBBE = 267 as AVPixelFormat;
-export const AV_PIX_FMT_GRAY10MSBLE = 268 as AVPixelFormat;
-export const AV_PIX_FMT_GRAY12MSBBE = 269 as AVPixelFormat;
-export const AV_PIX_FMT_GRAY12MSBLE = 270 as AVPixelFormat;
-export const AV_PIX_FMT_YUV420P10MSBBE = 271 as AVPixelFormat;
-export const AV_PIX_FMT_YUV420P10MSBLE = 272 as AVPixelFormat;
-export const AV_PIX_FMT_YUV420P12MSBBE = 273 as AVPixelFormat;
-export const AV_PIX_FMT_YUV420P12MSBLE = 274 as AVPixelFormat;
-export const AV_PIX_FMT_YUV422P10MSBBE = 275 as AVPixelFormat;
-export const AV_PIX_FMT_YUV422P10MSBLE = 276 as AVPixelFormat;
-export const AV_PIX_FMT_YUV422P12MSBBE = 277 as AVPixelFormat;
-export const AV_PIX_FMT_YUV422P12MSBLE = 278 as AVPixelFormat;
-export const AV_PIX_FMT_NV15 = 279 as AVPixelFormat;
-export const AV_PIX_FMT_NV20 = 280 as AVPixelFormat;
-export const AV_PIX_FMT_NB = 281 as AVPixelFormat;
+export const AV_PIX_FMT_NV15 = 267 as AVPixelFormat;
+export const AV_PIX_FMT_NV20 = 268 as AVPixelFormat;
+export const AV_PIX_FMT_NB = 269 as AVPixelFormat;
 
 // libavutil/pixfmt.h
 export type AVColorPrimaries = number & { readonly [__ffmpeg_brand]: 'AVColorPrimaries' };
