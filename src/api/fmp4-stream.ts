@@ -24,12 +24,54 @@ import type { AVCodecID, AVHWDeviceType, FFHWDeviceType } from '../constants/ind
 import type { PipelineControl } from './pipeline.js';
 import type { EncoderOptions, IOOutputCallbacks, MediaInputOptions } from './types.js';
 
+export type MP4BoxType =
+  // Top-level structure
+  | 'ftyp'
+  | 'styp' // File/Segment Type
+  | 'moov'
+  | 'moof' // Movie/Fragment containers
+  | 'mdat' // Media Data
+  | 'free'
+  | 'skip' // Free space
+
+  // DASH-specific
+  | 'sidx' // Segment Index
+  | 'emsg' // Event Message
+
+  // Movie box children
+  | 'mvhd' // Movie Header
+  | 'trak' // Track
+  | 'mvex' // Movie Extends
+  | 'trex' // Track Extends
+  | 'mehd' // Movie Extends Header
+
+  // Fragment box children
+  | 'mfhd' // Movie Fragment Header
+  | 'traf' // Track Fragment
+  | 'tfhd' // Track Fragment Header
+  | 'tfdt' // Track Fragment Decode Time
+  | 'trun' // Track Fragment Run
+  | 'sdtp' // Sample Dependency Type
+
+  // Track box children (rarely needed in fMP4 with empty_moov)
+  | 'tkhd' // Track Header
+  | 'mdia' // Media
+  | 'minf' // Media Information
+  | 'stbl' // Sample Table
+
+  // Metadata
+  | 'meta' // Metadata
+  | 'udta' // User Data
+
+  // Catch-all for unknown/custom boxes
+  | (string & {});
+
 /**
  * MP4 box information.
  */
 export interface MP4Box {
   /** Four-character code identifying the box type (e.g., 'ftyp', 'moov', 'moof') */
-  type: string;
+  type: MP4BoxType;
 
   /** Total size of the box in bytes (including 8-byte header) */
   size: number;
@@ -123,6 +165,13 @@ export interface FMP4StreamOptions {
    * @default false
    */
   boxMode?: boolean;
+
+  /**
+   * MOV flags for fragmented MP4 output.
+   *
+   * @default '+frag_keyframe+separate_moof+default_base_moof+empty_moov'
+   */
+  movFlags?: string;
 }
 
 /**
@@ -212,8 +261,8 @@ export class FMP4Stream {
       options: {
         flags: 'low_delay',
         fflags: 'nobuffer',
-        analyzeduration: 0,
-        probesize: 32,
+        // analyzeduration: 0,
+        // probesize: 32,
         timeout: 5000000,
         rtsp_transport: inputUrl.toLowerCase().startsWith('rtsp') ? 'tcp' : undefined,
         ...options.inputOptions?.options,
@@ -229,6 +278,7 @@ export class FMP4Stream {
       inputOptions: options.inputOptions!,
       bufferSize: options.bufferSize ?? 2 * 1024 * 1024,
       boxMode: options.boxMode ?? false,
+      movFlags: options.movFlags ?? '+frag_keyframe+separate_moof+default_base_moof+empty_moov',
     };
 
     // Parse supported codecs
@@ -491,7 +541,7 @@ export class FMP4Stream {
       bufferSize: this.options.bufferSize,
       exitOnError: false,
       options: {
-        movflags: '+frag_keyframe+separate_moof+default_base_moof+empty_moov',
+        movflags: this.options.movFlags,
         frag_duration: this.options.fragDuration,
       },
     });

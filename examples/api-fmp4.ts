@@ -11,7 +11,7 @@
  *   --duration <n>       Recording duration in seconds (default: 10)
  *   --codecs <list>      Comma-separated supported codec list (default: h264,h265,aac)
  *   --frag <n>           Fragment duration in microseconds (default: 1000000 = 1s)
- *   --buffer <n>         I/O buffer size in bytes (default: 4096)
+ *   --buffer <n>         I/O buffer size in bytes (default: undefined)
  *   --box-mode           Enable box mode to receive complete MP4 boxes (default: true)
  *   --chunk-mode         Enable chunk mode to receive raw FFmpeg chunks
  *   --hw                 Enable hardware acceleration (auto-detect)
