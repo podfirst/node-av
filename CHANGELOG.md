@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.0.0] - 2025-11-12
+
 ### Major Focus: FFmpeg CLI Compatibility & Production Stability
 
 This release brings the High-Level API closer to FFmpeg CLI behavior, making it more intuitive, stable, and robust for production use.
