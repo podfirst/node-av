@@ -7,15 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Major Focus: FFmpeg CLI Compatibility
+### Major Focus: FFmpeg CLI Compatibility & Production Stability
 
-This release brings the High-Level API closer to FFmpeg CLI behavior, making it more intuitive and robust for production use.
+This release brings the High-Level API closer to FFmpeg CLI behavior, making it more intuitive, stable, and robust for production use.
 
 ### Breaking Changes
 
-**High-Level API Refactoring**: All High-Level API classes (`MediaInput`, `MediaOutput`, `Decoder`, `Encoder`, `FilterAPI`) have been refactored with improved type definitions and option handling to match FFmpeg CLI's intelligent behavior - automatic parameter propagation, metadata preservation, robust error handling, and better defaults. This makes the API more intuitive and production-ready while reducing boilerplate code.
+**Class Renaming**: The High-Level API classes have been renamed to better reflect their FFmpeg terminology:
+- `MediaInput` → `Demuxer`
+- `MediaOutput` → `Muxer`
 
-**Migration**: Review your High-Level API usage - some option property names/types may have changed. The Low-Level API remains stable.
+**High-Level API Refactoring**: All High-Level API classes (`Demuxer`, `Muxer`, `Decoder`, `Encoder`, `FilterAPI`, `BitStreamFilterAPI`) have been refactored with improved type definitions, option handling, and significantly enhanced stability. Many aspects have been brought closer to FFmpeg CLI behavior, including automatic parameter propagation, metadata preservation, robust error handling, and better defaults. This makes the API more intuitive and production-ready.
+
+**Native Bindings Enhancement**: Many additional useful utility functions have been added to the native bindings for improved low-level control and functionality.
+
+**Migration**: Update your imports and class references. Review your High-Level API usage - some option property names/types may have changed. The Low-Level API remains stable.
+
+### Changed
+
+- **FFmpeg Update**: Updated to latest FFmpeg master version with newest features, performance improvements, and bug fixes
+
+### Fixed
+
+- Numerous bug fixes and stability improvements across the entire codebase
 
 ## [3.1.2] - 2025-10-27
 
