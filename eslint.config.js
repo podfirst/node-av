@@ -131,6 +131,7 @@ export default [
       '@typescript-eslint/no-require-imports': 'off',
       '@typescript-eslint/no-redundant-type-constituents': 'off',
       '@typescript-eslint/no-namespace': 'off',
+      '@typescript-eslint/no-this-alias': 'off',
 
       // Stylistic specific rules
       '@stylistic/generator-star-spacing': 'off',
