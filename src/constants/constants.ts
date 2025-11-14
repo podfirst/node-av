@@ -9,6 +9,9 @@ import type { IRational } from '../lib/types.js';
 // Brand symbol for type safety
 const __ffmpeg_brand = Symbol('__ffmpeg_brand');
 
+export const EOF = undefined; // End of File signal
+export type EOFSignal = typeof EOF;
+
 // Media types
 export type AVMediaType = number & { readonly [__ffmpeg_brand]: 'AVMediaType' };
 
