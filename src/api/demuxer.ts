@@ -1431,9 +1431,6 @@ export class Demuxer implements AsyncDisposable, Disposable {
 
         yield packet;
       }
-
-      // Signal EOF
-      yield null;
     } finally {
       // Unregister this generator
       this.activeGenerators--;
@@ -1442,6 +1439,8 @@ export class Demuxer implements AsyncDisposable, Disposable {
       if (this.activeGenerators === 0) {
         await this.stopDemuxThread();
       }
+
+      yield null; // Signal EOF
     }
   }
 
