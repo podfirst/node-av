@@ -1,5 +1,5 @@
 /* eslint-disable @stylistic/indent-binary-ops */
-import { AV_BUFFERSRC_FLAG_PUSH, AVERROR_EAGAIN, AVERROR_EOF, AVFILTER_FLAG_HWDEVICE } from '../constants/constants.js';
+import { AV_BUFFERSRC_FLAG_PUSH, AVERROR_EAGAIN, AVERROR_EOF, AVFILTER_FLAG_HWDEVICE, EOF } from '../constants/constants.js';
 import { FFmpegError } from '../lib/error.js';
 import { FilterGraph } from '../lib/filter-graph.js';
 import { FilterInOut } from '../lib/filter-inout.js';
@@ -11,7 +11,7 @@ import { FRAME_THREAD_QUEUE_SIZE } from './constants.js';
 import { AsyncQueue } from './utilities/async-queue.js';
 import { Scheduler } from './utilities/scheduler.js';
 
-import type { AVColorRange, AVColorSpace, AVFilterCmdFlag, AVPixelFormat, AVSampleFormat } from '../constants/index.js';
+import type { AVColorRange, AVColorSpace, AVFilterCmdFlag, AVPixelFormat, AVSampleFormat, EOFSignal } from '../constants/index.js';
 import type { FilterContext } from '../lib/filter-context.js';
 import type { ChannelLayout, IDimension, IRational } from '../lib/types.js';
 import type { Encoder } from './encoder.js';
@@ -504,32 +504,33 @@ export class FilterAPI implements Disposable {
   }
 
   /**
-   * Process a frame through the filter.
+   * Send a frame to the filter.
    *
-   * Applies filter operations to input frame.
+   * Sends a frame to the filter for processing.
+   * Does not return filtered frames - use {@link receive} to retrieve frames.
    * On first frame, automatically builds filter graph with frame properties.
-   * May buffer frames internally before producing output.
-   * Hardware frames context is automatically detected from frame.
-   * Returns null if filter is closed and frame is null.
+   * A single input frame can produce zero, one, or multiple output frames.
    *
-   * **Note**: This method receives only ONE frame per call.
-   * A single input frame can produce multiple output frames (e.g., fps filter, deinterlace).
-   * To receive all frames from an input, use {@link processAll} or {@link frames} instead.
+   * **Important**: This method only SENDS the frame to the filter.
+   * You must call {@link receive} separately (potentially multiple times) to get filtered frames.
    *
-   * Direct mapping to av_buffersrc_add_frame() and av_buffersink_get_frame().
+   * Direct mapping to av_buffersrc_add_frame().
    *
-   * @param frame - Input frame to process (or null to flush)
-   *
-   * @returns Filtered frame or null if buffered
+   * @param frame - Input frame to send to filter
    *
    * @throws {Error} If filter could not be initialized
    *
-   * @throws {FFmpegError} If processing fails
+   * @throws {FFmpegError} If sending frame fails
    *
    * @example
    * ```typescript
-   * const output = await filter.process(inputFrame);
-   * if (output) {
+   * // Send frame and receive filtered frames
+   * await filter.process(inputFrame);
+   *
+   * // Receive all available filtered frames
+   * while (true) {
+   *   const output = await filter.receive();
+   *   if (!output) break;
    *   console.log(`Got filtered frame: pts=${output.pts}`);
    *   output.free();
    * }
@@ -537,29 +538,35 @@ export class FilterAPI implements Disposable {
    *
    * @example
    * ```typescript
-   * // Process frame - may buffer internally
-   * const output = await filter.process(frame);
-   * if (output) {
-   *   // Got output immediately
-   *   yield output;
+   * for await (const frame of decoder.frames(input.packets())) {
+   *   // Send frame
+   *   await filter.process(frame);
+   *
+   *   // Receive available filtered frames
+   *   let output;
+   *   while ((output = await filter.receive())) {
+   *     await encoder.encode(output);
+   *     output.free();
+   *   }
+   *   frame.free();
    * }
-   * // For buffered frames, use the frames() async generator
    * ```
    *
-   * @see {@link processAll} For processing multiple output frames
+   * @see {@link receive} For receiving filtered frames
+   * @see {@link processAll} For combined send+receive operation
    * @see {@link frames} For processing frame streams
    * @see {@link flush} For end-of-stream handling
    * @see {@link processSync} For synchronous version
    */
-  async process(frame: Frame | null): Promise<Frame | null> {
+  async process(frame: Frame): Promise<void> {
     if (this.isClosed) {
-      return null;
+      return;
     }
 
     // Open filter if not already done
     if (!this.initialized) {
       if (!frame) {
-        return null;
+        return;
       }
 
       this.initializePromise ??= this.initialize(frame);
@@ -568,7 +575,7 @@ export class FilterAPI implements Disposable {
     await this.initializePromise;
 
     if (!this.initialized) {
-      return null;
+      return;
     }
 
     if (!this.buffersrcCtx || !this.buffersinkCtx) {
@@ -578,7 +585,7 @@ export class FilterAPI implements Disposable {
     // Check for frame property changes (FFmpeg: dropOnChange/allowReinit logic)
     if (frame && !this.checkFramePropertiesChanged(frame)) {
       // Frame dropped due to property change
-      return null;
+      return;
     }
 
     // If reinitialized, reinitialize now
@@ -601,76 +608,63 @@ export class FilterAPI implements Disposable {
     // Send frame to filter with PUSH flag for immediate processing
     const addRet = await this.buffersrcCtx.buffersrcAddFrame(frame, AV_BUFFERSRC_FLAG_PUSH);
     FFmpegError.throwIfError(addRet, 'Failed to add frame to filter');
-
-    // Try to get filtered frame using receive()
-    return await this.receive();
   }
 
   /**
-   * Process a frame through the filter synchronously.
+   * Send a frame to the filter synchronously.
    * Synchronous version of process.
    *
-   * Applies filter operations to input frame.
+   * Sends a frame to the filter for processing.
+   * Does not return filtered frames - use {@link receiveSync} to retrieve frames.
    * On first frame, automatically builds filter graph with frame properties.
-   * May buffer frames internally before producing output.
-   * Hardware frames context is automatically detected from frame.
-   * Returns null if filter is closed and frame is null.
+   * A single input frame can produce zero, one, or multiple output frames.
    *
-   * **Note**: This method receives only ONE frame per call.
-   * A single input frame can produce multiple output frames (e.g., fps filter, deinterlace).
-   * To receive all frames from an input, use {@link processAllSync} or {@link framesSync} instead.
+   * **Important**: This method only SENDS the frame to the filter.
+   * You must call {@link receiveSync} separately (potentially multiple times) to get filtered frames.
    *
-   * Direct mapping to av_buffersrc_add_frame() and av_buffersink_get_frame().
+   * Direct mapping to av_buffersrc_add_frame().
    *
-   * @param frame - Input frame to process (or null to flush)
-   *
-   * @returns Filtered frame or null if buffered
+   * @param frame - Input frame to send to filter
    *
    * @throws {Error} If filter could not be initialized
    *
-   * @throws {FFmpegError} If processing fails
+   * @throws {FFmpegError} If sending frame fails
    *
    * @example
    * ```typescript
-   * const output = filter.processSync(inputFrame);
-   * if (output) {
+   * // Send frame and receive filtered frames
+   * filter.processSync(inputFrame);
+   *
+   * // Receive all available filtered frames
+   * let output;
+   * while ((output = filter.receiveSync())) {
    *   console.log(`Got filtered frame: pts=${output.pts}`);
    *   output.free();
    * }
    * ```
    *
-   * @example
-   * ```typescript
-   * // Process frame - may buffer internally
-   * const output = filter.processSync(frame);
-   * if (output) {
-   *   // Got output immediately
-   *   yield output;
-   * }
-   * // For buffered frames, use the framesSync() generator
-   * ```
-   *
-   * @see {@link processAllSync} For processing multiple output frames
+   * @see {@link receiveSync} For receiving filtered frames
+   * @see {@link processAllSync} For combined send+receive operation
    * @see {@link framesSync} For processing frame streams
    * @see {@link flushSync} For end-of-stream handling
    * @see {@link process} For async version
    */
-  processSync(frame: Frame | null): Frame | null {
+  processSync(frame: Frame): void {
     if (this.isClosed) {
-      return null;
+      return;
     }
 
     // Open filter if not already done
     if (!this.initialized) {
       if (!frame) {
-        return null;
+        return;
       }
 
       this.initializeSync(frame);
     }
 
     if (!this.initialized) {
-      return null;
+      return;
     }
 
     if (!this.buffersrcCtx || !this.buffersinkCtx) {
@@ -680,7 +674,7 @@ export class FilterAPI implements Disposable {
     // Check for frame property changes (FFmpeg: dropOnChange/allowReinit logic)
     if (frame && !this.checkFramePropertiesChanged(frame)) {
       // Frame dropped due to property change
-      return null;
+      return;
     }
 
     // If reinitialized, reinitialize now
@@ -702,9 +696,6 @@ export class FilterAPI implements Disposable {
     // Send frame to filter with PUSH flag for immediate processing
     const addRet = this.buffersrcCtx.buffersrcAddFrameSync(frame, AV_BUFFERSRC_FLAG_PUSH);
     FFmpegError.throwIfError(addRet, 'Failed to add frame to filter');
-
-    // Try to get filtered frame using receiveSync()
-    return this.receiveSync();
   }
 
   /**
@@ -718,7 +709,7 @@ export class FilterAPI implements Disposable {
    *
    * Direct mapping to av_buffersrc_add_frame() and av_buffersink_get_frame().
    *
-   * @param frame - Input frame to process (or null to flush)
+   * @param frame - Input frame to process
    *
    * @returns Array of filtered frames (empty if buffered or filter closed)
    *
@@ -750,47 +741,18 @@ export class FilterAPI implements Disposable {
    * @see {@link processAllSync} For synchronous version
    */
   async processAll(frame: Frame | null): Promise<Frame[]> {
-    if (this.isClosed) {
-      return [];
+    if (frame) {
+      await this.process(frame);
+    } else {
+      await this.flush();
     }
 
-    // Open filter if not already done
-    if (!this.initialized) {
-      if (!frame) {
-        return [];
-      }
-
-      this.initializePromise ??= this.initialize(frame);
-    }
-
-    await this.initializePromise;
-
-    if (!this.initialized) {
-      return [];
-    }
-
-    if (!this.buffersrcCtx || !this.buffersinkCtx) {
-      throw new Error('Could not initialize filter contexts');
-    }
-
-    // Rescale timestamps to filter's timeBase
-    if (frame && this.calculatedTimeBase) {
-      const originalTimeBase = frame.timeBase;
-      frame.pts = avRescaleQ(frame.pts, originalTimeBase, this.calculatedTimeBase);
-      frame.duration = avRescaleQ(frame.duration, originalTimeBase, this.calculatedTimeBase);
-      frame.timeBase = new Rational(this.calculatedTimeBase.num, this.calculatedTimeBase.den);
-    }
-
-    // Send frame to filter with PUSH flag for immediate processing
-    const addRet = await this.buffersrcCtx.buffersrcAddFrame(frame, AV_BUFFERSRC_FLAG_PUSH);
-    FFmpegError.throwIfError(addRet, 'Failed to add frame to filter');
-
-    // Receive all available frames using receive()
+    // Receive all available frames
     const frames: Frame[] = [];
     while (true) {
       const outputFrame = await this.receive();
-      if (!outputFrame) break;
-      frames.push(outputFrame);
+      if (!outputFrame) break; // Stop on EAGAIN or EOF
+      frames.push(outputFrame); // Only push actual frames
     }
 
     return frames;
@@ -808,7 +770,7 @@ export class FilterAPI implements Disposable {
    *
    * Direct mapping to av_buffersrc_add_frame() and av_buffersink_get_frame().
    *
-   * @param frame - Input frame to process (or null to flush)
+   * @param frame - Input frame to process
    *
    * @returns Array of filtered frames (empty if buffered or filter closed)
    *
@@ -839,42 +801,19 @@ export class FilterAPI implements Disposable {
    * @see {@link flushSync} For end-of-stream handling
    * @see {@link process} For async version
    */
-  processAllSync(frame: Frame | null): Frame[] {
-    if (this.isClosed) {
-      return [];
+  processAllSync(frame: Frame): Frame[] {
+    if (frame) {
+      this.processSync(frame);
+    } else {
+      this.flushSync();
     }
 
-    // Open filter if not already done
-    if (!this.initialized) {
-      if (!frame) {
-        return [];
-      }
-
-      this.initializeSync(frame);
-    }
-
-    if (!this.buffersrcCtx || !this.buffersinkCtx) {
-      throw new Error('Could not initialize filter contexts');
-    }
-
-    // Rescale timestamps to filter's timeBase
-    if (frame && this.calculatedTimeBase) {
-      const originalTimeBase = frame.timeBase;
-      frame.pts = avRescaleQ(frame.pts, originalTimeBase, this.calculatedTimeBase);
-      frame.duration = avRescaleQ(frame.duration, originalTimeBase, this.calculatedTimeBase);
-      frame.timeBase = new Rational(this.calculatedTimeBase.num, this.calculatedTimeBase.den);
-    }
-
-    // Send frame to filter with PUSH flag for immediate processing
-    const addRet = this.buffersrcCtx.buffersrcAddFrameSync(frame, AV_BUFFERSRC_FLAG_PUSH);
-    FFmpegError.throwIfError(addRet, 'Failed to add frame to filter');
-
-    // Receive all available frames using receiveSync()
+    // Receive all available frames
     const frames: Frame[] = [];
     while (true) {
       const outputFrame = this.receiveSync();
-      if (!outputFrame) break;
-      frames.push(outputFrame);
+      if (!outputFrame) break; // Stop on EAGAIN or EOF
+      frames.push(outputFrame); // Only push actual frames
     }
 
     return frames;
@@ -884,12 +823,17 @@ export class FilterAPI implements Disposable {
    * Process frame stream through filter.
    *
    * High-level async generator for filtering frame streams.
-   * Automatically handles buffering and flushing.
-   * Frees input frames after processing.
+   * Filter is only flushed when EOF (null) signal is explicitly received.
+   * Primary interface for stream-based filtering.
    *
-   * @param frames - Async generator of input frames
+   * **EOF Handling:**
+   * - Send null to flush filter and get remaining buffered frames
+   * - Generator yields null after flushing when null is received
+   * - No automatic flushing - filter stays open until EOF or close()
    *
-   * @yields {Frame} Filtered frames
+   * @param frames - Async iterable of frames, single frame, or null to flush
+   *
+   * @yields {Frame | null} Filtered frames, followed by null when explicitly flushed
    *
    * @throws {Error} If filter not ready
    *
@@ -897,8 +841,12 @@ export class FilterAPI implements Disposable {
    *
    * @example
    * ```typescript
-   * // Filter decoded frames
+   * // Stream of frames with automatic EOF propagation
    * for await (const frame of filter.frames(decoder.frames(packets))) {
+   *   if (frame === null) {
+   *     console.log('Filter flushed');
+   *     break;
+   *   }
    *   await encoder.encode(frame);
    *   frame.free();
    * }
@@ -906,16 +854,23 @@ export class FilterAPI implements Disposable {
    *
    * @example
    * ```typescript
-   * // Chain filters
-   * const filter1 = FilterAPI.create('scale=640:480', {
-   *   timeBase: video.timeBase
-   * });
-   * const filter2 = FilterAPI.create('rotate=PI/4', {
-   *   timeBase: video.timeBase
-   * });
+   * // Single frame - no automatic flush
+   * for await (const frame of filter.frames(singleFrame)) {
+   *   await encoder.encode(frame);
+   *   frame.free();
+   * }
+   * // Filter remains open, buffered frames not flushed
+   * ```
    *
-   * for await (const frame of filter2.frames(filter1.frames(input))) {
-   *   // Process filtered frames
+   * @example
+   * ```typescript
+   * // Explicit flush with EOF
+   * for await (const frame of filter.frames(null)) {
+   *   if (frame === null) {
+   *     console.log('All buffered frames flushed');
+   *     break;
+   *   }
+   *   console.log('Buffered frame:', frame.pts);
    *   frame.free();
    * }
    * ```
@@ -924,71 +879,44 @@ export class FilterAPI implements Disposable {
    * @see {@link Decoder.frames} For frames source
    * @see {@link framesSync} For sync version
    */
-  async *frames(frames: AsyncIterable<Frame | null>): AsyncGenerator<Frame | null> {
+  async *frames(frames: AsyncIterable<Frame | null> | Frame | null): AsyncGenerator<Frame | null> {
+    const self = this;
+
+    const processFrame = async function* (frame: Frame) {
+      await self.process(frame);
+
+      while (true) {
+        const filtered = await self.receive();
+        if (!filtered) break;
+        yield filtered;
+      }
+    }.bind(this);
+
+    const finalize = async function* () {
+      for await (const remaining of self.flushFrames()) {
+        yield remaining;
+      }
+      yield null;
+    }.bind(this);
+
+    if (frames === null) {
+      yield* finalize();
+      return;
+    }
+
+    if (frames instanceof Frame) {
+      yield* processFrame(frames);
+      return;
+    }
+
     for await (using frame of frames) {
-      // Handle EOF signal
       if (frame === null) {
-        // Flush filter
-        await this.flush();
-        while (true) {
-          const remaining = await this.receive();
-          if (!remaining) break;
-          yield remaining;
-        }
-        // Signal EOF and stop processing
-        yield null;
+        yield* finalize();
         return;
       }
 
-      if (this.isClosed) {
-        break;
-      }
-
-      // Open filter if not already done
-      if (!this.initialized) {
-        this.initializePromise ??= this.initialize(frame);
-      }
-
-      await this.initializePromise;
-
-      if (!this.initialized) {
-        continue;
-      }
-
-      if (!this.buffersrcCtx || !this.buffersinkCtx) {
-        throw new Error('Could not initialize filter contexts');
-      }
-
-      // Rescale timestamps to filter's timeBase
-      if (this.calculatedTimeBase) {
-        const originalTimeBase = frame.timeBase;
-        frame.pts = avRescaleQ(frame.pts, originalTimeBase, this.calculatedTimeBase);
-        frame.duration = avRescaleQ(frame.duration, originalTimeBase, this.calculatedTimeBase);
-        frame.timeBase = new Rational(this.calculatedTimeBase.num, this.calculatedTimeBase.den);
-      }
-
-      // Send frame to filter
-      const addRet = await this.buffersrcCtx.buffersrcAddFrame(frame, AV_BUFFERSRC_FLAG_PUSH);
-      FFmpegError.throwIfError(addRet, 'Failed to add frame to filter');
-
-      // Receive all available frames
-      while (true) {
-        const buffered = await this.receive();
-        if (!buffered) break;
-        yield buffered;
-      }
+      yield* processFrame(frame);
     }
-
-    // Flush and get remaining frames (fallback if no null was sent)
-    await this.flush();
-    while (true) {
-      const remaining = await this.receive();
-      if (!remaining) break;
-      yield remaining;
-    }
-
-    // Signal EOF
-    yield null;
   }
 
   /**
@@ -996,12 +924,17 @@ export class FilterAPI implements Disposable {
    * Synchronous version of frames.
    *
    * High-level sync generator for filtering frame streams.
-   * Automatically handles buffering and flushing.
-   * Frees input frames after processing.
+   * Filter is only flushed when EOF (null) signal is explicitly received.
+   * Primary interface for stream-based filtering.
    *
-   * @param frames - Generator of input frames
+   * **EOF Handling:**
+   * - Send null to flush filter and get remaining buffered frames
+   * - Generator yields null after flushing when null is received
+   * - No automatic flushing - filter stays open until EOF or close()
    *
-   * @yields {Frame} Filtered frames
+   * @param frames - Iterable of frames, single frame, or null to flush
+   *
+   * @yields {Frame | null} Filtered frames, followed by null when explicitly flushed
    *
    * @throws {Error} If filter not ready
    *
@@ -1009,8 +942,12 @@ export class FilterAPI implements Disposable {
    *
    * @example
    * ```typescript
-   * // Filter decoded frames
+   * // Stream of frames with automatic EOF propagation
    * for (const frame of filter.framesSync(decoder.framesSync(packets))) {
+   *   if (frame === null) {
+   *     console.log('Filter flushed');
+   *     break;
+   *   }
    *   encoder.encodeSync(frame);
    *   frame.free();
    * }
@@ -1018,16 +955,23 @@ export class FilterAPI implements Disposable {
    *
    * @example
    * ```typescript
-   * // Chain filters
-   * const filter1 = FilterAPI.create('scale=640:480', {
-   *   timeBase: video.timeBase
-   * });
-   * const filter2 = FilterAPI.create('rotate=PI/4', {
-   *   timeBase: video.timeBase
-   * });
+   * // Single frame - no automatic flush
+   * for (const frame of filter.framesSync(singleFrame)) {
+   *   encoder.encodeSync(frame);
+   *   frame.free();
+   * }
+   * // Filter remains open, buffered frames not flushed
+   * ```
    *
-   * for (const frame of filter2.framesSync(filter1.framesSync(input))) {
-   *   // Process filtered frames
+   * @example
+   * ```typescript
+   * // Explicit flush with EOF
+   * for (const frame of filter.framesSync(null)) {
+   *   if (frame === null) {
+   *     console.log('All buffered frames flushed');
+   *     break;
+   *   }
+   *   console.log('Buffered frame:', frame.pts);
    *   frame.free();
    * }
    * ```
@@ -1036,69 +980,53 @@ export class FilterAPI implements Disposable {
    * @see {@link Decoder.framesSync} For frames source
    * @see {@link frames} For async version
    */
-  *framesSync(frames: Generator<Frame | null>): Generator<Frame | null> {
+  *framesSync(frames: Iterable<Frame | null> | Frame | null): Generator<Frame | null> {
+    const self = this;
+
+    // Helper: Process frame and yield all available filtered frames (filters out EAGAIN nulls)
+    const processFrame = function* (frame: Frame) {
+      self.processSync(frame);
+
+      // Receive ALL filtered frames (filter out null/EAGAIN)
+      while (true) {
+        const filtered = self.receiveSync();
+        if (!filtered) break; // EAGAIN or EOF - no more frames available
+        yield filtered; // Only yield actual frames, not null
+      }
+    }.bind(this);
+
+    // Helper: Flush filter and signal EOF
+    const finalize = function* () {
+      for (const remaining of self.flushFramesSync()) {
+        yield remaining; // Only yield actual frames
+      }
+      yield null; // Signal end-of-stream
+    }.bind(this);
+
+    // Case 1: EOF input -> flush only
+    if (frames === null) {
+      yield* finalize();
+      return;
+    }
+
+    // Case 2: Single frame
+    if (frames instanceof Frame) {
+      yield* processFrame(frames);
+      // No automatic flush - only flush on explicit EOF
+      return;
+    }
+
+    // Case 3: Iterable of frames
     for (using frame of frames) {
-      // Handle EOF signal
+      // Check for EOF signal from upstream
       if (frame === null) {
-        // Flush filter
-        this.flushSync();
-        while (true) {
-          const remaining = this.receiveSync();
-          if (!remaining) break;
-          yield remaining;
-        }
-        // Signal EOF and stop processing
-        yield null;
+        yield* finalize();
         return;
       }
 
-      if (this.isClosed) {
-        break;
-      }
-
-      // Open filter if not already done
-      if (!this.initialized) {
-        this.initializeSync(frame);
-      }
-
-      if (!this.initialized) {
-        continue;
-      }
-
-      if (!this.buffersrcCtx || !this.buffersinkCtx) {
-        throw new Error('Could not initialize filter contexts');
-      }
-
-      // Rescale timestamps to filter's timeBase
-      if (this.calculatedTimeBase) {
-        const originalTimeBase = frame.timeBase;
-        frame.pts = avRescaleQ(frame.pts, originalTimeBase, this.calculatedTimeBase);
-        frame.duration = avRescaleQ(frame.duration, originalTimeBase, this.calculatedTimeBase);
-        frame.timeBase = new Rational(this.calculatedTimeBase.num, this.calculatedTimeBase.den);
-      }
-
-      // Send frame to filter
-      const addRet = this.buffersrcCtx.buffersrcAddFrameSync(frame, AV_BUFFERSRC_FLAG_PUSH);
-      FFmpegError.throwIfError(addRet, 'Failed to add frame to filter');
-
-      // Receive all available frames
-      while (true) {
-        const buffered = this.receiveSync();
-        if (!buffered) break;
-        yield buffered;
-      }
+      yield* processFrame(frame);
     }
-
-    // Flush and get remaining frames (fallback if no null was sent)
-    this.flushSync();
-    while (true) {
-      const remaining = this.receiveSync();
-      if (!remaining) break;
-      yield remaining;
-    }
-
-    // Signal EOF
-    yield null;
+    // No automatic flush - only flush on explicit EOF
   }
 
   /**
@@ -1203,10 +1131,11 @@ export class FilterAPI implements Disposable {
     // Send flush signal
     await this.flush();
 
-    // Yield all remaining frames
-    let frame;
-    while ((frame = await this.receive()) !== null) {
-      yield frame;
+    // Yield all remaining frames (filter out null/EAGAIN and EOF)
+    while (true) {
+      const frame = await this.receive();
+      if (!frame) break; // Stop on EAGAIN or EOF
+      yield frame; // Only yield actual frames
     }
   }
 
@@ -1238,10 +1167,11 @@ export class FilterAPI implements Disposable {
     // Send flush signal
     this.flushSync();
 
-    // Yield all remaining frames
-    let frame;
-    while ((frame = this.receiveSync()) !== null) {
-      yield frame;
+    // Yield all remaining frames (filter out null/EAGAIN and EOF)
+    while (true) {
+      const frame = this.receiveSync();
+      if (!frame) break; // Stop on EAGAIN or EOF
+      yield frame; // Only yield actual frames
     }
   }
 
@@ -1249,20 +1179,41 @@ export class FilterAPI implements Disposable {
    * Receive buffered frame from filter.
    *
    * Drains frames buffered by the filter.
-   * Call repeatedly until null to get all buffered frames.
-   * Returns null if filter is closed, not initialized, or no frames available.
+   * Call repeatedly until null or EOF to get all buffered frames.
+   * Implements FFmpeg's send/receive pattern.
+   *
+   * **Return Values:**
+   * - `Frame` - Successfully received frame (AVERROR >= 0)
+   * - `null` - Need more input data (AVERROR_EAGAIN), or filter not initialized
+   * - `undefined` - End of stream reached (AVERROR_EOF), or filter is closed
    *
    * Direct mapping to av_buffersink_get_frame().
    *
-   * @returns Buffered frame or null if none available
+   * @returns Buffered frame, null if need more data, or undefined if stream ended
    *
    * @throws {FFmpegError} If receiving fails
    *
    * @example
    * ```typescript
-   * let frame;
-   * while ((frame = await filter.receive()) !== null) {
+   * // Process all buffered frames
+   * while (true) {
+   *   const frame = await filter.receive();
+   *   if (!frame) break; // Stop on EAGAIN or EOF
    *   console.log(`Received frame: pts=${frame.pts}`);
+   *   frame.free();
+   * }
+   * ```
+   *
+   * @example
+   * ```typescript
+   * // Handle each return value explicitly
+   * const frame = await filter.receive();
+   * if (frame === EOF) {
+   *   console.log('Filter stream ended');
+   * } else if (frame === null) {
+   *   console.log('Need more input data');
+   * } else {
+   *   console.log(`Got frame: pts=${frame.pts}`);
    *   frame.free();
    * }
    * ```
@@ -1270,9 +1221,14 @@ export class FilterAPI implements Disposable {
    * @see {@link process} For frame processing
    * @see {@link flush} For flushing filter
    * @see {@link receiveSync} For synchronous version
+   * @see {@link EOF} For end-of-stream signal
    */
-  async receive(): Promise<Frame | null> {
-    if (this.isClosed || !this.initialized || !this.buffersinkCtx) {
+  async receive(): Promise<Frame | EOFSignal | null> {
+    if (this.isClosed) {
+      return EOF;
+    }
+
+    if (!this.initialized || !this.buffersinkCtx) {
       return null;
     }
 
@@ -1287,10 +1243,13 @@ export class FilterAPI implements Disposable {
       this.postProcessOutputFrame(this.frame);
       // Clone for user (keeps internal frame for reuse)
       return this.frame.clone();
+    } else if (ret === AVERROR_EAGAIN) {
+      // Need more data
+      return null;
+    } else if (ret === AVERROR_EOF) {
+      // End of stream
+      return EOF;
     } else {
-      if (ret === AVERROR_EAGAIN || ret === AVERROR_EOF) {
-        return null;
-      }
       FFmpegError.throwIfError(ret, 'Failed to receive frame from filter');
       return null;
     }
@@ -1301,20 +1260,41 @@ export class FilterAPI implements Disposable {
    * Synchronous version of receive.
    *
    * Drains frames buffered by the filter.
-   * Call repeatedly until null to get all buffered frames.
-   * Returns null if filter is closed, not initialized, or no frames available.
+   * Call repeatedly until null or EOF to get all buffered frames.
+   * Implements FFmpeg's send/receive pattern.
+   *
+   * **Return Values:**
+   * - `Frame` - Successfully received frame (AVERROR >= 0)
+   * - `null` - Need more input data (AVERROR_EAGAIN), or filter not initialized
+   * - `undefined` - End of stream reached (AVERROR_EOF), or filter is closed
    *
    * Direct mapping to av_buffersink_get_frame().
    *
-   * @returns Buffered frame or null if none available
+   * @returns Buffered frame, null if need more data, or undefined if stream ended
    *
    * @throws {FFmpegError} If receiving fails
    *
    * @example
    * ```typescript
-   * let frame;
-   * while ((frame = filter.receiveSync()) !== null) {
+   * // Process all buffered frames
+   * while (true) {
+   *   const frame = filter.receiveSync();
+   *   if (!frame) break; // Stop on EAGAIN or EOF
    *   console.log(`Received frame: pts=${frame.pts}`);
+   *   frame.free();
+   * }
+   * ```
+   *
+   * @example
+   * ```typescript
+   * // Handle each return value explicitly
+   * const frame = filter.receiveSync();
+   * if (frame === EOF) {
+   *   console.log('Filter stream ended');
+   * } else if (frame === null) {
+   *   console.log('Need more input data');
+   * } else {
+   *   console.log(`Got frame: pts=${frame.pts}`);
    *   frame.free();
    * }
    * ```
@@ -1322,9 +1302,14 @@ export class FilterAPI implements Disposable {
    * @see {@link processSync} For frame processing
    * @see {@link flushSync} For flushing filter
    * @see {@link receive} For async version
+   * @see {@link EOF} For end-of-stream signal
    */
-  receiveSync(): Frame | null {
-    if (this.isClosed || !this.initialized || !this.buffersinkCtx) {
+  receiveSync(): Frame | EOFSignal | null {
+    if (this.isClosed) {
+      return EOF;
+    }
+
+    if (!this.initialized || !this.buffersinkCtx) {
       return null;
     }
 
@@ -1339,10 +1324,11 @@ export class FilterAPI implements Disposable {
       this.postProcessOutputFrame(this.frame);
       // Clone for user (keeps internal frame for reuse)
       return this.frame.clone();
+    } else if (ret === AVERROR_EAGAIN) {
+      return null; // Need more data
+    } else if (ret === AVERROR_EOF) {
+      return EOF; // End of stream
     } else {
-      if (ret === AVERROR_EAGAIN || ret === AVERROR_EOF) {
-        return null;
-      }
       FFmpegError.throwIfError(ret, 'Failed to receive frame from filter');
       return null;
     }
@@ -1522,38 +1508,13 @@ export class FilterAPI implements Disposable {
         using frame = await this.inputQueue.receive();
         if (!frame) break;
 
-        // Open filter if not already done
-        if (!this.initialized) {
-          this.initializePromise ??= this.initialize(frame);
-        }
-
-        await this.initializePromise;
-
-        if (!this.initialized) {
-          continue;
-        }
-
-        if (!this.buffersrcCtx || !this.buffersinkCtx) {
-          throw new Error('Could not initialize filter contexts');
-        }
-
-        // Rescale timestamps to filter's timeBase
-        if (this.calculatedTimeBase) {
-          const originalTimeBase = frame.timeBase;
-          frame.pts = avRescaleQ(frame.pts, originalTimeBase, this.calculatedTimeBase);
-          frame.duration = avRescaleQ(frame.duration, originalTimeBase, this.calculatedTimeBase);
-          frame.timeBase = new Rational(this.calculatedTimeBase.num, this.calculatedTimeBase.den);
-        }
-
-        // Send frame to filter
-        const addRet = await this.buffersrcCtx.buffersrcAddFrame(frame, AV_BUFFERSRC_FLAG_PUSH);
-        FFmpegError.throwIfError(addRet, 'Failed to add frame to filter');
+        await this.process(frame);
 
         // Receive all available frames
         while (!this.outputQueue.isClosed) {
           const buffered = await this.receive();
-          if (!buffered) break;
-          await this.outputQueue.send(buffered);
+          if (!buffered) break; // Stop on EAGAIN or EOF
+          await this.outputQueue.send(buffered); // Only send actual frames
         }
       }
 
@@ -1561,8 +1522,8 @@ export class FilterAPI implements Disposable {
       await this.flush();
       while (!this.outputQueue.isClosed) {
         const frame = await this.receive();
-        if (!frame) break;
-        await this.outputQueue.send(frame);
+        if (!frame) break; // Stop on EAGAIN or EOF
+        await this.outputQueue.send(frame); // Only send actual frames
       }
     } catch {
       // Ignore error ?
@@ -1573,14 +1534,58 @@ export class FilterAPI implements Disposable {
   }
 
   /**
-   * Send frame to input queue.
+   * Send frame to input queue or flush the pipeline.
    *
-   * @param frame - Frame to send
+   * When frame is provided, queues it for filtering.
+   * When null is provided, triggers flush sequence:
+   * - Closes input queue
+   * - Waits for worker completion
+   * - Flushes filter and sends remaining frames to output queue
+   * - Closes output queue
+   * - Waits for pipeTo task completion
+   * - Propagates flush to next component (if any)
+   *
+   * Used by scheduler system for pipeline control.
+   *
+   * @param frame - Frame to send, or null to flush
    *
    * @internal
    */
-  private async sendToQueue(frame: Frame): Promise<void> {
-    await this.inputQueue.send(frame);
+  private async sendToQueue(frame: Frame | null): Promise<void> {
+    if (frame) {
+      await this.inputQueue.send(frame);
+    } else {
+      // Close input queue to signal end of stream to worker
+      this.inputQueue.close();
+
+      // Wait for worker to finish processing all frames (if exists)
+      if (this.workerPromise) {
+        await this.workerPromise;
+      }
+
+      // Flush filter at end (like FFmpeg does)
+      await this.flush();
+
+      // Send all flushed frames to output queue
+      while (true) {
+        const frame = await this.receive();
+        if (!frame) break; // Stop on EAGAIN or EOF
+        await this.outputQueue.send(frame); // Only send actual frames
+      }
+
+      // Close output queue to signal end of stream to pipeTo() task
+      this.outputQueue.close();
+
+      // Wait for pipeTo() task to finish processing all frames (if exists)
+      if (this.pipeToPromise) {
+        await this.pipeToPromise;
+      }
+
+      // Then propagate flush to next component
+      if (this.nextComponent) {
+        await this.nextComponent.sendToQueue(null);
+      }
+    }
   }
 
   /**
@@ -1592,46 +1597,6 @@ export class FilterAPI implements Disposable {
    */
   private async receiveFrame(): Promise<Frame | null> {
     return await this.outputQueue.receive();
-  }
-
-  /**
-   * Flush the entire filter pipeline.
-   *
-   * Propagates flush through worker, output queue, and next component.
-   *
-   * @internal
-   */
-  private async flushPipeline(): Promise<void> {
-    // Close input queue to signal end of stream to worker
-    this.inputQueue.close();
-
-    // Wait for worker to finish processing all frames (if exists)
-    if (this.workerPromise) {
-      await this.workerPromise;
-    }
-
-    // Flush filter at end (like FFmpeg does)
-    await this.flush();
-
-    // Send all flushed frames to output queue
-    while (true) {
-      const frame = await this.receive();
-      if (!frame) break;
-      await this.outputQueue.send(frame);
-    }
-
-    // Close output queue to signal end of stream to pipeTo() task
-    this.outputQueue.close();
-
-    // Wait for pipeTo() task to finish processing all frames (if exists)
-    if (this.pipeToPromise) {
-      await this.pipeToPromise;
-    }
-
-    // Then propagate flush to next component
-    if (this.nextComponent) {
-      await this.nextComponent.flushPipeline();
-    }
   }
 
   /**
