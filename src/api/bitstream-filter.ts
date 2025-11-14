@@ -1013,14 +1013,47 @@ export class BitStreamFilterAPI implements Disposable {
   }
 
   /**
-   * Send packet to input queue.
+   * Send packet to input queue or flush the pipeline.
    *
-   * @param packet - Packet to send
+   * When packet is provided, queues it for filtering.
+   * When null is provided, triggers flush sequence:
+   * - Closes input queue
+   * - Waits for worker completion
+   * - Closes output queue (no buffering, bitstream filters are stateless)
+   * - Waits for pipeTo task completion
+   * - Propagates flush to next component (if any)
+   *
+   * Used by scheduler system for pipeline control.
+   *
+   * @param packet - Packet to send, or null to flush
    *
    * @internal
    */
-  async sendToQueue(packet: Packet): Promise<void> {
-    await this.inputQueue.send(packet);
+  async sendToQueue(packet: Packet | null): Promise<void> {
+    if (packet) {
+      await this.inputQueue.send(packet);
+    } else {
+      // Close input queue to signal end of stream to worker
+      this.inputQueue.close();
+
+      // Wait for worker to finish processing all packets
+      if (this.workerPromise) {
+        await this.workerPromise;
+      }
+
+      // Close output queue to signal end of stream to pipeTo() task
+      this.outputQueue.close();
+
+      // Wait for pipeTo() task to finish processing all packets (if exists)
+      if (this.pipeToPromise) {
+        await this.pipeToPromise;
+      }
+
+      // Then propagate flush to next component
+      if (this.nextComponent) {
+        await this.nextComponent.sendToQueue(null);
+      }
+    }
   }
 
   /**
@@ -1170,37 +1203,6 @@ export class BitStreamFilterAPI implements Disposable {
 
       // Return scheduler for chaining (target is now the last component)
       return new Scheduler<Packet>(this as unknown as SchedulableComponent<Packet>, t);
-    }
-  }
-
-  /**
-   * Flush pipeline.
-   *
-   * Closes input queue, waits for worker to finish,
-   * then propagates flush to next component.
-   *
-   * @internal
-   */
-  async flushPipeline(): Promise<void> {
-    // Close input queue to signal end of stream to worker
-    this.inputQueue.close();
-
-    // Wait for worker to finish processing all packets
-    if (this.workerPromise) {
-      await this.workerPromise;
-    }
-
-    // Close output queue to signal end of stream to pipeTo() task
-    this.outputQueue.close();
-
-    // Wait for pipeTo() task to finish processing all packets (if exists)
-    if (this.pipeToPromise) {
-      await this.pipeToPromise;
-    }
-
-    // Then propagate flush to next component
-    if (this.nextComponent) {
-      await this.nextComponent.flushPipeline();
     }
   }
 }
