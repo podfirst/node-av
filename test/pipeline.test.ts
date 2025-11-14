@@ -814,6 +814,8 @@ describe('Pipeline - Comprehensive Tests', () => {
 
             yield frame;
           }
+
+          yield null;
         }
 
         using encoder = await Encoder.create(FF_ENCODER_LIBX264, {
@@ -958,6 +960,8 @@ describe('Pipeline - Comprehensive Tests', () => {
               }
               yield frame;
             }
+
+            yield null;
           }
 
           // Create filter and encoder
@@ -1001,6 +1005,8 @@ describe('Pipeline - Comprehensive Tests', () => {
             }
             yield frame;
           }
+
+          yield null;
         }
 
         using filter = FilterAPI.create('scale=160:120');
@@ -1041,6 +1047,8 @@ describe('Pipeline - Comprehensive Tests', () => {
             }
             yield frame;
           }
+
+          yield null;
         }
 
         using encoder = await Encoder.create(FF_ENCODER_LIBX264, {
@@ -1081,6 +1089,8 @@ describe('Pipeline - Comprehensive Tests', () => {
             }
             yield frame;
           }
+
+          yield null;
         }
 
         using filter = FilterAPI.create('scale=160:120');
@@ -1097,6 +1107,7 @@ describe('Pipeline - Comprehensive Tests', () => {
 
         let packetCount = 0;
         for await (using packet of packets) {
+          console.log('Pipeline > packet:', packet);
           assert.ok(packet instanceof Packet, 'Should yield Packet objects');
           packetCount++;
           if (packetCount >= 5) break;

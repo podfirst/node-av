@@ -95,7 +95,11 @@ describe('High-Level Filter API', () => {
       frame.getBuffer();
 
       await assert.rejects(async () => {
-        using _frame = await filter.process(frame);
+        await filter.process(frame);
+        while (true) {
+          using output = await filter.receive();
+          if (!output) break;
+        }
       });
 
       filter.close();
@@ -201,13 +205,16 @@ describe('High-Level Filter API', () => {
 
       console.log('Processing frame through filter...');
 
-      using output = await filter.process(frame);
+      await filter.process(frame);
 
-      console.log('Frame processed.');
-
-      assert.ok(output);
-      assert.equal(output.width, 1280);
-      assert.equal(output.height, 720);
+      while (true) {
+        using output = await filter.receive();
+        if (!output) break;
+        console.log('Frame processed.');
+        assert.ok(output);
+        assert.equal(output.width, 1280);
+        assert.equal(output.height, 720);
+      }
 
       filter.close();
     });
@@ -226,10 +233,15 @@ describe('High-Level Filter API', () => {
       const ret = frame.getBuffer();
       assert.ok(ret >= 0);
 
-      using output = filter.processSync(frame);
-      assert.ok(output);
-      assert.equal(output.width, 1280);
-      assert.equal(output.height, 720);
+      filter.processSync(frame);
+
+      while (true) {
+        using output = filter.receiveSync();
+        if (!output) break;
+        assert.ok(output);
+        assert.equal(output.width, 1280);
+        assert.equal(output.height, 720);
+      }
 
       filter.close();
     });
@@ -249,7 +261,7 @@ describe('High-Level Filter API', () => {
         const ret = frame.getBuffer();
         assert.ok(ret >= 0);
 
-        using _output = await filter.process(frame);
+        await filter.process(frame);
       }
 
       // Flush
@@ -282,7 +294,7 @@ describe('High-Level Filter API', () => {
         const ret = frame.getBuffer();
         assert.ok(ret >= 0);
 
-        using _output = filter.processSync(frame);
+        filter.processSync(frame);
       }
 
       // Flush
@@ -323,8 +335,10 @@ describe('High-Level Filter API', () => {
           }
 
           if (packet.streamIndex === videoStream!.index) {
-            const frame = await decoder.decode(packet);
-            if (frame) {
+            await decoder.decode(packet);
+            while (true) {
+              using frame = await decoder.receive();
+              if (!frame) break;
               yield frame;
               count++;
               if (count >= maxFrames) break;
@@ -371,8 +385,10 @@ describe('High-Level Filter API', () => {
           }
 
           if (packet.streamIndex === videoStream!.index) {
-            const frame = decoder.decodeSync(packet);
-            if (frame) {
+            decoder.decodeSync(packet);
+            while (true) {
+              using frame = decoder.receiveSync();
+              if (!frame) break;
               yield frame;
               count++;
               if (count >= maxFrames) break;
@@ -415,7 +431,7 @@ describe('High-Level Filter API', () => {
       frame.timeBase = new Rational(1, 48000);
       frame.getBuffer();
 
-      using _output = await filter.process(frame);
+      await filter.process(frame);
 
       const description = filter.getGraphDescription();
       assert.ok(description);
@@ -438,7 +454,7 @@ describe('High-Level Filter API', () => {
       frame.timeBase = new Rational(1, 48000);
       frame.getBuffer();
 
-      using _output = filter.processSync(frame);
+      filter.processSync(frame);
 
       const description = filter.getGraphDescription();
       assert.ok(description);
@@ -462,7 +478,7 @@ describe('High-Level Filter API', () => {
       frame.timeBase = new Rational(1, 30);
       frame.getBuffer();
 
-      using _output = await filter.process(frame);
+      await filter.process(frame);
 
       // Now should be ready
       assert.ok(filter.isReady());
@@ -486,7 +502,7 @@ describe('High-Level Filter API', () => {
       frame.timeBase = new Rational(1, 30);
       frame.getBuffer();
 
-      using _output = filter.processSync(frame);
+      filter.processSync(frame);
 
       // Now should be ready
       assert.ok(filter.isReady());
@@ -532,7 +548,7 @@ describe('High-Level Filter API', () => {
       frame.timeBase = new Rational(1, 48000);
 
       await assert.rejects(async () => {
-        using _output = await filter.process(frame);
+        await filter.process(frame);
       });
 
       filter.close();
@@ -551,7 +567,7 @@ describe('High-Level Filter API', () => {
       frame.timeBase = new Rational(1, 48000);
 
       assert.throws(() => {
-        using _output = filter.processSync(frame);
+        filter.processSync(frame);
       });
 
       filter.close();
@@ -571,7 +587,7 @@ describe('High-Level Filter API', () => {
       frame.getBuffer();
 
       await assert.doesNotReject(async () => {
-        using _output = await filter.process(frame);
+        await filter.process(frame);
       });
     });
 
@@ -589,7 +605,7 @@ describe('High-Level Filter API', () => {
       frame.getBuffer();
 
       assert.doesNotThrow(() => {
-        using _output = filter.processSync(frame);
+        filter.processSync(frame);
       });
     });
 
@@ -635,8 +651,10 @@ describe('High-Level Filter API', () => {
       const ret = frame.getBuffer();
       assert.ok(ret >= 0);
 
-      using output = await filter.process(frame);
-      if (output) {
+      await filter.process(frame);
+      while (true) {
+        using output = await filter.receive();
+        if (!output) break;
         assert.equal(output.width, 1280);
         assert.equal(output.height, 720);
         assert.equal(output.format, AV_PIX_FMT_YUV420P);
@@ -674,10 +692,14 @@ describe('High-Level Filter API', () => {
         }
 
         if (packet.streamIndex === videoStream.index) {
-          using frame = await decoder.decode(packet);
-          if (frame) {
-            using filtered = await filter.process(frame);
-            if (filtered) {
+          await decoder.decode(packet);
+          while (true) {
+            using frame = await decoder.receive();
+            if (!frame) break;
+            await filter.process(frame);
+            while (true) {
+              using filtered = await filter.receive();
+              if (!filtered) break;
               assert.equal(filtered.width, 640);
               assert.equal(filtered.height, 480);
               processedFrames++;
@@ -730,10 +752,14 @@ describe('High-Level Filter API', () => {
         }
 
         if (packet.streamIndex === audioStream.index) {
-          using frame = await decoder.decode(packet);
-          if (frame) {
-            using filtered = await filter.process(frame);
-            if (filtered) {
+          await decoder.decode(packet);
+          while (true) {
+            using frame = await decoder.receive();
+            if (!frame) break;
+            await filter.process(frame);
+            while (true) {
+              using filtered = await filter.receive();
+              if (!filtered) break;
               // Check that the filter applied the correct format
               assert.equal(filtered.sampleRate, 44100);
               assert.equal(filtered.format, AV_SAMPLE_FMT_S16);
@@ -836,7 +862,7 @@ describe('High-Level Filter API', () => {
       frame.pts = 0n;
       frame.timeBase = new Rational(1, 48000);
       frame.getBuffer();
-      using _output = await filter.process(frame);
+      await filter.process(frame);
 
       try {
         // Send an invalid command

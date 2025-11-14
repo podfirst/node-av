@@ -465,8 +465,10 @@ describe('HardwareContext', () => {
           }
 
           if (packet.streamIndex === videoStream.index) {
-            using frame = await decoder.decode(packet);
-            if (frame) {
+            await decoder.decode(packet);
+            while (true) {
+              using frame = await decoder.receive();
+              if (!frame) break;
               frameCount++;
               break; // Just test first frame
             }
@@ -512,8 +514,10 @@ describe('HardwareContext', () => {
           }
 
           if (packet.streamIndex === videoStream.index) {
-            using frame = decoder.decodeSync(packet);
-            if (frame) {
+            decoder.decodeSync(packet);
+            while (true) {
+              using frame = decoder.receiveSync();
+              if (!frame) break;
               frameCount++;
               break; // Just test first frame
             }
@@ -548,8 +552,10 @@ describe('HardwareContext', () => {
         }
 
         if (packet.streamIndex === videoStream.index) {
-          using frame = await decoder.decode(packet);
-          if (frame) {
+          await decoder.decode(packet);
+          while (true) {
+            using frame = await decoder.receive();
+            if (!frame) break;
             frameCount++;
             break;
           }
@@ -580,8 +586,10 @@ describe('HardwareContext', () => {
         }
 
         if (packet.streamIndex === videoStream.index) {
-          using frame = decoder.decodeSync(packet);
-          if (frame) {
+          decoder.decodeSync(packet);
+          while (true) {
+            using frame = decoder.receiveSync();
+            if (!frame) break;
             frameCount++;
             break;
           }
@@ -784,8 +792,10 @@ describe('HardwareContext', () => {
           }
 
           if (packet.streamIndex === videoStream.index) {
-            using frame = await decoder.decode(packet);
-            if (frame) {
+            await decoder.decode(packet);
+            while (true) {
+              using frame = await decoder.receive();
+              if (!frame) break;
               console.log(`Decoded frame using derived ${derived.deviceTypeName} context`);
               frameDecoded = true;
               break;
@@ -856,8 +866,10 @@ describe('HardwareContext', () => {
           }
 
           if (packet.streamIndex === videoStream.index) {
-            using frame = await decoder.decode(packet);
-            if (frame) {
+            await decoder.decode(packet);
+            while (true) {
+              using frame = await decoder.receive();
+              if (!frame) break;
               decodedFrames++;
 
               // Check if frame is on GPU (hardware pixel format)
@@ -868,8 +880,10 @@ describe('HardwareContext', () => {
               }
 
               // Encode the frame directly (zero-copy if both on same GPU)
-              using encodedPacket = await encoder.encode(frame);
-              if (encodedPacket) {
+              await encoder.encode(frame);
+              while (true) {
+                using encodedPacket = await encoder.receive();
+                if (!encodedPacket) break;
                 encodedPackets++;
               }
 
@@ -948,8 +962,10 @@ describe('HardwareContext', () => {
           }
 
           if (packet.streamIndex === videoStream.index) {
-            using frame = decoder.decodeSync(packet);
-            if (frame) {
+            decoder.decodeSync(packet);
+            while (true) {
+              using frame = decoder.receiveSync();
+              if (!frame) break;
               decodedFrames++;
 
               // Check if frame is on GPU (hardware pixel format)
@@ -960,8 +976,10 @@ describe('HardwareContext', () => {
               }
 
               // Encode the frame directly (zero-copy if both on same GPU)
-              using encodedPacket = encoder.encodeSync(frame);
-              if (encodedPacket) {
+              encoder.encodeSync(frame);
+              while (true) {
+                using encodedPacket = encoder.receiveSync();
+                if (!encodedPacket) break;
                 encodedPackets++;
               }
 
@@ -1017,8 +1035,8 @@ describe('HardwareContext', () => {
         });
 
         // Process one frame from each decoder
-        let frame1: Frame | null = null;
-        let frame2: Frame | null = null;
+        let frame1: Frame | null | undefined = null;
+        let frame2: Frame | null | undefined = null;
 
         for await (using packet of media1.packets()) {
           if (!packet) {
@@ -1026,8 +1044,11 @@ describe('HardwareContext', () => {
           }
 
           if (packet.streamIndex === videoStream1.index) {
-            frame1 = await decoder1.decode(packet);
-            if (frame1) break;
+            await decoder1.decode(packet);
+            while (true) {
+              frame1 = await decoder1.receive();
+              if (frame1) break;
+            }
           }
         }
 
@@ -1037,8 +1058,11 @@ describe('HardwareContext', () => {
           }
 
           if (packet.streamIndex === videoStream2.index) {
-            frame2 = await decoder2.decode(packet);
-            if (frame2) break;
+            await decoder2.decode(packet);
+            while (true) {
+              frame2 = await decoder2.receive();
+              if (frame2) break;
+            }
           }
         }
 

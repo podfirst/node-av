@@ -184,7 +184,7 @@ describe('Encoder', () => {
       }
 
       // Encode frame
-      using _packet = await encoder.encode(frame);
+      await encoder.encode(frame);
 
       encoder.close();
     });
@@ -224,7 +224,7 @@ describe('Encoder', () => {
       }
 
       // Encode frame
-      using _packet = encoder.encodeSync(frame);
+      encoder.encodeSync(frame);
 
       encoder.close();
     });
@@ -248,7 +248,7 @@ describe('Encoder', () => {
       assert.equal(ret, 0, 'Should allocate frame buffer');
 
       // Encode frame
-      using _packet = await encoder.encode(frame);
+      await encoder.encode(frame);
 
       encoder.close();
     });
@@ -272,7 +272,7 @@ describe('Encoder', () => {
       assert.equal(ret, 0, 'Should allocate frame buffer');
 
       // Encode frame
-      using _packet = encoder.encodeSync(frame);
+      encoder.encodeSync(frame);
 
       encoder.close();
     });
@@ -290,7 +290,7 @@ describe('Encoder', () => {
       frame.timeBase = new Rational(1, 25);
       frame.getBuffer();
 
-      using _packet = await encoder.encode(frame);
+      await encoder.encode(frame);
 
       encoder.close();
     });
@@ -308,7 +308,7 @@ describe('Encoder', () => {
       frame.timeBase = new Rational(1, 25);
       frame.getBuffer();
 
-      using _packet = encoder.encodeSync(frame);
+      encoder.encodeSync(frame);
 
       encoder.close();
     });
@@ -385,7 +385,7 @@ describe('Encoder', () => {
         frame.timeBase = new Rational(1, 25);
         frame.getBuffer();
 
-        using _packet = await encoder.encode(frame);
+        await encoder.encode(frame);
       }
 
       // Flush encoder
@@ -416,7 +416,7 @@ describe('Encoder', () => {
         frame.timeBase = new Rational(1, 25);
         frame.getBuffer();
 
-        using _packet = encoder.encodeSync(frame);
+        encoder.encodeSync(frame);
       }
 
       // Flush encoder
@@ -641,7 +641,7 @@ describe('Encoder', () => {
       frame.pts = 0n;
       frame.timeBase = new Rational(1, 25);
       frame.getBuffer();
-      using _packet = await encoder.encode(frame);
+      await encoder.encode(frame);
 
       // Now codec context should be available
       assert.ok(encoder.getCodecContext());

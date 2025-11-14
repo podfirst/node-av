@@ -340,8 +340,10 @@ describe('Decoder', () => {
         }
 
         if (packet.streamIndex === videoStream.index) {
-          using frame = await decoder.decode(packet);
-          if (frame) {
+          await decoder.decode(packet);
+          while (true) {
+            using frame = await decoder.receive();
+            if (!frame) break;
             assert.ok(frame.width > 0);
             assert.ok(frame.height > 0);
             frameCount++;
@@ -378,8 +380,10 @@ describe('Decoder', () => {
         }
 
         if (packet.streamIndex === videoStream.index) {
-          using frame = decoder.decodeSync(packet);
-          if (frame) {
+          decoder.decodeSync(packet);
+          while (true) {
+            using frame = decoder.receiveSync();
+            if (!frame) break;
             assert.ok(frame.width > 0);
             assert.ok(frame.height > 0);
             frameCount++;
@@ -514,8 +518,10 @@ describe('Decoder', () => {
         }
 
         if (packet.streamIndex === videoStream.index) {
-          using frame = await decoder.decode(packet);
-          if (frame) {
+          await decoder.decode(packet);
+          while (true) {
+            using frame = await decoder.receive();
+            if (!frame) break;
             assert.ok(frame.width > 0);
             assert.ok(frame.height > 0);
             frameCount++;
@@ -551,8 +557,10 @@ describe('Decoder', () => {
         }
 
         if (packet.streamIndex === videoStream.index) {
-          using frame = decoder.decodeSync(packet);
-          if (frame) {
+          decoder.decodeSync(packet);
+          while (true) {
+            using frame = decoder.receiveSync();
+            if (!frame) break;
             assert.ok(frame.width > 0);
             assert.ok(frame.height > 0);
             frameCount++;
@@ -588,8 +596,10 @@ describe('Decoder', () => {
         }
 
         if (packet.streamIndex === audioStream.index) {
-          using frame = await decoder.decode(packet);
-          if (frame) {
+          await decoder.decode(packet);
+          while (true) {
+            using frame = await decoder.receive();
+            if (!frame) break;
             assert.ok(frame.nbSamples > 0);
             assert.ok(frame.sampleRate > 0);
             frameCount++;
@@ -625,8 +635,10 @@ describe('Decoder', () => {
         }
 
         if (packet.streamIndex === audioStream.index) {
-          using frame = decoder.decodeSync(packet);
-          if (frame) {
+          decoder.decodeSync(packet);
+          while (true) {
+            using frame = decoder.receiveSync();
+            if (!frame) break;
             assert.ok(frame.nbSamples > 0);
             assert.ok(frame.sampleRate > 0);
             frameCount++;
@@ -659,7 +671,7 @@ describe('Decoder', () => {
         }
 
         if (packet.streamIndex === videoStream.index) {
-          using _frame = await decoder.decode(packet);
+          await decoder.decode(packet);
           break; // Just test one packet
         }
       }
@@ -682,7 +694,7 @@ describe('Decoder', () => {
         }
 
         if (packet.streamIndex === videoStream.index) {
-          using _frame = decoder.decodeSync(packet);
+          decoder.decodeSync(packet);
           break; // Just test one packet
         }
       }
@@ -742,7 +754,8 @@ describe('Decoder', () => {
         }
 
         if (packet.streamIndex === videoStream.index) {
-          using _frame = await decoder.decode(packet);
+          await decoder.decode(packet);
+          using _frame = await decoder.receive();
           packetCount++;
           if (packetCount >= 5) {
             break;
@@ -779,7 +792,8 @@ describe('Decoder', () => {
         }
 
         if (packet.streamIndex === videoStream.index) {
-          using _frame = decoder.decodeSync(packet);
+          decoder.decodeSync(packet);
+          using _frame = decoder.receiveSync();
           packetCount++;
           if (packetCount >= 5) {
             break;

@@ -18,20 +18,28 @@ async function processFrames(input: Demuxer, decoder: Decoder, filter: FilterAPI
     }
 
     if (packet.streamIndex === videoStreamIndex) {
-      using decodedFrame = await decoder.decode(packet);
-      if (decodedFrame) {
+      await decoder.decode(packet);
+      while (true) {
+        using decodedFrame = await decoder.receive();
+        if (!decodedFrame) break;
         if (filter) {
-          using filteredFrame = await filter.process(decodedFrame);
-          if (filteredFrame) {
-            using encodedPacket = await encoder.encode(filteredFrame);
-            if (encodedPacket) {
+          await filter.process(decodedFrame);
+          while (true) {
+            using filteredFrame = await filter.receive();
+            if (!filteredFrame) break;
+            await encoder.encode(filteredFrame);
+            while (true) {
+              using encodedPacket = await encoder.receive();
+              if (!encodedPacket) break;
               frameCount++;
               if (frameCount >= maxFrames) break;
             }
           }
         } else {
-          using encodedPacket = await encoder.encode(decodedFrame);
-          if (encodedPacket) {
+          await encoder.encode(decodedFrame);
+          while (true) {
+            using encodedPacket = await encoder.receive();
+            if (!encodedPacket) break;
             frameCount++;
             if (frameCount >= maxFrames) break;
           }
@@ -44,16 +52,22 @@ async function processFrames(input: Demuxer, decoder: Decoder, filter: FilterAPI
 
   for await (const decodedFrame of decoder.flushFrames()) {
     if (filter) {
-      using filteredFrame = await filter.process(decodedFrame);
-      if (filteredFrame) {
-        using encodedPacket = await encoder.encode(filteredFrame);
-        if (encodedPacket) {
+      await filter.process(decodedFrame);
+      while (true) {
+        using filteredFrame = await filter.receive();
+        if (!filteredFrame) break;
+        await encoder.encode(filteredFrame);
+        while (true) {
+          using encodedPacket = await encoder.receive();
+          if (!encodedPacket) break;
           frameCount++;
         }
       }
     } else {
-      using encodedPacket = await encoder.encode(decodedFrame);
-      if (encodedPacket) {
+      await encoder.encode(decodedFrame);
+      while (true) {
+        using encodedPacket = await encoder.receive();
+        if (!encodedPacket) break;
         frameCount++;
       }
     }
@@ -61,8 +75,10 @@ async function processFrames(input: Demuxer, decoder: Decoder, filter: FilterAPI
 
   if (filter) {
     for await (const filteredFrame of filter.flushFrames()) {
-      using encodedPacket = await encoder.encode(filteredFrame);
-      if (encodedPacket) {
+      await encoder.encode(filteredFrame);
+      while (true) {
+        using encodedPacket = await encoder.receive();
+        if (!encodedPacket) break;
         frameCount++;
       }
     }
@@ -358,8 +374,10 @@ describe('Transcode Scenarios', () => {
             }
 
             if (packet.streamIndex === videoStream.index) {
-              using decodedFrame = await decoder.decode(packet);
-              if (decodedFrame) {
+              await decoder.decode(packet);
+              while (true) {
+                using decodedFrame = await decoder.receive();
+                if (!decodedFrame) break;
                 await filter.process(decodedFrame);
                 break;
               }
@@ -396,12 +414,16 @@ describe('Transcode Scenarios', () => {
         }
 
         if (packet.streamIndex === videoStream.index) {
-          using decodedFrame = await decoder.decode(packet);
-          if (decodedFrame) {
+          await decoder.decode(packet);
+          while (true) {
+            using decodedFrame = await decoder.receive();
+            if (!decodedFrame) break;
             // This might fail or succeed depending on encoder implementation
             try {
-              using encodedPacket = await encoder.encode(decodedFrame);
-              if (encodedPacket) {
+              await encoder.encode(decodedFrame);
+              while (true) {
+                using encodedPacket = await encoder.receive();
+                if (!encodedPacket) break;
                 // Successfully encoded despite mismatch
                 break;
               }

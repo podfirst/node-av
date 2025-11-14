@@ -325,10 +325,14 @@ describe('Muxer', () => {
         }
 
         if (packet.streamIndex === 0) {
-          using frame = await decoder.decode(packet);
-          if (frame) {
-            using encoded = await encoder.encode(frame);
-            if (encoded) {
+          await decoder.decode(packet);
+          while (true) {
+            using frame = await decoder.receive();
+            if (!frame) break;
+            await encoder.encode(frame);
+            while (true) {
+              using encoded = await encoder.receive();
+              if (!encoded) break;
               await output.writePacket(encoded, streamIdx);
               // Now should be initialized
               assert.equal(output.streamsInitialized, true, 'Should be initialized after first packet');
@@ -615,10 +619,14 @@ describe('Muxer', () => {
           break;
         }
 
-        using frame = await decoder.decode(packet);
-        if (frame) {
-          using encoded = await encoder.encode(frame);
-          if (encoded) {
+        await decoder.decode(packet);
+        while (true) {
+          using frame = await decoder.receive();
+          if (!frame) break;
+          await encoder.encode(frame);
+          while (true) {
+            using encoded = await encoder.receive();
+            if (!encoded) break;
             await output.writePacket(encoded, streamIdx); // This triggers header write
             headerWritten = true;
             break; // Just process one packet
@@ -735,10 +743,14 @@ describe('Muxer', () => {
         }
 
         if (packet.streamIndex === 0 && !processed) {
-          using frame = await decoder.decode(packet);
-          if (frame) {
-            using encoded = await encoder.encode(frame);
-            if (encoded) {
+          await decoder.decode(packet);
+          while (true) {
+            using frame = await decoder.receive();
+            if (!frame) break;
+            await encoder.encode(frame);
+            while (true) {
+              using encoded = await encoder.receive();
+              if (!encoded) break;
               // Header written automatically on first packet
               await output.writePacket(encoded, streamIdx);
               processed = true;
@@ -794,10 +806,14 @@ describe('Muxer', () => {
         }
 
         if (packet.streamIndex === 0 && packetCount < 3) {
-          using frame = await decoder.decode(packet);
-          if (frame) {
-            using encoded = await encoder.encode(frame);
-            if (encoded) {
+          await decoder.decode(packet);
+          while (true) {
+            using frame = await decoder.receive();
+            if (!frame) break;
+            await encoder.encode(frame);
+            while (true) {
+              using encoded = await encoder.receive();
+              if (!encoded) break;
               await output.writePacket(encoded, streamIdx);
               packetCount++;
             }
@@ -840,10 +856,14 @@ describe('Muxer', () => {
         }
 
         if (packet.streamIndex === 0 && packetCount < 3) {
-          using frame = decoder.decodeSync(packet);
-          if (frame) {
-            using encoded = encoder.encodeSync(frame);
-            if (encoded) {
+          decoder.decodeSync(packet);
+          while (true) {
+            using frame = decoder.receiveSync();
+            if (!frame) break;
+            encoder.encodeSync(frame);
+            while (true) {
+              using encoded = encoder.receiveSync();
+              if (!encoded) break;
               output.writePacketSync(encoded, streamIdx);
               packetCount++;
             }
@@ -1279,10 +1299,14 @@ describe('Muxer', () => {
         }
 
         if (packet.streamIndex === 0 && packetCount < 10) {
-          using frame = await decoder.decode(packet);
-          if (frame) {
-            using encoded = await encoder.encode(frame);
-            if (encoded) {
+          await decoder.decode(packet);
+          while (true) {
+            using frame = await decoder.receive();
+            if (!frame) break;
+            await encoder.encode(frame);
+            while (true) {
+              using encoded = await encoder.receive();
+              if (!encoded) break;
               await output.writePacket(encoded, streamIdx);
               packetCount++;
             }
