@@ -105,7 +105,7 @@ const buildFromSource = () => {
     log('  - Python 3.12+ installed');
     log('  - A C++ compiler with C++17 support');
     log('');
-    log('See https://github.com/seydx/av for detailed requirements');
+    log('See https://github.com/seydx/node-av for detailed requirements');
     process.exit(status);
   }
 
@@ -145,7 +145,7 @@ const buildFromSource = () => {
     } else {
       // No FFmpeg found and no prebuilt available
       log('⚠️  No prebuilt binary and no system FFmpeg found');
-      log('See https://github.com/seydx/av for installation instructions');
+      log('See https://github.com/seydx/node-av for installation instructions');
       process.exit(1);
     }
   } catch (err) {

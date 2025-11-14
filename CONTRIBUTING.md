@@ -16,7 +16,7 @@ Thank you for your interest in contributing to node-av! This guide will help you
 
 ### Before Contributing
 
-1. Check the [issue tracker](https://github.com/seydx/av/issues) for existing issues or feature requests
+1. Check the [issue tracker](https://github.com/seydx/node-av/issues) for existing issues or feature requests
 2. Fork the repository and create a new branch from `main`
 3. Follow the code style and documentation standards below
 4. Write tests for new functionality
@@ -557,7 +557,7 @@ Before submitting your PR:
 ## Questions?
 
 If you have questions about contributing:
-- Check existing [issues](https://github.com/seydx/av/issues)
+- Check existing [issues](https://github.com/seydx/node-av/issues)
 - Open a new issue for clarification
 - Review the [examples](examples/) directory
 

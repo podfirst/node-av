@@ -2,7 +2,7 @@
   "name": "node-av",
   "version": "4.0.0",
   "description": "FFmpeg bindings for Node.js",
-  "author": "seydx (https://github.com/seydx/av)",
+  "author": "seydx (https://github.com/seydx/node-av)",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -112,9 +112,9 @@
     "ip": "npm:neoip@2.1.0"
   },
   "bugs": {
-    "url": "https://github.com/seydx/av/issues"
+    "url": "https://github.com/seydx/node-av/issues"
   },
-  "homepage": "https://github.com/seydx/av#readme",
+  "homepage": "https://github.com/seydx/node-av#readme",
   "keywords": [
     "node",
     "ffmpeg",
@@ -125,6 +125,6 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/seydx/av.git"
+    "url": "git+https://github.com/seydx/node-av.git"
   }
 }

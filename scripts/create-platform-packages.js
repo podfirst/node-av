@@ -46,7 +46,7 @@ platforms.forEach((platform) => {
   // Create README
   const readme = `# @seydx/node-av-${platform.name}
 
-Platform-specific binary for [node-av](https://github.com/seydx/av).
+Platform-specific binary for [node-av](https://github.com/seydx/node-av).
 
 **This package is automatically installed as an optional dependency. You should not install it directly.**
 
