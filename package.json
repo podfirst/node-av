@@ -4,6 +4,8 @@
   "description": "FFmpeg bindings for Node.js",
   "author": "seydx (https://github.com/seydx/av)",
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
