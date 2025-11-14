@@ -896,7 +896,7 @@ export class Muxer implements AsyncDisposable, Disposable {
    *
    * Direct mapping to avformat_write_header() (on first packet) and av_interleaved_write_frame().
    *
-   * @param packet - Packet to write
+   * @param packet - Packet to write (or null to signal EOF for the stream)
    *
    * @param streamIndex - Target stream index
    *
@@ -927,7 +927,7 @@ export class Muxer implements AsyncDisposable, Disposable {
    *
    * @see {@link addStream} For adding streams
    */
-  async writePacket(packet: Packet | null, streamIndex: number): Promise<void> {
+  async writePacket(packet: Packet | null | undefined, streamIndex: number): Promise<void> {
     if (this.isClosed) {
       throw new Error('Muxer is closed');
     }
@@ -1003,7 +1003,7 @@ export class Muxer implements AsyncDisposable, Disposable {
     // FFmpeg's behavior:
     // - If muxer not started (uninitialized streams), buffer NULL in PreMuxQueue as EOF marker
     // - If muxer started, send NULL to SyncQueue to signal EOF and flush
-    if (packet === null) {
+    if (!packet) {
       // Mark stream as EOF received
       streamInfo.eofReceived = true;
 
@@ -1211,7 +1211,7 @@ export class Muxer implements AsyncDisposable, Disposable {
    *
    * Direct mapping to avformat_write_header() (on first packet) and av_interleaved_write_frame().
    *
-   * @param packet - Packet to write
+   * @param packet - Packet to write (or null/undefined to signal EOF)
    *
    * @param streamIndex - Target stream index
    *
@@ -1242,7 +1242,7 @@ export class Muxer implements AsyncDisposable, Disposable {
    *
    * @see {@link writePacket} For async version
    */
-  writePacketSync(packet: Packet | null, streamIndex: number): void {
+  writePacketSync(packet: Packet | null | undefined, streamIndex: number): void {
     if (this.isClosed) {
       throw new Error('Muxer is closed');
     }
@@ -1326,7 +1326,7 @@ export class Muxer implements AsyncDisposable, Disposable {
     // FFmpeg's behavior:
     // - If muxer not started (uninitialized streams), buffer NULL in PreMuxQueue as EOF marker
     // - If muxer started, send NULL to SyncQueue to signal EOF and flush
-    if (packet === null) {
+    if (!packet) {
       // Mark stream as EOF received
       streamInfo.eofReceived = true;
 
