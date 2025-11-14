@@ -270,7 +270,7 @@ export function pipeline(source: Demuxer, bsf: BitStreamFilterAPI | BitStreamFil
  * await control.completion;
  * ```
  */
-export function pipeline(source: AsyncIterable<Frame>, filter: FilterAPI | FilterAPI[], encoder: Encoder, output: Muxer): PipelineControl;
+export function pipeline(source: AsyncIterable<Frame | null>, filter: FilterAPI | FilterAPI[], encoder: Encoder, output: Muxer): PipelineControl;
 
 /**
  * Encode + output: frames → encoder → output.
@@ -292,7 +292,7 @@ export function pipeline(source: AsyncIterable<Frame>, filter: FilterAPI | Filte
  * await control.completion;
  * ```
  */
-export function pipeline(source: AsyncIterable<Frame>, encoder: Encoder, output: Muxer): PipelineControl;
+export function pipeline(source: AsyncIterable<Frame | null>, encoder: Encoder, output: Muxer): PipelineControl;
 
 /**
  * Partial pipeline: input → decoder (returns frames).
