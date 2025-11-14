@@ -9,7 +9,7 @@
  *
  * Options:
  *   --max-duration   <n>     Max duration in seconds (default: 10)
- *   --iter-type      <type>  Type of iterator to use: 1 for scheduler, 2 for generator, 3 for full async/await, 4 for simple (default: 4)
+ *   --iter-type      <type>  Type of iterator to use: 1 scheduler, 2 simple generator, 3 decode-process-encode, 4 frame-by-frame, 5 pipeline (default: 4)
  *
  * Examples:
  *   tsx examples/api-hw-stream-custom-io.ts testdata/video.mp4 --max-duration 20 --iter-type 1
@@ -30,6 +30,7 @@ import {
   FilterPreset,
   HardwareContext,
   Muxer,
+  pipeline,
 } from '../src/index.js';
 import { prepareTestEnvironment } from './index.js';
 
@@ -193,8 +194,6 @@ await using audioOutput = await Muxer.open(
 );
 
 const audioOutputIndex = audioOutput.addStream(audioStream);
-
-// Add video stream
 const videoOutputIndex = videoOutput.addStream(videoEncoder, { inputStream: videoStream });
 
 // Set up timeout for stream duration
@@ -211,41 +210,31 @@ let audioPackets = 0;
 try {
   if (iterType === 1) {
     const videoScheduler = videoDecoder.pipeTo(videoFilter).pipeTo(videoEncoder).pipeTo(videoOutput, videoOutputIndex);
-    const audioScheduler = audioEncoder ? audioDecoder.pipeTo(audioFilter).pipeTo(audioEncoder).pipeTo(audioOutput, audioOutputIndex) : undefined;
+    const audioScheduler = audioDecoder.pipeTo(audioFilter).pipeTo(audioEncoder).pipeTo(audioOutput, audioOutputIndex);
 
-    for await (const packet of input.packets()) {
+    for await (using packet of input.packets()) {
       if (stop) break;
-      if (!packet) {
-        break;
-      }
-      if (packet.streamIndex === videoStream.index) {
-        const now = performance.now();
-        console.log('Sending packet to video scheduler, pts:', packet.pts);
+
+      if (!packet || packet.streamIndex === videoStream.index) {
         await videoScheduler.send(packet);
-        const end = performance.now();
-        console.log(`Video packet processed in ${end - now} ms`);
         videoPackets++;
-      } else if (audioScheduler && packet.streamIndex === audioStream?.index) {
-        const now = performance.now();
-        console.log('Sending packet to audio scheduler, pts:', packet.pts);
+      }
+
+      if (!packet || packet.streamIndex === audioStream.index) {
         await audioScheduler.send(packet);
-        const end = performance.now();
-        console.log(`Audio packet processed in ${end - now} ms`);
         audioPackets++;
       }
     }
-
-    await Promise.all([videoScheduler.flush(), audioScheduler?.flush()]);
   } else if (iterType === 2) {
     const videoInputGenerator = input.packets(videoStream.index);
     const videoDecoderGenerator = videoDecoder.frames(videoInputGenerator);
     const videoFilterGenerator = videoFilter.frames(videoDecoderGenerator);
     const videoEncoderGenerator = videoEncoder.packets(videoFilterGenerator);
 
-    const audioInputGenerator = audioStream ? input.packets(audioStream.index) : undefined;
-    const audioDecoderGenerator = audioStream && audioDecoder ? audioDecoder.frames(audioInputGenerator!) : undefined;
-    const audioFilterGenerator = audioStream && audioFilter ? audioFilter.frames(audioDecoderGenerator!) : undefined;
-    const audioEncoderGenerator = audioStream && audioEncoder ? audioEncoder.packets(audioFilterGenerator!) : undefined;
+    const audioInputGenerator = input.packets(audioStream.index);
+    const audioDecoderGenerator = audioDecoder.frames(audioInputGenerator);
+    const audioFilterGenerator = audioFilter.frames(audioDecoderGenerator);
+    const audioEncoderGenerator = audioEncoder.packets(audioFilterGenerator);
 
     const processVideo = async () => {
       for await (using packet of videoEncoderGenerator) {
@@ -256,9 +245,6 @@ try {
     };
 
     const processAudio = async () => {
-      if (audioOutputIndex === -1 || !audioEncoderGenerator || !audioOutput) {
-        return;
-      }
       for await (using packet of audioEncoderGenerator) {
         if (stop) break;
         await audioOutput.writePacket(packet, audioOutputIndex);
@@ -271,10 +257,8 @@ try {
   } else if (iterType === 3) {
     for await (using packet of input.packets()) {
       if (stop) break;
-      if (!packet) {
-        break;
-      }
-      if (packet.streamIndex === videoStream.index) {
+
+      if (!packet || packet.streamIndex === videoStream.index) {
         const frames = await videoDecoder.decodeAll(packet);
         for (using frame of frames) {
           const filteredFrames = await videoFilter.processAll(frame);
@@ -286,7 +270,9 @@ try {
             }
           }
         }
-      } else if (audioOutputIndex !== -1 && packet.streamIndex === audioStream?.index) {
+      }
+
+      if (!packet || packet.streamIndex === audioStream.index) {
         const frames = await audioDecoder.decodeAll(packet);
         for (using frame of frames) {
           const filteredFrames = await audioFilter.processAll(frame);
@@ -300,31 +286,25 @@ try {
         }
       }
     }
-  } else {
+  } else if (iterType === 4) {
     for await (using packet of input.packets()) {
       if (stop) break;
-      if (!packet) {
-        break;
-      }
-      if (packet.streamIndex === videoStream.index) {
-        using frame = await videoDecoder.decode(packet);
-        if (frame) {
-          using filteredFrame = await videoFilter.process(frame);
-          if (filteredFrame) {
-            using packet = await videoEncoder.encode(filteredFrame);
-            if (packet) {
+
+      if (!packet || packet.streamIndex === videoStream.index) {
+        for await (using frame of videoDecoder.frames(packet)) {
+          for await (using filteredFrame of videoFilter.frames(frame)) {
+            for await (using packet of videoEncoder.packets(filteredFrame)) {
               await videoOutput.writePacket(packet, videoOutputIndex);
               videoPackets++;
             }
           }
         }
-      } else if (audioOutputIndex !== -1 && packet.streamIndex === audioStream?.index) {
-        using frame = await audioDecoder.decode(packet);
-        if (frame) {
-          using filteredFrame = await audioFilter.process(frame);
-          if (filteredFrame) {
-            using packet = await audioEncoder.encode(filteredFrame);
-            if (packet) {
+      }
+
+      if (!packet || packet.streamIndex === audioStream.index) {
+        for await (using frame of audioDecoder.frames(packet)) {
+          for await (using filteredFrame of audioFilter.frames(frame)) {
+            for await (using packet of audioEncoder.packets(filteredFrame)) {
               await audioOutput.writePacket(packet, audioOutputIndex);
               audioPackets++;
             }
@@ -332,55 +312,20 @@ try {
         }
       }
     }
+  } else {
+    const pipe = pipeline(
+      input,
+      {
+        video: [videoDecoder, videoFilter, videoEncoder],
+        audio: [audioDecoder, audioFilter, audioEncoder],
+      },
+      {
+        video: videoOutput,
+        audio: audioOutput,
+      },
+    );
 
-    // Flush
-    for await (using frame of videoDecoder.flushFrames()) {
-      using filteredFrame = await videoFilter.process(frame);
-      if (filteredFrame) {
-        using packet = await videoEncoder.encode(filteredFrame);
-        if (packet) {
-          await videoOutput.writePacket(packet, videoOutputIndex);
-          videoPackets++;
-        }
-      }
-    }
-
-    for await (using frame of videoFilter.flushFrames()) {
-      using packet = await videoEncoder.encode(frame);
-      if (packet) {
-        await videoOutput.writePacket(packet, videoOutputIndex);
-        videoPackets++;
-      }
-    }
-
-    for await (using frame of videoEncoder.flushPackets()) {
-      await videoOutput.writePacket(frame, videoOutputIndex);
-      videoPackets++;
-    }
-
-    for await (using frame of audioDecoder.flushFrames()) {
-      using filteredFrame = await audioFilter.process(frame);
-      if (filteredFrame) {
-        using packet = await audioEncoder.encode(filteredFrame);
-        if (packet) {
-          await audioOutput.writePacket(packet, audioOutputIndex);
-          audioPackets++;
-        }
-      }
-    }
-
-    for await (using frame of audioFilter.flushFrames()) {
-      using packet = await audioEncoder.encode(frame);
-      if (packet) {
-        await audioOutput.writePacket(packet, audioOutputIndex);
-        audioPackets++;
-      }
-    }
-
-    for await (using frame of audioEncoder.flushPackets()) {
-      await audioOutput.writePacket(frame, audioOutputIndex);
-      audioPackets++;
-    }
+    await pipe.completion;
   }
 } finally {
   clearTimeout(timeout);
