@@ -6,8 +6,7 @@ import type { Encoder } from '../encoder.js';
 import type { FilterAPI } from '../filter.js';
 
 export interface SchedulableComponent<TItem = Packet | Frame> {
-  sendToQueue(item: TItem): Promise<void>;
-  flushPipeline(): Promise<void>;
+  sendToQueue(item: TItem | null): Promise<void>;
   pipeTo(target: FilterAPI | Encoder | BitStreamFilterAPI | Muxer, streamIndex?: number): any;
 }
 
@@ -16,7 +15,7 @@ export interface SchedulableComponent<TItem = Packet | Frame> {
  *
  * Allows piping between components (Decoder → Filter → Encoder → Output).
  */
-export class Scheduler<TSend = Packet | Frame> implements AsyncDisposable {
+export class Scheduler<TSend = Packet | Frame> {
   private firstComponent: SchedulableComponent<TSend>;
 
   /** @internal */
@@ -114,45 +113,24 @@ export class Scheduler<TSend = Packet | Frame> implements AsyncDisposable {
   }
 
   /**
-   * Send an item into the pipeline.
+   * Send an item into the pipeline or flush.
    *
-   * @param item - Packet or Frame to process
+   * When item is provided, queues it for processing through the pipeline.
+   * When null is provided, triggers flush sequence through all components.
+   *
+   * @param item - Packet or Frame to process, or null to flush
    *
    * @example
    * ```typescript
-   * try {
-   *   await scheduler.send(packet);
-   * } catch (error) {
-   *   console.error('Pipeline error:', error);
-   * }
+   * // Send packet for processing
+   * await scheduler.send(packet);
+   *
+   * // Flush pipeline
+   * await scheduler.send(null);
    * ```
    */
-  async send(item: TSend): Promise<void> {
+  async send(item: TSend | null): Promise<void> {
     await this.firstComponent.sendToQueue(item);
-  }
-
-  /**
-   * Flush the pipeline.
-   *
-   * @example
-   * ```typescript
-   * await scheduler.flush();
-   * ```
-   */
-  async flush(): Promise<void> {
-    await this.firstComponent.flushPipeline();
-  }
-
-  /**
-   * Cleanup resources.
-   *
-   * @example
-   * ```typescript
-   * await using scheduler;
-   * ```
-   */
-  async [Symbol.asyncDispose](): Promise<void> {
-    await this.flush();
   }
 }
 
@@ -164,7 +142,7 @@ export class Scheduler<TSend = Packet | Frame> implements AsyncDisposable {
  *
  * @template TSend - The input type flowing through the pipeline
  */
-export class SchedulerControl<TSend = Packet | Frame> implements AsyncDisposable {
+export class SchedulerControl<TSend = Packet | Frame> {
   private firstComponent: SchedulableComponent<TSend>;
 
   /**
@@ -177,44 +155,23 @@ export class SchedulerControl<TSend = Packet | Frame> implements AsyncDisposable
   }
 
   /**
-   * Send an item into the pipeline.
+   * Send an item into the pipeline or flush.
    *
-   * @param item - Packet or Frame to process
+   * When item is provided, queues it for processing through the pipeline.
+   * When null is provided, triggers flush sequence through all components.
+   *
+   * @param item - Packet or Frame to process, or null to flush
    *
    * @example
    * ```typescript
-   * try {
-   *   await control.send(packet);
-   * } catch (error) {
-   *   console.error('Pipeline error:', error);
-   * }
+   * // Send packet for processing
+   * await control.send(packet);
+   *
+   * // Flush pipeline
+   * await control.send(null);
    * ```
    */
-  async send(item: TSend): Promise<void> {
+  async send(item: TSend | null): Promise<void> {
     await this.firstComponent.sendToQueue(item);
-  }
-
-  /**
-   * Flush the pipeline.
-   *
-   * @example
-   * ```typescript
-   * await control.flush();
-   * ```
-   */
-  async flush(): Promise<void> {
-    await this.firstComponent.flushPipeline();
-  }
-
-  /**
-   * Cleanup resources.
-   *
-   * @example
-   * ```typescript
-   * await using control;
-   * ```
-   */
-  async [Symbol.asyncDispose](): Promise<void> {
-    await this.flush();
   }
 }
