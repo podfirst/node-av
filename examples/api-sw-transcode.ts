@@ -76,21 +76,14 @@ let packetCount = 0;
 const startTime = Date.now();
 
 for await (using packet of input.packets(videoStream.index)) {
-  if (!packet) {
-    break;
-  }
+  // Software decode → Software encode
+  for await (using frame of decoder.frames(packet)) {
+    if (frame) frameCount++;
 
-  // Software decode
-  using frame = await decoder.decode(packet);
-  if (frame) {
-    frameCount++;
-
-    // Software encode (encoder handles PTS rescaling automatically)
-    using encodedPacket = await encoder.encode(frame);
-    if (encodedPacket) {
-      // Write to output (Muxer handles timestamp rescaling)
+    // Software encode (null passes through to flush encoder)
+    for await (using encodedPacket of encoder.packets(frame)) {
       await output.writePacket(encodedPacket, outputStreamIndex);
-      packetCount++;
+      if (encodedPacket) packetCount++;
     }
 
     // Progress indicator
@@ -100,21 +93,6 @@ for await (using packet of input.packets(videoStream.index)) {
       console.log(`Processed ${frameCount} frames @ ${fps.toFixed(1)} fps`);
     }
   }
-}
-
-// Flush decoder
-for await (using flushFrame of decoder.flushFrames()) {
-  using encodedPacket = await encoder.encode(flushFrame);
-  if (encodedPacket) {
-    await output.writePacket(encodedPacket, outputStreamIndex);
-    packetCount++;
-  }
-}
-
-// Flush encoder
-for await (using flushPacket of encoder.flushPackets()) {
-  await output.writePacket(flushPacket, outputStreamIndex);
-  packetCount++;
 }
 
 const elapsed = (Date.now() - startTime) / 1000;

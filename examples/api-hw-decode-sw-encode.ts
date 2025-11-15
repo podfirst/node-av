@@ -100,62 +100,37 @@ let frameCount = 0;
 const startTime = Date.now();
 
 for await (using packet of input.packets()) {
-  if (!packet) {
-    break;
-  }
+  // Handle video packets and EOF
+  if (!packet || packet.streamIndex === videoStream.index) {
+    // Hardware decode → CPU transfer → Software encode
+    for await (using frame of decoder.frames(packet)) {
+      // Convert from hardware to CPU format (null passes through to flush filter)
+      for await (using cpuFrame of filter.frames(frame)) {
+        if (cpuFrame) frameCount++;
 
-  if (packet.streamIndex === videoStream.index) {
-    // Hardware decode
-    using frame = await decoder.decode(packet);
-    if (frame) {
-      // Convert from hardware to CPU format
-      using cpuFrame = await filter.process(frame);
-      if (cpuFrame) {
-        frameCount++;
-
-        // Software encode
-        using encodedPacket = await encoder.encode(cpuFrame);
-        if (encodedPacket) {
-          // Write to output
+        // Software encode (null passes through to flush encoder)
+        for await (using encodedPacket of encoder.packets(cpuFrame)) {
           await output.writePacket(encodedPacket, outputVideoStreamIndex);
         }
-      }
 
-      // Progress indicator
-      if (frameCount % 30 === 0) {
-        const elapsed = (Date.now() - startTime) / 1000;
-        const fps = frameCount / elapsed;
-        console.log(`Processed ${frameCount} frames @ ${fps.toFixed(1)} fps`);
+        // Progress indicator
+        if (frameCount % 30 === 0) {
+          const elapsed = (Date.now() - startTime) / 1000;
+          const fps = frameCount / elapsed;
+          console.log(`Processed ${frameCount} frames @ ${fps.toFixed(1)} fps`);
+        }
       }
     }
-  } else if (audioStream && packet.streamIndex === audioStream.index) {
-    // Pass through audio packets directly
+  }
+
+  // Handle audio packets (passthrough)
+  if (audioStream && (!packet || packet.streamIndex === audioStream.index)) {
     await output.writePacket(packet, outputAudioStreamIndex);
   }
 }
 
-// Flush decoder
-for await (using flushFrame of decoder.flushFrames()) {
-  using cpuFrame = await filter.process(flushFrame);
-  if (cpuFrame) {
-    using encodedPacket = await encoder.encode(cpuFrame);
-    if (encodedPacket) {
-      await output.writePacket(encodedPacket, outputVideoStreamIndex);
-    }
-  }
-}
-
-// Flush filter
-for await (using cpuFrame of filter.flushFrames()) {
-  using encodedPacket = await encoder.encode(cpuFrame);
-  if (encodedPacket) {
-    await output.writePacket(encodedPacket, outputVideoStreamIndex);
-  }
-}
-
-// Flush encoder
-for await (using flushPacket of encoder.flushPackets()) {
-  await output.writePacket(flushPacket, outputVideoStreamIndex);
-}
-
+const elapsed = (Date.now() - startTime) / 1000;
 console.log('Done!');
+console.log(`Total frames: ${frameCount}`);
+console.log(`Total time: ${elapsed.toFixed(2)}s`);
+console.log(`Average FPS: ${(frameCount / elapsed).toFixed(1)}`);

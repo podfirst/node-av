@@ -106,11 +106,12 @@ const filterGenerator = filter.framesSync(decoderGenerator);
 const encoderGenerator = encoder.packetsSync(filterGenerator);
 
 for (using packet of encoderGenerator) {
-  if (!packet) {
-    break;
+  if (packet) {
+    console.log(`Encoded packet: pts=${packet.pts}, dts=${packet.dts}, size=${packet.size}`);
+  } else {
+    console.log('Encoder flushed');
   }
 
-  console.log(`Encoded packet: pts=${packet.pts}, dts=${packet.dts}, size=${packet.size}`);
   output.writePacketSync(packet, videoOutputIndex);
 }
 

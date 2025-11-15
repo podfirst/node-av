@@ -12,10 +12,6 @@ import { mkdir, writeFile } from 'fs/promises';
 
 import {
   AV_LOG_DEBUG,
-  AV_PICTURE_TYPE_B,
-  AV_PICTURE_TYPE_I,
-  AV_PICTURE_TYPE_NONE,
-  AV_PICTURE_TYPE_P,
   AV_PIX_FMT_RGB24,
   AV_PIX_FMT_RGB8,
   Decoder,
@@ -64,37 +60,36 @@ async function extractFrameAsPNG(frameNumber: number) {
 
   let currentFrame = 0;
   for await (using packet of input.packets(videoStream.index)) {
-    if (!packet) {
-      break;
-    }
+    // Decode packet to frames
+    for await (using frame of decoder.frames(packet)) {
+      // Filter frame
+      for await (using filteredFrame of filter.frames(frame)) {
+        if (filteredFrame) {
+          if (currentFrame === frameNumber) {
+            console.log(`Frame ${frameNumber}: ${filteredFrame.width}x${filteredFrame.height}, PTS: ${filteredFrame.pts}`);
 
-    using frame = await decoder.decode(packet);
-    if (frame) {
-      using filteredFrame = await filter.process(frame);
-      if (filteredFrame) {
-        if (currentFrame === frameNumber) {
-          console.log(`Frame ${frameNumber}: ${filteredFrame.width}x${filteredFrame.height}, PTS: ${filteredFrame.pts}`);
-
-          // Encode frame as PNG
-          using pngPacket = await pngEncoder.encode(filteredFrame);
-          if (pngPacket?.data) {
-            const filename = `${outputDir}/frame_${frameNumber}.png`;
-            await writeFile(filename, pngPacket.data);
-            console.log(`Saved to ${filename}`);
-          }
-
-          // Flush encoder for single frame
-          for await (using flushPacket of pngEncoder.flushPackets()) {
-            if (flushPacket.data) {
-              const filename = `${outputDir}/frame_${frameNumber}_flush.png`;
-              await writeFile(filename, flushPacket.data);
-              console.log(`Saved to ${filename}`);
+            // Encode frame as PNG
+            for await (using pngPacket of pngEncoder.packets(filteredFrame)) {
+              if (pngPacket?.data) {
+                const filename = `${outputDir}/frame_${frameNumber}.png`;
+                await writeFile(filename, pngPacket.data);
+                console.log(`Saved to ${filename}`);
+              }
             }
-          }
 
-          break;
+            // Flush encoder for single frame
+            for await (using flushPacket of pngEncoder.packets(null)) {
+              if (flushPacket?.data) {
+                const filename = `${outputDir}/frame_${frameNumber}_flush.png`;
+                await writeFile(filename, flushPacket.data);
+                console.log(`Saved to ${filename}`);
+              }
+            }
+
+            return; // Exit function after extracting target frame
+          }
+          currentFrame++;
         }
-        currentFrame++;
       }
     }
   }
@@ -131,86 +126,33 @@ async function extractFramesAtInterval(intervalSeconds: number, count: number) {
   let extractedCount = 0;
 
   for await (using packet of input.packets(videoStream.index)) {
-    if (!packet) {
-      break;
-    }
+    // Decode packet to frames
+    for await (using frame of decoder.frames(packet)) {
+      if (frame) {
+        if (currentFrame % frameInterval === 0 && extractedCount < count) {
+          console.log(`Extracting frame ${currentFrame} (${(currentFrame / fps).toFixed(1)}s)`);
 
-    using frame = await decoder.decode(packet);
-    if (frame) {
-      if (currentFrame % frameInterval === 0 && extractedCount < count) {
-        console.log(`Extracting frame ${currentFrame} (${(currentFrame / fps).toFixed(1)}s)`);
+          // Encode frame as JPEG
+          for await (using jpegPacket of jpegEncoder.packets(frame)) {
+            if (jpegPacket?.data) {
+              const filename = `${outputDir}/thumb_${extractedCount}.jpg`;
+              await writeFile(filename, jpegPacket.data);
+              console.log(`Saved: ${filename}`);
+            }
+          }
 
-        // Encode frame as JPEG
-        using jpegPacket = await jpegEncoder.encode(frame);
-        if (jpegPacket?.data) {
-          const filename = `${outputDir}/thumb_${extractedCount}.jpg`;
-          await writeFile(filename, jpegPacket.data);
-          console.log(`Saved: ${filename}`);
+          extractedCount++;
         }
+        currentFrame++;
 
-        extractedCount++;
-      }
-      currentFrame++;
-
-      if (extractedCount >= count) {
-        break;
+        if (extractedCount >= count) {
+          return; // Exit function after extracting all thumbnails
+        }
       }
     }
   }
 
   console.log(`Extracted ${extractedCount} thumbnails`);
-}
-
-async function analyzeFrames(count: number) {
-  await using input = await Demuxer.open(inputFile);
-
-  const videoStream = input.video(0);
-  if (!videoStream) {
-    throw new Error('No video stream found');
-  }
-
-  // Create decoder
-  using decoder = await Decoder.create(videoStream);
-
-  const frameTypes: Record<string, number> = {};
-  let minPts = Number.MAX_SAFE_INTEGER;
-  let maxPts = Number.MIN_SAFE_INTEGER;
-  let totalSize = 0;
-  let analyzedFrames = 0;
-
-  for await (using packet of input.packets(videoStream.index)) {
-    if (!packet) {
-      break;
-    }
-
-    using frame = await decoder.decode(packet);
-    if (frame) {
-      // Analyze frame
-      const frameType = frame.pictType === AV_PICTURE_TYPE_I ? 'I' : frame.pictType === AV_PICTURE_TYPE_P ? 'P' : frame.pictType === AV_PICTURE_TYPE_B ? 'B' : 'Other';
-      frameTypes[frameType] = (frameTypes[frameType] || AV_PICTURE_TYPE_NONE) + 1;
-
-      if (frame.pts !== null && frame.pts !== undefined) {
-        minPts = Math.min(minPts, Number(frame.pts));
-        maxPts = Math.max(maxPts, Number(frame.pts));
-      }
-
-      // Calculate frame size (approximate)
-      if (frame.linesize?.[0]) {
-        totalSize += frame.linesize[0] * frame.height;
-      }
-
-      analyzedFrames++;
-      if (analyzedFrames >= count) {
-        break;
-      }
-    }
-  }
-
-  console.log('Frame Statistics:');
-  console.log(`Total frames analyzed: ${analyzedFrames}`);
-  console.log('Frame types:', frameTypes);
-  console.log(`PTS range: ${minPts} - ${maxPts}`);
-  console.log(`Average frame size: ${(totalSize / analyzedFrames / 1024).toFixed(2)} KB`);
 }
 
 async function generateGIF(startTime: number, duration: number) {
@@ -251,19 +193,43 @@ async function generateGIF(startTime: number, duration: number) {
 
   const outputStreamIndex = output.addStream(encoder);
 
-  for await (using packet of input.packets(videoStream.index)) {
-    if (!packet) {
-      break;
-    }
+  let currentFrame = 0;
 
-    using frame = await decoder.decode(packet);
-    if (frame) {
-      using filteredFrame = await filter.process(frame);
-      if (filteredFrame) {
-        using encodedPacket = await encoder.encode(filteredFrame);
-        if (encodedPacket) {
-          await output.writePacket(encodedPacket, outputStreamIndex);
+  for await (using packet of input.packets(videoStream.index)) {
+    // Process both null (EOF) and video packets
+    if (packet === null || packet.streamIndex === videoStream.index) {
+      for await (using frame of decoder.frames(packet)) {
+        if (frame === null) break; // EOF
+
+        // Skip frames before start
+        if (currentFrame < startFrame) {
+          currentFrame++;
+          continue;
         }
+
+        // Stop after end frame
+        if (currentFrame >= endFrame) {
+          // Flush remaining frames in pipeline
+          for await (using filteredFrame of filter.frames(null)) {
+            if (filteredFrame === null) break;
+            for await (using encodedPacket of encoder.packets(filteredFrame)) {
+              if (encodedPacket === null) break;
+              await output.writePacket(encodedPacket, outputStreamIndex);
+            }
+          }
+          return;
+        }
+
+        // Process frame
+        for await (using filteredFrame of filter.frames(frame)) {
+          if (filteredFrame === null) break; // EOF
+          for await (using encodedPacket of encoder.packets(filteredFrame)) {
+            if (encodedPacket === null) break; // EOF
+            await output.writePacket(encodedPacket, outputStreamIndex);
+          }
+        }
+
+        currentFrame++;
       }
     }
   }
@@ -285,10 +251,6 @@ await extractFrameAsPNG(10);
 // Extract thumbnails
 console.log('Extracting thumbnails:');
 await extractFramesAtInterval(2, 5);
-
-// Analyze frames
-console.log('Analyzing frames:');
-await analyzeFrames(30);
 
 // Generate GIF (demo)
 console.log('Generating GIF:');

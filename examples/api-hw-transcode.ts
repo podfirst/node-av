@@ -8,7 +8,7 @@
  * Example: tsx examples/api-hw-transcode.ts testdata/video.mp4 examples/.tmp/api-hw-transcode.mp4
  */
 
-import { AV_HWDEVICE_TYPE_CUDA, AV_LOG_DEBUG, Codec, Decoder, Demuxer, Encoder, FF_ENCODER_LIBX265, HardwareContext, Log, Muxer } from '../src/index.js';
+import { AV_HWDEVICE_TYPE_VIDEOTOOLBOX, AV_LOG_DEBUG, Codec, Decoder, Demuxer, Encoder, FF_ENCODER_LIBX265, HardwareContext, Log, Muxer } from '../src/index.js';
 import { prepareTestEnvironment } from './index.js';
 
 const inputFile = process.argv[2];
@@ -28,7 +28,7 @@ console.log('Detecting hardware acceleration...');
 const allHw = HardwareContext.listAvailable();
 console.log('All available hardware devices:', allHw);
 
-const hw = HardwareContext.create(AV_HWDEVICE_TYPE_CUDA);
+const hw = HardwareContext.create(AV_HWDEVICE_TYPE_VIDEOTOOLBOX);
 if (!hw) {
   console.log('No hardware acceleration available, falling back to software');
 } else {
@@ -93,49 +93,32 @@ let audioFrames = 0;
 const startTime = Date.now();
 
 for await (using packet of input.packets()) {
-  if (!packet) {
-    break;
-  }
-  if (packet.streamIndex === videoStream.index) {
-    // Decode packet to frame
-    using frame = await decoder.decode(packet);
-    if (frame) {
-      decodedFrames++;
+  // Handle video packets and EOF
+  if (!packet || packet.streamIndex === videoStream.index) {
+    // Hardware decode → Hardware encode (zero-copy GPU pipeline)
+    for await (using frame of decoder.frames(packet)) {
+      if (frame) {
+        decodedFrames++;
 
-      // Check if frame is on GPU (zero-copy path)
-      if (frame.isHwFrame()) {
-        hardwareFrames++;
+        // Check if frame is on GPU (zero-copy path)
+        if (frame.isHwFrame()) {
+          hardwareFrames++;
+        }
       }
 
-      // Re-encode frame (zero-copy if both on same GPU)
-      using encodedPacket = await encoder.encode(frame);
-      if (encodedPacket) {
-        // Write packet (Muxer handles timestamp rescaling)
+      // Re-encode frame (null passes through to flush encoder)
+      for await (using encodedPacket of encoder.packets(frame)) {
         await output.writePacket(encodedPacket, videoOutputIndex);
-        encodedPackets++;
+        if (encodedPacket) encodedPackets++;
       }
     }
-  } else if (packet.streamIndex === audioStream.index) {
+  }
+
+  // Handle audio packets (passthrough)
+  if (!packet || packet.streamIndex === audioStream.index) {
     await output.writePacket(packet, audioOutputIndex);
-    audioFrames++;
+    if (packet) audioFrames++;
   }
-}
-
-// Flush decoder
-console.log('Flushing decoder...');
-for await (using flushFrame of decoder.flushFrames()) {
-  using encodedPacket = await encoder.encode(flushFrame);
-  if (encodedPacket) {
-    await output.writePacket(encodedPacket, videoOutputIndex);
-    encodedPackets++;
-  }
-}
-
-// Flush encoder
-console.log('Flushing encoder...');
-for await (using flushPacket of encoder.flushPackets()) {
-  await output.writePacket(flushPacket, videoOutputIndex);
-  encodedPackets++;
 }
 
 const elapsed = (Date.now() - startTime) / 1000;

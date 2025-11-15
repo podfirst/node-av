@@ -69,59 +69,20 @@ if (audioStream) {
 
 // Process frames
 console.log('Processing frames...');
-let decodedFrames = 0;
-let encodedPackets = 0;
-let processedAudioPackets = 0;
 
 for await (using packet of input.packets()) {
-  if (!packet) {
-    break;
-  }
-
-  if (packet.streamIndex === videoStream.index) {
-    // Decode packet to frame
-    using frame = await decoder.decode(packet);
-    if (frame) {
-      decodedFrames++;
-
-      // Re-encode frame
-      using encodedPacket = await encoder.encode(frame);
-      if (encodedPacket) {
-        // Write packet to output
+  if (!packet || packet.streamIndex === videoStream.index) {
+    for await (using frame of decoder.frames(packet)) {
+      for await (using encodedPacket of encoder.packets(frame)) {
         await output.writePacket(encodedPacket, outputVideoStreamIndex);
-        encodedPackets++;
-      }
-
-      // Progress
-      if (decodedFrames % 10 === 0) {
-        console.log(`Decoded: ${decodedFrames} frames, Encoded: ${encodedPackets} packets`);
       }
     }
-  } else if (audioStream && packet.streamIndex === audioStream.index) {
+  }
+
+  if (audioStream && (!packet || packet.streamIndex === audioStream.index)) {
     await output.writePacket(packet, outputAudioStreamIndex);
-    processedAudioPackets++;
   }
-}
-
-// Flush decoder
-console.log('Flushing decoder...');
-for await (using flushFrame of decoder.flushFrames()) {
-  using encodedPacket = await encoder.encode(flushFrame);
-  if (encodedPacket) {
-    await output.writePacket(encodedPacket, outputVideoStreamIndex);
-    encodedPackets++;
-  }
-}
-
-// Flush encoder
-console.log('Flushing encoder...');
-for await (using flushPacket of encoder.flushPackets()) {
-  await output.writePacket(flushPacket, outputVideoStreamIndex);
-  encodedPackets++;
 }
 
 console.log('Done!');
-console.log(`Decoded ${decodedFrames} frames`);
-console.log(`Encoded ${encodedPackets} packets`);
-console.log(`Processed audio packets: ${processedAudioPackets}`);
 console.log(`Output: ${outputFile}`);

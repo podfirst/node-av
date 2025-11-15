@@ -159,7 +159,7 @@ if (audioStream) {
   });
 
   pipelineControl = pipeline(
-    { video: input, audio: input },
+    input,
     {
       video: [decoder, filter, encoder],
       audio: [audioDecoder, audioFilter, audioEncoder],

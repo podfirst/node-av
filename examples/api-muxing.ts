@@ -173,44 +173,19 @@ const processVideo = async () => {
     // Stream copy
     for await (using packet of videoInput.packets(videoStream.index)) {
       await output.writePacket(packet, videoIdx);
-      videoPackets++;
+      if (packet) videoPackets++;
     }
   } else {
-    // Transcode without filter - direct decode->encode
-    let frameCount = 0;
+    // Transcode: decode → encode
     for await (using packet of videoInput.packets(videoStream.index)) {
-      if (!packet) {
-        break;
-      }
-      using frame = await videoDecoder!.decode(packet);
-      if (frame) {
-        // Fix timestamps - set PTS based on frame count
-        frame.pts = BigInt(frameCount);
-
-        using encoded = await videoEncoder!.encode(frame);
-        if (encoded) {
+      // Handle both packets and EOF
+      for await (using frame of videoDecoder!.frames(packet)) {
+        // Encode frame (null passes through to flush encoder)
+        for await (using encoded of videoEncoder!.packets(frame)) {
           await output.writePacket(encoded, videoIdx);
-          videoPackets++;
+          if (packet) videoPackets++;
         }
-        frameCount++;
       }
-    }
-
-    // Flush decoder
-    for await (using frame of videoDecoder!.flushFrames()) {
-      frame.pts = BigInt(frameCount);
-      using encoded = await videoEncoder!.encode(frame);
-      if (encoded) {
-        await output.writePacket(encoded, videoIdx);
-        videoPackets++;
-      }
-      frameCount++;
-    }
-
-    // Flush encoder
-    for await (using packet of videoEncoder!.flushPackets()) {
-      await output.writePacket(packet, videoIdx);
-      videoPackets++;
     }
   }
 };
@@ -221,52 +196,22 @@ const processAudio = async () => {
     // Stream copy
     for await (using packet of audioInput.packets(audioStream.index)) {
       await output.writePacket(packet, audioIdx);
-      audioPackets++;
+      if (packet) audioPackets++;
     }
   } else {
+    // Transcode: decode → filter → encode
     for await (using packet of audioInput.packets(audioStream.index)) {
-      if (!packet) {
-        break;
-      }
-
-      using frame = await audioDecoder!.decode(packet);
-      if (frame) {
-        using filteredFrame = await audioFilter!.process(frame);
-        if (filteredFrame) {
-          using encoded = await audioEncoder!.encode(filteredFrame);
-          if (encoded) {
+      // Handle both packets and EOF
+      for await (using frame of audioDecoder!.frames(packet)) {
+        // Filter frame (null passes through to flush filter)
+        for await (using filteredFrame of audioFilter!.frames(frame)) {
+          // Encode frame (null passes through to flush encoder)
+          for await (using encoded of audioEncoder!.packets(filteredFrame)) {
             await output.writePacket(encoded, audioIdx);
-            audioPackets++;
+            if (encoded) audioPackets++;
           }
         }
       }
-    }
-
-    // Flush decoder
-    for await (using frame of audioDecoder!.flushFrames()) {
-      using filteredFrame = await audioFilter!.process(frame);
-      if (filteredFrame) {
-        using encoded = await audioEncoder!.encode(filteredFrame);
-        if (encoded) {
-          await output.writePacket(encoded, audioIdx);
-          audioPackets++;
-        }
-      }
-    }
-
-    // Flush filter
-    for await (using filteredFrame of audioFilter!.flushFrames()) {
-      using encoded = await audioEncoder!.encode(filteredFrame);
-      if (encoded) {
-        await output.writePacket(encoded, audioIdx);
-        audioPackets++;
-      }
-    }
-
-    // Flush encoder
-    for await (using packet of audioEncoder!.flushPackets()) {
-      await output.writePacket(packet, audioIdx);
-      audioPackets++;
     }
   }
 };

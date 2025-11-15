@@ -98,61 +98,26 @@ let packetCount = 0;
 const startTime = Date.now();
 
 for await (using packet of input.packets(videoStream.index)) {
-  if (!packet) {
-    break;
-  }
+  // Software decode → Hardware upload → Hardware encode
+  for await (using frame of decoder.frames(packet)) {
+    // Upload to hardware (null passes through to flush filter)
+    for await (using hwFrame of filter.frames(frame)) {
+      if (hwFrame) frameCount++;
 
-  // Software decode
-  using frame = await decoder.decode(packet);
-  if (frame) {
-    // Upload to hardware
-    using hwFrame = await filter.process(frame);
-    if (hwFrame) {
-      frameCount++;
-
-      // Hardware encode
-      using encodedPacket = await encoder.encode(hwFrame);
-      if (encodedPacket) {
-        // Write to output
+      // Hardware encode (null passes through to flush encoder)
+      for await (using encodedPacket of encoder.packets(hwFrame)) {
         await output.writePacket(encodedPacket, outputStreamIndex);
-        packetCount++;
+        if (encodedPacket) packetCount++;
+      }
+
+      // Progress indicator
+      if (frameCount % 30 === 0) {
+        const elapsed = (Date.now() - startTime) / 1000;
+        const fps = frameCount / elapsed;
+        console.log(`Processed ${frameCount} frames @ ${fps.toFixed(1)} fps`);
       }
     }
-
-    // Progress indicator
-    if (frameCount % 30 === 0) {
-      const elapsed = (Date.now() - startTime) / 1000;
-      const fps = frameCount / elapsed;
-      console.log(`Processed ${frameCount} frames @ ${fps.toFixed(1)} fps`);
-    }
   }
-}
-
-// Flush decoder
-for await (using flushFrame of decoder.flushFrames()) {
-  using hwFrame = await filter.process(flushFrame);
-  if (hwFrame) {
-    using encodedPacket = await encoder.encode(hwFrame);
-    if (encodedPacket) {
-      await output.writePacket(encodedPacket, outputStreamIndex);
-      packetCount++;
-    }
-  }
-}
-
-// Flush filter
-for await (using hwFrame of filter.flushFrames()) {
-  using encodedPacket = await encoder.encode(hwFrame);
-  if (encodedPacket) {
-    await output.writePacket(encodedPacket, outputStreamIndex);
-    packetCount++;
-  }
-}
-
-// Flush encoder
-for await (using flushPacket of encoder.flushPackets()) {
-  await output.writePacket(flushPacket, outputStreamIndex);
-  packetCount++;
 }
 
 const elapsed = (Date.now() - startTime) / 1000;
