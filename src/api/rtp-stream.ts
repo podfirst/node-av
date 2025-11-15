@@ -15,7 +15,7 @@ import { pipeline } from './pipeline.js';
 
 import type { AVCodecID, AVHWDeviceType, AVSampleFormat, FFAudioEncoder, FFHWDeviceType, FFVideoEncoder } from '../constants/index.js';
 import type { PipelineControl } from './pipeline.js';
-import type { EncoderOptions, MediaInputOptions } from './types.js';
+import type { DemuxerOptions, EncoderOptions } from './types.js';
 
 /**
  * Options for configuring RTP streaming.
@@ -71,7 +71,7 @@ export interface RTPStreamOptions {
   /**
    * Input media options passed to Demuxer.
    */
-  inputOptions?: MediaInputOptions;
+  inputOptions?: DemuxerOptions;
 
   /**
    * Video stream configuration.
@@ -133,7 +133,7 @@ export interface RTPStreamOptions {
 export class RTPStream {
   private options: Required<RTPStreamOptions>;
   private inputUrl: string;
-  private inputOptions: MediaInputOptions;
+  private inputOptions: DemuxerOptions;
   private input?: Demuxer;
   private videoOutput?: Muxer;
   private audioOutput?: Muxer;

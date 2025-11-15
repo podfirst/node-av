@@ -35,7 +35,7 @@ import { StreamingUtils } from './utilities/streaming.js';
 
 import type { AVMediaType, AVSeekFlag, AVSeekWhence } from '../constants/index.js';
 import type { Stream } from '../lib/stream.js';
-import type { IOInputCallbacks, MediaInputOptions, RawData, RTPMediaInput } from './types.js';
+import type { DemuxerOptions, IOInputCallbacks, RawData, RTPDemuxer } from './types.js';
 
 /**
  * Per-stream timestamp processing state.
@@ -96,7 +96,7 @@ export class Demuxer implements AsyncDisposable, Disposable {
   private _streams: Stream[] = [];
   private ioContext?: IOContext;
   private isClosed = false;
-  private options: Required<MediaInputOptions>;
+  private options: Required<DemuxerOptions>;
 
   // Timestamp processing state (per-stream)
   private streamStates = new Map<number, StreamState>();
@@ -122,7 +122,7 @@ export class Demuxer implements AsyncDisposable, Disposable {
    *
    * @internal
    */
-  private constructor(formatContext: FormatContext, options: Required<MediaInputOptions>, ioContext?: IOContext) {
+  private constructor(formatContext: FormatContext, options: Required<DemuxerOptions>, ioContext?: IOContext) {
     this.formatContext = formatContext;
     this.ioContext = ioContext;
     this._streams = formatContext.streams ?? [];
@@ -382,18 +382,18 @@ export class Demuxer implements AsyncDisposable, Disposable {
    * });
    * ```
    *
-   * @see {@link MediaInputOptions} For configuration options
+   * @see {@link DemuxerOptions} For configuration options
    * @see {@link RawData} For raw data input
    * @see {@link IOInputCallbacks} For custom I/O interface
    */
-  static async open(input: string | Buffer, options?: MediaInputOptions): Promise<Demuxer>;
-  static async open(input: IOInputCallbacks, options: (MediaInputOptions | undefined) & { format: string }): Promise<Demuxer>;
-  static async open(rawData: RawData, options?: MediaInputOptions): Promise<Demuxer>;
-  static async open(input: string | Buffer | RawData | IOInputCallbacks, options: MediaInputOptions = {}): Promise<Demuxer> {
+  static async open(input: string | Buffer, options?: DemuxerOptions): Promise<Demuxer>;
+  static async open(input: IOInputCallbacks, options: (DemuxerOptions | undefined) & { format: string }): Promise<Demuxer>;
+  static async open(rawData: RawData, options?: DemuxerOptions): Promise<Demuxer>;
+  static async open(input: string | Buffer | RawData | IOInputCallbacks, options: DemuxerOptions = {}): Promise<Demuxer> {
     // Check if input is raw data
     if (typeof input === 'object' && 'type' in input && ('width' in input || 'sampleRate' in input)) {
       // Build options for raw data
-      const rawOptions: MediaInputOptions & { format: string } = {
+      const rawOptions: DemuxerOptions & { format: string } = {
         bufferSize: options.bufferSize,
         format: options.format ?? (input.type === 'video' ? 'rawvideo' : 's16le'),
         options: {
@@ -513,7 +513,7 @@ export class Demuxer implements AsyncDisposable, Disposable {
       }
 
       // Apply defaults to options
-      const fullOptions: Required<MediaInputOptions> = {
+      const fullOptions: Required<DemuxerOptions> = {
         bufferSize,
         format: options.format ?? '',
         skipStreamInfo: options.skipStreamInfo ?? false,
@@ -614,14 +614,14 @@ export class Demuxer implements AsyncDisposable, Disposable {
    * @see {@link open} For async version
    * @see {@link IOInputCallbacks} For custom I/O interface
    */
-  static openSync(input: string | Buffer, options?: MediaInputOptions): Demuxer;
-  static openSync(input: IOInputCallbacks, options: (MediaInputOptions | undefined) & { format: string }): Demuxer;
-  static openSync(rawData: RawData, options?: MediaInputOptions): Demuxer;
-  static openSync(input: string | Buffer | RawData | IOInputCallbacks, options: MediaInputOptions = {}): Demuxer {
+  static openSync(input: string | Buffer, options?: DemuxerOptions): Demuxer;
+  static openSync(input: IOInputCallbacks, options: (DemuxerOptions | undefined) & { format: string }): Demuxer;
+  static openSync(rawData: RawData, options?: DemuxerOptions): Demuxer;
+  static openSync(input: string | Buffer | RawData | IOInputCallbacks, options: DemuxerOptions = {}): Demuxer {
     // Check if input is raw data
     if (typeof input === 'object' && 'type' in input && ('width' in input || 'sampleRate' in input)) {
       // Build options for raw data
-      const rawOptions: MediaInputOptions & { format: string } = {
+      const rawOptions: DemuxerOptions & { format: string } = {
         bufferSize: options.bufferSize,
         format: options.format ?? (input.type === 'video' ? 'rawvideo' : 's16le'),
         options: {
@@ -727,7 +727,7 @@ export class Demuxer implements AsyncDisposable, Disposable {
       }
 
       // Apply defaults to options
-      const fullOptions: Required<MediaInputOptions> = {
+      const fullOptions: Required<DemuxerOptions> = {
         bufferSize,
         format: options.format ?? '',
         skipStreamInfo: options.skipStreamInfo ?? false,
@@ -808,7 +808,7 @@ export class Demuxer implements AsyncDisposable, Disposable {
    *
    * @see {@link StreamingUtils.createInputSDP} to generate SDP content.
    */
-  static async openSDP(sdpContent: string): Promise<RTPMediaInput> {
+  static async openSDP(sdpContent: string): Promise<RTPDemuxer> {
     // Extract all ports from SDP (supports multi-stream: video + audio)
     const ports = StreamingUtils.extractPortsFromSDP(sdpContent);
     if (ports.length === 0) {
@@ -933,7 +933,7 @@ export class Demuxer implements AsyncDisposable, Disposable {
    * @see {@link StreamingUtils.createInputSDP} to generate SDP content.
    * @see {@link openSDP} For async version
    */
-  static openSDPSync(sdpContent: string): RTPMediaInput {
+  static openSDPSync(sdpContent: string): RTPDemuxer {
     // Extract all ports from SDP (supports multi-stream: video + audio)
     const ports = StreamingUtils.extractPortsFromSDP(sdpContent);
     if (ports.length === 0) {

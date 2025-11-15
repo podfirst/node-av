@@ -120,7 +120,7 @@ export type RawData = VideoRawData | AudioRawData;
  * Configures how media files are opened and packets are read.
  * Supports format detection, buffering, and FFmpeg options.
  */
-export interface MediaInputOptions {
+export interface DemuxerOptions {
   /**
    * Buffer size for reading/writing operations.
    *
@@ -211,7 +211,7 @@ export interface MediaInputOptions {
  *
  * Configures output container format and buffering.
  */
-export interface MediaOutputOptions {
+export interface MuxerOptions {
   /**
    * Input media for automatic metadata and property copying.
    *
@@ -223,7 +223,7 @@ export interface MediaOutputOptions {
    *
    * This matches FFmpeg CLI behavior which copies metadata by default.
    */
-  input?: Demuxer | RTPMediaInput;
+  input?: Demuxer | RTPDemuxer;
 
   /**
    * Preferred output format.
@@ -727,7 +727,10 @@ export interface IOOutputCallbacks {
   read?: (size: number) => Buffer | null | number;
 }
 
-export interface RTPMediaInput {
+/**
+ * RTP Demuxer interface.
+ */
+export interface RTPDemuxer {
   /**
    * Demuxer configured for RTP/SRTP reception.
    *

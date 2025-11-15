@@ -31,7 +31,7 @@ import { Encoder } from './encoder.js';
 import { AsyncQueue } from './utilities/async-queue.js';
 
 import type { IRational, OutputFormat, Stream } from '../lib/index.js';
-import type { IOOutputCallbacks, MediaOutputOptions } from './types.js';
+import type { IOOutputCallbacks, MuxerOptions } from './types.js';
 
 export interface AddStreamOptionsWithEncoder {
   encoder?: Encoder;
@@ -114,7 +114,7 @@ interface WriteJob {
  */
 export class Muxer implements AsyncDisposable, Disposable {
   private formatContext: FormatContext;
-  private options: MediaOutputOptions;
+  private options: MuxerOptions;
   private _streams = new Map<number, StreamDescription>();
   private ioContext?: IOContext;
   private headerWritten = false;
@@ -132,7 +132,7 @@ export class Muxer implements AsyncDisposable, Disposable {
    *
    * @internal
    */
-  private constructor(options?: MediaOutputOptions) {
+  private constructor(options?: MuxerOptions) {
     this.options = {
       copyInitialNonkeyframes: false,
       exitOnError: true,
@@ -197,12 +197,12 @@ export class Muxer implements AsyncDisposable, Disposable {
    * });
    * ```
    *
-   * @see {@link MediaOutputOptions} For configuration options
+   * @see {@link MuxerOptions} For configuration options
    * @see {@link IOOutputCallbacks} For custom I/O interface
    */
-  static async open(target: string, options?: MediaOutputOptions): Promise<Muxer>;
-  static async open(target: IOOutputCallbacks, options: MediaOutputOptions & { format: string }): Promise<Muxer>;
-  static async open(target: string | IOOutputCallbacks, options?: MediaOutputOptions): Promise<Muxer> {
+  static async open(target: string, options?: MuxerOptions): Promise<Muxer>;
+  static async open(target: IOOutputCallbacks, options: MuxerOptions & { format: string }): Promise<Muxer>;
+  static async open(target: string | IOOutputCallbacks, options?: MuxerOptions): Promise<Muxer> {
     const output = new Muxer(options);
 
     try {
@@ -328,9 +328,9 @@ export class Muxer implements AsyncDisposable, Disposable {
    *
    * @see {@link open} For async version
    */
-  static openSync(target: string, options?: MediaOutputOptions): Muxer;
-  static openSync(target: IOOutputCallbacks, options: MediaOutputOptions & { format: string }): Muxer;
-  static openSync(target: string | IOOutputCallbacks, options?: MediaOutputOptions): Muxer {
+  static openSync(target: string, options?: MuxerOptions): Muxer;
+  static openSync(target: IOOutputCallbacks, options: MuxerOptions & { format: string }): Muxer;
+  static openSync(target: string | IOOutputCallbacks, options?: MuxerOptions): Muxer {
     const output = new Muxer(options);
 
     try {

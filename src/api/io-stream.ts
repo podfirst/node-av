@@ -3,7 +3,7 @@ import { IOContext } from '../lib/index.js';
 import { IO_BUFFER_SIZE } from './constants.js';
 
 import type { AVSeekWhence } from '../constants/index.js';
-import type { IOInputCallbacks, MediaInputOptions } from './types.js';
+import type { DemuxerOptions, IOInputCallbacks } from './types.js';
 
 /**
  * Factory for creating custom I/O contexts.
@@ -67,7 +67,7 @@ export class IOStream {
    * });
    * ```
    */
-  static create(buffer: Buffer, options?: MediaInputOptions): IOContext;
+  static create(buffer: Buffer, options?: DemuxerOptions): IOContext;
   /**
    * Create I/O context from callbacks.
    *
@@ -94,8 +94,8 @@ export class IOStream {
    * });
    * ```
    */
-  static create(callbacks: IOInputCallbacks, options?: MediaInputOptions): IOContext;
-  static create(input: Buffer | IOInputCallbacks, options: MediaInputOptions = {}): IOContext | Promise<IOContext> {
+  static create(callbacks: IOInputCallbacks, options?: DemuxerOptions): IOContext;
+  static create(input: Buffer | IOInputCallbacks, options: DemuxerOptions = {}): IOContext | Promise<IOContext> {
     const { bufferSize = IO_BUFFER_SIZE } = options;
 
     // Handle Buffer

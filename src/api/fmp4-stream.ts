@@ -22,7 +22,7 @@ import { pipeline } from './pipeline.js';
 
 import type { AVCodecID, AVHWDeviceType, FFHWDeviceType } from '../constants/index.js';
 import type { PipelineControl } from './pipeline.js';
-import type { EncoderOptions, IOOutputCallbacks, MediaInputOptions } from './types.js';
+import type { DemuxerOptions, EncoderOptions, IOOutputCallbacks } from './types.js';
 
 export type MP4BoxType =
   // Top-level structure
@@ -148,7 +148,7 @@ export interface FMP4StreamOptions {
   /**
    * Input media options passed to Demuxer.
    */
-  inputOptions?: MediaInputOptions;
+  inputOptions?: DemuxerOptions;
 
   /**
    * Buffer size for I/O operations in bytes (output).
@@ -231,7 +231,7 @@ export const FMP4_CODECS = {
 export class FMP4Stream {
   private options: Required<FMP4StreamOptions>;
   private inputUrl: string;
-  private inputOptions: MediaInputOptions;
+  private inputOptions: DemuxerOptions;
   private input?: Demuxer;
   private output?: Muxer;
   private hardwareContext?: HardwareContext | null;
