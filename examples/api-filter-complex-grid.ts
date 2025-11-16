@@ -132,22 +132,14 @@ for await (using frame of complex.frames('out', {
   '2:v': decoder2.frames(input2.packets(streamIndex2)),
   '3:v': decoder3.frames(input3.packets(streamIndex3)),
 })) {
-  if (frame === null) {
-    // EOF signal - flush encoder
-    for await (using packet of encoder.packets(null)) {
-      await output.writePacket(packet, outputStreamIndex);
-    }
-    break;
-  }
-
   // Encode filtered frame
   for await (using packet of encoder.packets(frame)) {
     await output.writePacket(packet, outputStreamIndex);
   }
-  frameCount++;
+  if (frame) frameCount++;
 
   // Progress indicator
-  if (frameCount % 30 === 0) {
+  if (frame && frameCount % 30 === 0) {
     console.log(`Processed ${frameCount} frames...`);
   }
 }
