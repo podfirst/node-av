@@ -2273,8 +2273,8 @@ export class Muxer implements AsyncDisposable, Disposable {
       return;
     }
 
-    const mediaInput = 'input' in this.options.input ? this.options.input.input : this.options.input;
-    const inputFormatContext = mediaInput.getFormatContext();
+    const demuxer = 'input' in this.options.input ? this.options.input.input : this.options.input;
+    const inputFormatContext = demuxer.getFormatContext();
     const inputMetadata = inputFormatContext.metadata;
 
     if (inputMetadata) {

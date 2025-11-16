@@ -25,12 +25,12 @@ export type NamedOutputs<K extends StreamName = StreamName> = Pick<Record<Stream
  * @internal
  */
 interface StreamMetadata {
+  demuxer?: Demuxer; // Track source Demuxer for stream copy
   encoder?: Encoder;
   decoder?: Decoder;
   bitStreamFilter?: BitStreamFilterAPI;
   streamIndex?: number;
   type?: 'video' | 'audio';
-  mediaInput?: Demuxer; // Track source Demuxer for stream copy
 }
 
 /**
@@ -660,7 +660,7 @@ export function pipeline(...args: any[]): PipelineControl | AsyncGenerator<Packe
   const secondArg = args[1];
 
   // Check for shared Demuxer + NamedStages pattern
-  if (isMediaInput(firstArg) && isNamedStages(secondArg)) {
+  if (isDemuxer(firstArg) && isNamedStages(secondArg)) {
     // Convert shared input to NamedInputs based on stages keys
     const sharedInput = firstArg;
     const stages = secondArg;
@@ -689,11 +689,11 @@ export function pipeline(...args: any[]): PipelineControl | AsyncGenerator<Packe
       // Full named pipeline with output
       return runNamedPipeline(args[0], args[1], args[2]);
     }
-  } else if (isMediaInput(firstArg)) {
+  } else if (isDemuxer(firstArg)) {
     // Check if this is a stream copy (Demuxer → Muxer)
-    if (args.length === 2 && isMediaOutput(args[1])) {
+    if (args.length === 2 && isMuxer(args[1])) {
       // Stream copy all streams
-      return runMediaInputPipeline(args[0], args[1]);
+      return runDemuxerPipeline(args[0], args[1]);
     } else {
       // Simple pipeline starting with Demuxer
       return runSimplePipeline(args);
@@ -782,10 +782,10 @@ class PipelineControlImpl implements PipelineControl {
  *
  * @internal
  */
-function runMediaInputPipeline(input: Demuxer, output: Muxer): PipelineControl {
+function runDemuxerPipeline(input: Demuxer, output: Muxer): PipelineControl {
   let control: PipelineControl;
   // eslint-disable-next-line prefer-const
-  control = new PipelineControlImpl(runMediaInputPipelineAsync(input, output, () => control?.isStopped() ?? false));
+  control = new PipelineControlImpl(runDemuxerPipelineAsync(input, output, () => control?.isStopped() ?? false));
   return control;
 }
 
@@ -800,7 +800,7 @@ function runMediaInputPipeline(input: Demuxer, output: Muxer): PipelineControl {
  *
  * @internal
  */
-async function runMediaInputPipelineAsync(input: Demuxer, output: Muxer, shouldStop: () => boolean): Promise<void> {
+async function runDemuxerPipelineAsync(input: Demuxer, output: Muxer, shouldStop: () => boolean): Promise<void> {
   // Get all streams from input
   const videoStream = input.video();
   const audioStream = input.audio();
@@ -872,14 +872,14 @@ function runSimplePipeline(args: any[]): PipelineControl | AsyncGenerator<Packet
 
   // Check if last stage is Muxer (consumes stream)
   const lastStage = stages[stages.length - 1];
-  const isOutput = isMediaOutput(lastStage);
+  const isOutput = isMuxer(lastStage);
 
   // Track metadata through pipeline
   const metadata: StreamMetadata = {};
 
   // Store Demuxer reference if we have one
-  if (isMediaInput(source)) {
-    metadata.mediaInput = source;
+  if (isDemuxer(source)) {
+    metadata.demuxer = source;
   }
 
   // Build the pipeline generator
@@ -900,7 +900,7 @@ function runSimplePipeline(args: any[]): PipelineControl | AsyncGenerator<Packet
   // Convert Demuxer to packet stream if needed
   // If we have a decoder or BSF, filter packets by stream index
   let actualSource: AsyncIterable<Packet | Frame | null>;
-  if (isMediaInput(source)) {
+  if (isDemuxer(source)) {
     if (metadata.decoder) {
       // Filter packets for the decoder's stream
       const streamIndex = metadata.decoder.getStream().index;
@@ -1008,7 +1008,7 @@ async function consumeSimplePipeline(stream: AsyncIterable<Packet | Frame | null
     const originalStream = metadata.bitStreamFilter.getStream();
     streamIndex = output.addStream(originalStream);
   } else {
-    // For direct Demuxer → Muxer, we redirect to runMediaInputPipeline
+    // For direct Demuxer → Muxer, we redirect to runDemuxerPipeline
     // This case shouldn't happen in simple pipeline
     throw new Error('Cannot determine stream configuration. This is likely a bug in the pipeline.');
   }
@@ -1218,7 +1218,7 @@ async function runNamedPipelineAsync<K extends StreamName>(
       } else {
         // Passthrough - use Demuxer's built-in stream filtering
         metadata.type = streamName;
-        metadata.mediaInput = sharedInput;
+        metadata.demuxer = sharedInput;
         const stream = streamName === 'video' ? sharedInput.video() : sharedInput.audio();
         if (!stream) {
           throw new Error(`No ${streamName} stream found in input for passthrough.`);
@@ -1275,7 +1275,7 @@ async function runNamedPipelineAsync<K extends StreamName>(
         }
 
         (processedStreams as any)[streamName] = input.packets(stream.index);
-        metadata.mediaInput = input; // Track Demuxer for passthrough
+        metadata.demuxer = input; // Track Demuxer for passthrough
       } else {
         // Process the stream - normalizedStages is guaranteed to be an array here
         const stages = normalizedStages;
@@ -1325,7 +1325,7 @@ async function runNamedPipelineAsync<K extends StreamName>(
   }
 
   // Write to output(s)
-  if (isMediaOutput(output)) {
+  if (isMuxer(output)) {
     // Always write streams in parallel - Muxer's SyncQueue handles interleaving internally
     const streamIndices: Record<StreamName, number> = {} as any;
 
@@ -1349,9 +1349,9 @@ async function runNamedPipelineAsync<K extends StreamName>(
         // BSF - use BSF's original stream
         const originalStream = meta.bitStreamFilter.getStream();
         streamIndices[name] = output.addStream(originalStream);
-      } else if (meta.mediaInput) {
+      } else if (meta.demuxer) {
         // Passthrough from Demuxer
-        const stream = name.includes('video') ? meta.mediaInput.video() : meta.mediaInput.audio();
+        const stream = name.includes('video') ? meta.demuxer.video() : meta.demuxer.audio();
         if (!stream) {
           throw new Error(`No matching stream found in Demuxer for ${name}`);
         }
@@ -1552,9 +1552,9 @@ async function consumeNamedStream(stream: AsyncIterable<Packet | null>, output: 
     // BSF - use BSF's original stream
     const originalStream = metadata.bitStreamFilter.getStream();
     streamIndex = output.addStream(originalStream);
-  } else if (metadata.mediaInput) {
+  } else if (metadata.demuxer) {
     // Passthrough from Demuxer - use type hint from metadata
-    const inputStream = metadata.type === 'video' ? metadata.mediaInput.video() : metadata.mediaInput.audio();
+    const inputStream = metadata.type === 'video' ? metadata.demuxer.video() : metadata.demuxer.audio();
     if (!inputStream) {
       throw new Error(`No ${metadata.type} stream found in Demuxer`);
     }
@@ -1594,7 +1594,7 @@ async function consumeNamedStream(stream: AsyncIterable<Packet | null>, output: 
  * @internal
  */
 function isNamedInputs(obj: any): obj is NamedInputs<any> {
-  return obj && typeof obj === 'object' && !Array.isArray(obj) && !isAsyncIterable(obj) && !isMediaInput(obj);
+  return obj && typeof obj === 'object' && !Array.isArray(obj) && !isAsyncIterable(obj) && !isDemuxer(obj);
 }
 
 /**
@@ -1638,7 +1638,7 @@ function isAsyncIterable(obj: any): obj is AsyncIterable<any> {
  *
  * @internal
  */
-function isMediaInput(obj: any): obj is Demuxer {
+function isDemuxer(obj: any): obj is Demuxer {
   return obj && typeof obj.packets === 'function' && typeof obj.video === 'function' && typeof obj.audio === 'function';
 }
 
@@ -1703,7 +1703,7 @@ function isBitStreamFilterAPI(obj: any): obj is BitStreamFilterAPI {
  *
  * @internal
  */
-function isMediaOutput(obj: any): obj is Muxer {
+function isMuxer(obj: any): obj is Muxer {
   return obj && typeof obj.writePacket === 'function' && typeof obj.addStream === 'function';
 }
 

@@ -105,11 +105,6 @@ export class FilterAPI implements Disposable {
   /**
    * Create a filter with specified description and configuration.
    *
-   * Creates and allocates filter graph immediately.
-   * Filter configuration is completed on first frame with frame properties.
-   * TimeBase is automatically calculated from first frame based on CFR option.
-   * Hardware frames context is automatically detected from input frames.
-   *
    * Direct mapping to avfilter_graph_parse_ptr() and avfilter_graph_config().
    *
    * @param description - Filter graph description
@@ -227,7 +222,6 @@ export class FilterAPI implements Disposable {
    * Output frame rate from filter graph.
    *
    * Returns the frame rate determined by the filter graph output.
-   * Matches FFmpeg CLI's av_buffersink_get_frame_rate() behavior.
    * Returns null if filter is not initialized or frame rate is not set.
    *
    * Direct mapping to av_buffersink_get_frame_rate().
@@ -564,41 +558,31 @@ export class FilterAPI implements Disposable {
     }
 
     // Open filter if not already done
-    if (!this.initialized) {
-      if (!frame) {
-        return;
-      }
-
-      this.initializePromise ??= this.initialize(frame);
-    }
-
+    this.initializePromise ??= this.initialize(frame);
     await this.initializePromise;
-
-    if (!this.initialized) {
-      return;
-    }
 
     if (!this.buffersrcCtx || !this.buffersinkCtx) {
       throw new Error('Could not initialize filter contexts');
     }
 
     // Check for frame property changes (FFmpeg: dropOnChange/allowReinit logic)
-    if (frame && !this.checkFramePropertiesChanged(frame)) {
+    if (!this.checkFramePropertiesChanged(frame)) {
       // Frame dropped due to property change
       return;
     }
 
     // If reinitialized, reinitialize now
-    if (!this.initialized && frame) {
+    if (!this.initialized) {
       this.initializePromise = this.initialize(frame);
       await this.initializePromise;
-      if (!this.buffersrcCtx || !this.buffersinkCtx) {
-        throw new Error('Could not reinitialize filter contexts');
-      }
+    }
+
+    if (!this.buffersrcCtx || !this.buffersinkCtx) {
+      throw new Error('Could not reinitialize filter contexts');
     }
 
     // Rescale timestamps to filter's timeBase
-    if (frame && this.calculatedTimeBase) {
+    if (this.calculatedTimeBase) {
       const originalTimeBase = frame.timeBase;
       frame.pts = avRescaleQ(frame.pts, originalTimeBase, this.calculatedTimeBase);
       frame.duration = avRescaleQ(frame.duration, originalTimeBase, this.calculatedTimeBase);
@@ -656,15 +640,7 @@ export class FilterAPI implements Disposable {
 
     // Open filter if not already done
     if (!this.initialized) {
-      if (!frame) {
-        return;
-      }
-
       this.initializeSync(frame);
-    }
-
-    if (!this.initialized) {
-      return;
     }
 
     if (!this.buffersrcCtx || !this.buffersinkCtx) {
@@ -672,21 +648,22 @@ export class FilterAPI implements Disposable {
     }
 
     // Check for frame property changes (FFmpeg: dropOnChange/allowReinit logic)
-    if (frame && !this.checkFramePropertiesChanged(frame)) {
+    if (!this.checkFramePropertiesChanged(frame)) {
       // Frame dropped due to property change
       return;
     }
 
     // If reinitialized, reinitialize now
-    if (!this.initialized && frame) {
+    if (!this.initialized) {
       this.initializeSync(frame);
-      if (!this.buffersrcCtx || !this.buffersinkCtx) {
-        throw new Error('Could not reinitialize filter contexts');
-      }
+    }
+
+    if (!this.buffersrcCtx || !this.buffersinkCtx) {
+      throw new Error('Could not reinitialize filter contexts');
     }
 
     // Rescale timestamps to filter's timeBase
-    if (frame && this.calculatedTimeBase) {
+    if (this.calculatedTimeBase) {
       const originalTimeBase = frame.timeBase;
       frame.pts = avRescaleQ(frame.pts, originalTimeBase, this.calculatedTimeBase);
       frame.duration = avRescaleQ(frame.duration, originalTimeBase, this.calculatedTimeBase);

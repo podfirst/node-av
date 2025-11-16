@@ -524,9 +524,7 @@ export class Demuxer implements AsyncDisposable, Disposable {
         options: options.options ?? {},
       };
 
-      const mediaInput = new Demuxer(formatContext, fullOptions, ioContext);
-
-      return mediaInput;
+      return new Demuxer(formatContext, fullOptions, ioContext);
     } catch (error) {
       // Clean up only on error
       if (ioContext) {
@@ -738,9 +736,7 @@ export class Demuxer implements AsyncDisposable, Disposable {
         options: options.options ?? {},
       };
 
-      const mediaInput = new Demuxer(formatContext, fullOptions, ioContext);
-
-      return mediaInput;
+      return new Demuxer(formatContext, fullOptions, ioContext);
     } catch (error) {
       // Clean up only on error
       if (ioContext) {
