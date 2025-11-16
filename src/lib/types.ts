@@ -5,7 +5,7 @@
  * directly from FFmpeg constants.
  */
 
-import type { AVCodecID, AVLogLevel, AVMediaType } from '../constants/constants.ts';
+import type { AVCodecID, AVLogLevel, AVMediaType, AVPixelFormat, AVSampleFormat } from '../constants/constants.ts';
 
 /**
  * Rational number (fraction) interface
@@ -117,6 +117,30 @@ export interface ImageOptions {
   format?: ImageFormat;
   crop?: ImageCrop;
   resize?: ImageResize;
+}
+
+/**
+ * Video Frame
+ */
+export interface VideoFrame {
+  width: number;
+  height: number;
+  format: AVPixelFormat;
+  timeBase?: IRational;
+  sampleAspectRatio?: IRational;
+  pts?: bigint;
+}
+
+/**
+ * Audio Frame
+ */
+export interface AudioFrame {
+  nbSamples: number;
+  format: AVSampleFormat;
+  sampleRate: number;
+  channelLayout: ChannelLayout;
+  timeBase?: IRational;
+  pts?: bigint;
 }
 
 /**

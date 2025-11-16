@@ -1,4 +1,4 @@
-import { AVMEDIA_TYPE_AUDIO, AVMEDIA_TYPE_UNKNOWN, AVMEDIA_TYPE_VIDEO } from '../constants/constants.js';
+import { AV_NOPTS_VALUE, AV_TIME_BASE_Q, AVMEDIA_TYPE_AUDIO, AVMEDIA_TYPE_UNKNOWN, AVMEDIA_TYPE_VIDEO } from '../constants/constants.js';
 import { bindings } from './binding.js';
 import { HardwareFramesContext } from './hardware-frames-context.js';
 import { Rational } from './rational.js';
@@ -15,8 +15,10 @@ import type {
   AVPixelFormat,
   AVSampleFormat,
 } from '../constants/constants.js';
+import { FFmpegError } from './error.js';
+
 import type { NativeFrame, NativeWrapper } from './native-types.js';
-import type { ChannelLayout } from './types.js';
+import type { AudioFrame, ChannelLayout, VideoFrame } from './types.js';
 
 /**
  * Container for uncompressed audio/video data.
@@ -66,6 +68,112 @@ export class Frame implements Disposable, NativeWrapper<NativeFrame> {
 
   constructor() {
     this.native = new bindings.Frame();
+  }
+
+  /**
+   * Create a video frame from a buffer with pixel data.
+   *
+   * Allocates frame buffers, sets properties, and copies buffer data.
+   * Convenience factory method that combines frame allocation and data copy.
+   *
+   * @param buffer - Buffer containing raw pixel data
+   *
+   * @param props - Video Frame properties
+   *
+   * @returns Allocated frame with data from buffer
+   *
+   * @throws {FFmpegError} If allocation or buffer copy fails
+   *
+   * @example
+   * ```typescript
+   * import { Frame, AV_PIX_FMT_RGBA, FFmpegError } from 'node-av';
+   *
+   * const rawPixels = Buffer.alloc(1920 * 1080 * 4); // RGBA data
+   * using frame = Frame.fromVideoBuffer(rawPixels, {
+   *   width: 1920,
+   *   height: 1080,
+   *   format: AV_PIX_FMT_RGBA,
+   *   timeBase: { num: 1, den: 30 }
+   * });
+   * ```
+   */
+  static fromVideoBuffer(buffer: Buffer, props: VideoFrame): Frame {
+    const frame = new Frame();
+    frame.alloc();
+    frame.width = props.width;
+    frame.height = props.height;
+    frame.format = props.format;
+    frame.pts = props.pts ?? AV_NOPTS_VALUE;
+
+    if (props.timeBase) {
+      frame.timeBase = new Rational(props.timeBase.num, props.timeBase.den);
+    } else {
+      frame.timeBase = Rational.fromObject(AV_TIME_BASE_Q);
+    }
+
+    if (props.sampleAspectRatio) {
+      frame.sampleAspectRatio = new Rational(props.sampleAspectRatio.num, props.sampleAspectRatio.den);
+    }
+
+    const ret = frame.getBuffer();
+    FFmpegError.throwIfError(ret, 'Failed to allocate frame buffers');
+
+    const copyRet = frame.fromBuffer(buffer);
+    FFmpegError.throwIfError(copyRet, 'Failed to copy buffer to frame');
+
+    return frame;
+  }
+
+  /**
+   * Create an audio frame from a buffer with sample data.
+   *
+   * Allocates frame buffers, sets properties, and copies buffer data.
+   * Convenience factory method that combines frame allocation and data copy.
+   *
+   * @param buffer - Buffer containing raw audio samples
+   *
+   * @param props - Frame properties
+   *
+   * @returns Allocated frame with data from buffer
+   *
+   * @throws {FFmpegError} If allocation or buffer copy fails
+   *
+   * @example
+   * ```typescript
+   * import { Frame, AV_SAMPLE_FMT_FLT, AV_CH_LAYOUT_STEREO, FFmpegError } from 'node-av';
+   *
+   * const samples = Buffer.alloc(960 * 2 * 4); // 960 samples, stereo, float32
+   * using frame = Frame.fromAudioBuffer(samples, {
+   *   nbSamples: 960,
+   *   format: AV_SAMPLE_FMT_FLT,
+   *   sampleRate: 48000,
+   *   channelLayout: AV_CH_LAYOUT_STEREO,
+   *   timeBase: { num: 1, den: 48000 }
+   * });
+   * ```
+   */
+  static fromAudioBuffer(buffer: Buffer, props: AudioFrame): Frame {
+    const frame = new Frame();
+    frame.alloc();
+    frame.nbSamples = props.nbSamples;
+    frame.format = props.format;
+    frame.sampleRate = props.sampleRate;
+    frame.channelLayout = props.channelLayout;
+    frame.pts = props.pts ?? AV_NOPTS_VALUE;
+
+    if (props.timeBase) {
+      frame.timeBase = new Rational(props.timeBase.num, props.timeBase.den);
+    } else {
+      frame.timeBase = Rational.fromObject(AV_TIME_BASE_Q);
+    }
+
+    const ret = frame.getBuffer();
+    FFmpegError.throwIfError(ret, 'Failed to allocate frame buffers');
+
+    const copyRet = frame.fromBuffer(buffer);
+    FFmpegError.throwIfError(copyRet, 'Failed to copy buffer to frame');
+
+    return frame;
   }
 
   /**
