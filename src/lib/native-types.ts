@@ -9,22 +9,6 @@
  */
 
 import type {
-  AVDictFlag,
-  AVFilterCmdFlag,
-  AVFilterConstants,
-  AVFilterFlag,
-  AVFrameSideDataType,
-  AVHWDeviceType,
-  AVHWFrameTransferDirection,
-  AVIOFlag,
-  AVOptionFlag,
-  AVOptionType,
-  AVPacketSideDataType,
-  AVPixelFormat,
-  AVSeekFlag,
-  AVSeekWhence,
-} from '../constants/constants.js';
-import type {
   AVBufferSrcFlag,
   AVChromaLocation,
   AVCodecCap,
@@ -35,14 +19,29 @@ import type {
   AVColorRange,
   AVColorSpace,
   AVColorTransferCharacteristic,
+  AVDictFlag,
   AVDiscard,
   AVDisposition,
+  AVFifoFlag,
+  AVFilterCmdFlag,
+  AVFilterConstants,
+  AVFilterFlag,
   AVFormatFlag,
+  AVFrameSideDataType,
+  AVHWDeviceType,
+  AVHWFrameTransferDirection,
+  AVIOFlag,
   AVMediaType,
+  AVOptionFlag,
+  AVOptionType,
   AVPacketFlag,
+  AVPacketSideDataType,
   AVPictureType,
+  AVPixelFormat,
   AVProfile,
   AVSampleFormat,
+  AVSeekFlag,
+  AVSeekWhence,
   AVStreamEventFlag,
   SwsFlags,
 } from '../constants/index.js';
@@ -595,6 +594,35 @@ export interface NativeAudioFifo extends Disposable {
   drain(nbSamples: number): void;
   reset(): void;
   realloc(nbSamples: number): number;
+}
+
+/**
+ * Native AVFifo binding interface
+ *
+ * Generic FIFO buffer for arbitrary data types.
+ * Provides queue functionality for any fixed-size elements.
+ *
+ * @internal
+ */
+export interface NativeFifo extends Disposable {
+  readonly __brand: 'NativeFifo';
+
+  readonly size: number;
+  readonly canRead: number;
+  readonly canWrite: number;
+  readonly elemSize: number;
+
+  alloc(nbElems: number, elemSize: number, flags: AVFifoFlag): void;
+  free(): void;
+  write(buf: Buffer, nbElems: number): Promise<number>;
+  writeSync(buf: Buffer, nbElems: number): number;
+  read(buf: Buffer, nbElems: number): Promise<number>;
+  readSync(buf: Buffer, nbElems: number): number;
+  peek(buf: Buffer, nbElems: number, offset: number): Promise<number>;
+  peekSync(buf: Buffer, nbElems: number, offset: number): number;
+  grow(inc: number): number;
+  reset(): void;
+  setAutoGrowLimit(maxElems: number): void;
 }
 
 /**

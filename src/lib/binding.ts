@@ -11,9 +11,18 @@ import { type } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import type { AVCodecID, AVError, AVHWDeviceType, AVLogLevel, AVMediaType, AVOptionSearchFlags, AVPixelFormat, AVSampleFormat } from '../constants/constants.js';
-import type { FFDecoderCodec } from '../constants/decoders.js';
-import type { FFEncoderCodec } from '../constants/encoders.js';
+import type {
+  AVCodecID,
+  AVError,
+  AVHWDeviceType,
+  AVLogLevel,
+  AVMediaType,
+  AVOptionSearchFlags,
+  AVPixelFormat,
+  AVSampleFormat,
+  FFDecoderCodec,
+  FFEncoderCodec,
+} from '../constants/index.js';
 import type { PosixError } from './error.js';
 import type {
   NativeAudioFifo,
@@ -25,6 +34,7 @@ import type {
   NativeCodecParser,
   NativeDictionary,
   NativeFFmpegError,
+  NativeFifo,
   NativeFilter,
   NativeFilterContext,
   NativeFilterGraph,
@@ -122,6 +132,7 @@ type NativeBitStreamFilterContextConstructor = new () => NativeBitStreamFilterCo
 
 // Processing
 type NativeAudioFifoConstructor = new () => NativeAudioFifo;
+type NativeFifoConstructor = new () => NativeFifo;
 type NativeSoftwareScaleContextConstructor = new () => NativeSoftwareScaleContext;
 type NativeSoftwareResampleContextConstructor = new () => NativeSoftwareResampleContext;
 type NativeFrameUtilsConstructor = new (width: number, height: number) => NativeFrameUtils;
@@ -223,6 +234,7 @@ export interface NativeBinding {
 
   // Processing
   AudioFifo: NativeAudioFifoConstructor;
+  Fifo: NativeFifoConstructor;
   SoftwareScaleContext: NativeSoftwareScaleContextConstructor;
   SoftwareResampleContext: NativeSoftwareResampleContextConstructor;
   FrameUtils: NativeFrameUtilsConstructor;

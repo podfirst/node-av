@@ -15,6 +15,7 @@
 #include "software_scale_context.h"
 #include "software_resample_context.h"
 #include "audio_fifo.h"
+#include "fifo.h"
 #include "frame_utils.h"
 #include "utilities.h"
 #include "filter.h"
@@ -61,6 +62,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   SoftwareScaleContext::Init(env, exports);
   SoftwareResampleContext::Init(env, exports);
   AudioFifo::Init(env, exports);
+  Fifo::Init(env, exports);
   FrameUtils::Init(env, exports);
   
   // Filter System

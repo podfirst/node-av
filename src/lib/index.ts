@@ -41,6 +41,9 @@ export { SoftwareResampleContext } from './software-resample-context.js';
 // Audio FIFO
 export { AudioFifo } from './audio-fifo.js';
 
+// Generic FIFO
+export { Fifo } from './fifo.js';
+
 // Frame Utils
 export { FrameUtils } from './frame-utils.js';
 
