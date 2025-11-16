@@ -621,15 +621,9 @@ export class Encoder implements Disposable {
       }
     };
 
-    if (this.audioFrameBuffer && frame) {
-      // Push frame into buffer
+    if (this.audioFrameBuffer) {
+      // Push frame into buffer - actual sending happens in receive()
       await this.audioFrameBuffer.push(frame);
-
-      let _bufferedFrame;
-      while (!this.isClosed && (_bufferedFrame = await this.audioFrameBuffer.pull()) !== null) {
-        using bufferedFrame = _bufferedFrame;
-        await encode(bufferedFrame);
-      }
     } else {
       await encode(frame);
     }
@@ -694,15 +688,9 @@ export class Encoder implements Disposable {
       }
     };
 
-    if (this.audioFrameBuffer && frame) {
-      // Push frame into buffer
+    if (this.audioFrameBuffer) {
+      // Push frame into buffer - actual sending happens in receiveSync()
       this.audioFrameBuffer.pushSync(frame);
-
-      let _bufferedFrame;
-      while (!this.isClosed && (_bufferedFrame = this.audioFrameBuffer.pullSync()) !== null) {
-        using bufferedFrame = _bufferedFrame;
-        encode(bufferedFrame);
-      }
     } else {
       encode(frame);
     }
@@ -1276,6 +1264,13 @@ export class Encoder implements Disposable {
     // Clear previous packet data
     this.packet.unref();
 
+    if (this.audioFrameBuffer?.hasFrame()) {
+      using bufferedFrame = await this.audioFrameBuffer.pull();
+      if (bufferedFrame) {
+        await this.codecContext.sendFrame(bufferedFrame);
+      }
+    }
+
     const ret = await this.codecContext.receivePacket(this.packet);
 
     if (ret === 0) {
@@ -1362,6 +1357,13 @@ export class Encoder implements Disposable {
 
     // Clear previous packet data
     this.packet.unref();
+
+    if (this.audioFrameBuffer?.hasFrame()) {
+      using bufferedFrame = this.audioFrameBuffer.pullSync();
+      if (bufferedFrame) {
+        this.codecContext.sendFrameSync(bufferedFrame);
+      }
+    }
 
     const ret = this.codecContext.receivePacketSync(this.packet);
 
