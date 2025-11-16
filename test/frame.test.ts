@@ -2,6 +2,7 @@ import assert from 'node:assert';
 import { afterEach, beforeEach, describe, it } from 'node:test';
 
 import {
+  AV_CHANNEL_LAYOUT_STEREO,
   AV_FRAME_DATA_A53_CC,
   AV_FRAME_DATA_MASTERING_DISPLAY_METADATA,
   AV_FRAME_DATA_MOTION_VECTORS,
@@ -901,6 +902,136 @@ describe('Frame', () => {
         // @ts-expect-error Testing invalid input
         frame.fromBuffer(null);
       }, /Buffer required/);
+    });
+  });
+
+  describe('Factory Methods', () => {
+    describe('fromVideoBuffer', () => {
+      it('should create video frame from buffer', () => {
+        const width = 320;
+        const height = 240;
+        const format = AV_PIX_FMT_RGB24;
+        const bufferSize = width * height * 3; // RGB24 = 3 bytes per pixel
+        const buffer = Buffer.alloc(bufferSize);
+
+        // Fill with some test data
+        for (let i = 0; i < bufferSize; i += 3) {
+          buffer[i] = 255; // R
+          buffer[i + 1] = 128; // G
+          buffer[i + 2] = 64; // B
+        }
+
+        using videoFrame = Frame.fromVideoBuffer(buffer, {
+          width,
+          height,
+          format,
+        });
+
+        assert.strictEqual(videoFrame.width, width);
+        assert.strictEqual(videoFrame.height, height);
+        assert.strictEqual(videoFrame.format, format);
+        assert.notEqual(videoFrame.data, null);
+
+        // Verify data was copied
+        const outputBuffer = videoFrame.toBuffer();
+        assert.strictEqual(outputBuffer.length, bufferSize);
+        assert.strictEqual(outputBuffer[0], 255);
+        assert.strictEqual(outputBuffer[1], 128);
+        assert.strictEqual(outputBuffer[2], 64);
+      });
+
+      it('should set optional properties', () => {
+        const buffer = Buffer.alloc(320 * 240 * 3);
+        using videoFrame = Frame.fromVideoBuffer(buffer, {
+          width: 320,
+          height: 240,
+          format: AV_PIX_FMT_RGB24,
+          timeBase: { num: 1, den: 30 },
+          sampleAspectRatio: { num: 1, den: 1 },
+          pts: 42n,
+        });
+
+        assert.strictEqual(videoFrame.timeBase.num, 1);
+        assert.strictEqual(videoFrame.timeBase.den, 30);
+        assert.strictEqual(videoFrame.sampleAspectRatio.num, 1);
+        assert.strictEqual(videoFrame.sampleAspectRatio.den, 1);
+        assert.strictEqual(videoFrame.pts, 42n);
+      });
+
+      it('should throw on invalid buffer size', () => {
+        const tooSmallBuffer = Buffer.alloc(100); // Way too small
+
+        assert.throws(() => {
+          Frame.fromVideoBuffer(tooSmallBuffer, {
+            width: 1920,
+            height: 1080,
+            format: AV_PIX_FMT_YUV420P,
+          });
+        });
+      });
+    });
+
+    describe('fromAudioBuffer', () => {
+      it('should create audio frame from buffer', () => {
+        const nbSamples = 960;
+        const channels = 2;
+        const format = AV_SAMPLE_FMT_FLT;
+        const sampleRate = 48000;
+        const channelLayout = AV_CHANNEL_LAYOUT_STEREO;
+        const bufferSize = nbSamples * channels * 4; // float32 = 4 bytes per sample
+        const buffer = Buffer.alloc(bufferSize);
+
+        // Fill with some test audio data
+        for (let i = 0; i < bufferSize; i += 4) {
+          buffer.writeFloatLE(Math.sin(i / 100), i);
+        }
+
+        using audioFrame = Frame.fromAudioBuffer(buffer, {
+          nbSamples,
+          format,
+          sampleRate,
+          channelLayout,
+        });
+
+        assert.strictEqual(audioFrame.nbSamples, nbSamples);
+        assert.strictEqual(audioFrame.format, format);
+        assert.strictEqual(audioFrame.sampleRate, sampleRate);
+        assert.deepStrictEqual(audioFrame.channelLayout, channelLayout);
+        assert.notEqual(audioFrame.data, null);
+
+        // Verify data was copied
+        const outputBuffer = audioFrame.toBuffer();
+        assert.ok(outputBuffer.length > 0);
+      });
+
+      it('should set optional properties', () => {
+        const buffer = Buffer.alloc(960 * 2 * 4); // 960 samples, stereo, float32
+        using audioFrame = Frame.fromAudioBuffer(buffer, {
+          nbSamples: 960,
+          format: AV_SAMPLE_FMT_FLT,
+          sampleRate: 48000,
+          channelLayout: AV_CHANNEL_LAYOUT_STEREO,
+          timeBase: { num: 1, den: 48000 },
+          pts: 100n,
+        });
+
+        assert.strictEqual(audioFrame.timeBase.num, 1);
+        assert.strictEqual(audioFrame.timeBase.den, 48000);
+        assert.strictEqual(audioFrame.pts, 100n);
+      });
+
+      it('should throw on invalid buffer size', () => {
+        const tooSmallBuffer = Buffer.alloc(100);
+
+        assert.throws(() => {
+          Frame.fromAudioBuffer(tooSmallBuffer, {
+            nbSamples: 960,
+            format: AV_SAMPLE_FMT_FLT,
+            sampleRate: 48000,
+            channelLayout: AV_CHANNEL_LAYOUT_STEREO,
+          });
+        });
+      });
     });
   });
 });

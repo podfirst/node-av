@@ -493,4 +493,49 @@ describe('Rational', () => {
       assert.equal(result.num * 21, 10 * result.den);
     });
   });
+
+  describe('Factory Methods', () => {
+    describe('fromObject', () => {
+      it('should create Rational from IRational object', () => {
+        const obj = { num: 1, den: 30 };
+        const r = Rational.fromObject(obj);
+
+        assert.ok(r instanceof Rational);
+        assert.equal(r.num, 1);
+        assert.equal(r.den, 30);
+      });
+
+      it('should handle negative values', () => {
+        const obj = { num: -25, den: 1 };
+        const r = Rational.fromObject(obj);
+
+        assert.equal(r.num, -25);
+        assert.equal(r.den, 1);
+      });
+
+      it('should handle large values', () => {
+        const obj = { num: 1000000, den: 1001 };
+        const r = Rational.fromObject(obj);
+
+        assert.equal(r.num, 1000000);
+        assert.equal(r.den, 1001);
+      });
+
+      it('should handle zero denominator (FFmpeg infinity)', () => {
+        const obj = { num: 1, den: 0 };
+        const r = Rational.fromObject(obj);
+
+        assert.equal(r.num, 1);
+        assert.equal(r.den, 0);
+      });
+
+      it('should handle zero/zero (FFmpeg undefined)', () => {
+        const obj = { num: 0, den: 0 };
+        const r = Rational.fromObject(obj);
+
+        assert.equal(r.num, 0);
+        assert.equal(r.den, 0);
+      });
+    });
+  });
 });
