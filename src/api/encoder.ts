@@ -5,6 +5,7 @@ import {
   AV_CODEC_FLAG_FRAME_DURATION,
   AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX,
   AV_CODEC_HW_CONFIG_METHOD_HW_FRAMES_CTX,
+  AV_PICTURE_TYPE_NONE,
   AV_PIX_FMT_NONE,
   AV_PKT_FLAG_TRUSTED,
   AVCHROMA_LOC_UNSPECIFIED,
@@ -1893,6 +1894,10 @@ export class Encoder implements Disposable {
    * @internal
    */
   private prepareFrameForEncoding(frame: Frame): void {
+    // Clear pict_type - encoder will determine frame types based on its own settings
+    // Input stream's frame type hints are irrelevant when re-encoding
+    frame.pictType = AV_PICTURE_TYPE_NONE;
+
     // Adjust frame PTS and timebase to encoder timebase
     // This matches FFmpeg's adjust_frame_pts_to_encoder_tb() behavior which:
     // 1. Converts PTS from frame's timebase to encoder's timebase (av_rescale_q)
