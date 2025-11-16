@@ -16,7 +16,7 @@
 import { readFile } from 'fs/promises';
 import sharp from 'sharp';
 
-import { AV_PIX_FMT_RGBA, Decoder, Demuxer, Encoder, EOF, FF_ENCODER_LIBX264, FFmpegError, FilterComplexAPI, Frame, Muxer, Rational } from '../src/index.js';
+import { AV_PIX_FMT_RGBA, Decoder, Demuxer, Encoder, EOF, FF_ENCODER_LIBX264, FilterComplexAPI, Frame, Muxer } from '../src/index.js';
 import { prepareTestEnvironment } from './index.js';
 
 prepareTestEnvironment();
@@ -285,7 +285,7 @@ async function complexEffects() {
  * Example 5: Logo overlay - Add watermark/logo to video
  *
  * Demonstrates how to overlay a static image (logo/watermark) onto a video.
- * Shows manual frame creation using Frame.fromBuffer() with sharp for image loading.
+ * Shows manual frame creation with sharp for image loading.
  * The logo is positioned at the bottom-right corner with 10px padding.
  * This is useful for branding, watermarking, or adding channel logos.
  */
@@ -323,18 +323,12 @@ async function logoOverlay() {
     .raw()
     .toBuffer();
 
-  // Create frame manually and populate with buffer data
-  using logoFrame = new Frame();
-  logoFrame.alloc();
-  logoFrame.width = logoWidth;
-  logoFrame.height = logoHeight;
-  logoFrame.format = AV_PIX_FMT_RGBA;
-  logoFrame.timeBase = new Rational(1, 30);
-  logoFrame.getBuffer();
-
-  // Copy raw pixel data into frame
-  const ret = logoFrame.fromBuffer(logoRawBuffer);
-  FFmpegError.throwIfError(ret, 'Failed to create logo frame from buffer');
+  // Create frame manually
+  using logoFrame = Frame.fromVideoBuffer(logoRawBuffer, {
+    width: logoWidth,
+    height: logoHeight,
+    format: AV_PIX_FMT_RGBA,
+  });
 
   console.log(`Created logo frame from buffer (${logoWidth}x${logoHeight} RGBA)`);
 
