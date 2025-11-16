@@ -1,3 +1,5 @@
+import type { IRational } from './types.js';
+
 /**
  * Rational number type for precise fractional representations.
  *
@@ -67,6 +69,26 @@ export class Rational {
     // - { 0, 0 } = undefined/not set
     // - { num, 0 } = infinity
     // We allow it for FFmpeg compatibility, but operations may fail.
+  }
+
+  /**
+   * Create a Rational from an IRational object.
+   *
+   * @param rational - The IRational object with num and den properties
+   *
+   * @returns A new Rational instance
+   *
+   * @example
+   * ```typescript
+   * import { Rational } from 'node-av';
+   *
+   * const obj = { num: 3, den: 4 };
+   * const rational = Rational.fromObject(obj);
+   * console.log(rational.toString()); // "3/4"
+   * ```
+   */
+  static fromObject(rational: IRational): Rational {
+    return new Rational(rational.num, rational.den);
   }
 
   /**
