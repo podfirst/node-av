@@ -20,6 +20,7 @@ export { AudioFrameBuffer } from './audio-frame-buffer.js';
 export { HardwareContext } from './hardware.js';
 
 // Filter
+export { FilterComplexAPI } from './filter-complex.js';
 export { FilterPreset, type FilterSupport } from './filter-presets.js';
 export { FilterAPI } from './filter.js';
 

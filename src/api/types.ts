@@ -1,8 +1,9 @@
 import type { RtpPacket } from 'werift';
-import type { AVPixelFormat, AVSampleFormat, AVSeekWhence } from '../constants/index.js';
-import type { IRational } from '../lib/index.js';
+import type { AVMediaType, AVPixelFormat, AVSampleFormat, AVSeekWhence } from '../constants/index.js';
+import type { IRational } from '../lib/types.js';
 import type { Decoder } from './decoder.js';
 import type { Demuxer } from './demuxer.js';
+import type { FilterComplexAPI } from './filter-complex.js';
 import type { FilterAPI } from './filter.js';
 import type { HardwareContext } from './hardware.js';
 
@@ -534,7 +535,7 @@ export interface EncoderOptions {
    * Used to extract filter output parameters.
    * Ensures encoder matches filter output characteristics.
    */
-  filter?: FilterAPI;
+  filter?: FilterAPI | FilterComplexAPI;
 
   /**
    * Additional codec-specific options.
@@ -639,6 +640,63 @@ export interface FilterOptions {
    * @default true
    */
   allowReinit?: boolean;
+}
+
+/**
+ * Input configuration for FilterComplexAPI.
+ */
+export interface FilterComplexInput {
+  /**
+   * Input label identifier.
+   *
+   * Matches labels in filter_complex description (e.g., '0:v', '1:v', '0:a').
+   * Used to identify which buffersrc filter to send frames to via process() method.
+   */
+  label: string;
+}
+
+/**
+ * Output configuration for FilterComplexAPI.
+ */
+export interface FilterComplexOutput {
+  /**
+   * Output label identifier.
+   *
+   * Matches labels in filter_complex description (e.g., 'out', 'thumb', 'main').
+   * Used to identify which buffersink to read from via output() method.
+   */
+  label: string;
+
+  /**
+   * Media type for this output.
+   *
+   * If not specified, defaults to the media type of the first input.
+   * Set to 'AVMEDIA_TYPE_VIDEO' or 'AVMEDIA_TYPE_AUDIO' explicitly if needed (e.g., for audio extraction filters).
+   *
+   * @default Inferred from first input
+   */
+  mediaType?: AVMediaType;
+}
+
+/**
+ * Options for creating a complex filter graph.
+ */
+export interface FilterComplexOptions extends FilterOptions {
+  /**
+   * Input sources for the filter graph.
+   *
+   * Array of labeled frame sources that feed into the filter graph.
+   * Labels must match those referenced in the description string.
+   */
+  inputs: FilterComplexInput[];
+
+  /**
+   * Output labels from the filter graph.
+   *
+   * Array of output identifiers that can be consumed via output() method.
+   * Labels must match those defined in the description string.
+   */
+  outputs: FilterComplexOutput[];
 }
 
 /**
