@@ -7,6 +7,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking Changes
+
+**Encoder/Decoder/Filter API Return Value Changes**: The encode, decode, and process methods now follow FFmpeg's send/receive pattern more closely:
+
+- **Previous behavior**: `Decoder.decode()`, `Decoder.decodeSync()`, `Encoder.encode()`, `Encoder.encodeSync()`, `FilterAPI.process()`, and `FilterAPI.processSync()` returned a single `Frame` or `Packet`
+- **New behavior**: These methods now return `void`. You must call `receive()`/`receiveSync()` to retrieve output frames/packets
+
+**Reason**: FFmpeg can produce multiple output frames/packets for a single input (e.g., B-frames in encoding, frame buffering in decoding). The previous API couldn't handle this correctly.
+
+**Migration**:
+```typescript
+// Before
+const frame = await decoder.decode(packet);
+const packet = await encoder.encode(frame);
+
+// After
+await decoder.decode(packet);
+const frame = await decoder.receive(); // May need to call multiple times
+
+await encoder.encode(frame);
+const packet = await encoder.receive(); // May return multiple packets
+```
+
+### Added
+
+- **Fifo**: Generic FIFO buffer bindings (AVFifo) for arbitrary data types
+- **FilterComplexAPI**: Support for complex filtergraphs with multiple inputs/outputs
+  - Enables advanced multi-input/multi-output filter operations previously impossible with simple FilterAPI
+  - Direct mapping to FFmpeg's filtergraph functionality
+  - Perfect for overlay, picture-in-picture, side-by-side, and multi-stream mixing scenarios
+
+```typescript
+import { FilterComplexAPI } from 'node-av/api';
+
+// Create picture-in-picture effect with two video inputs
+using complex = FilterComplexAPI.create(
+  '[1:v]scale=320:240[pip];[0:v][pip]overlay=x=W-w-10:y=H-h-10[out]',
+  {
+    inputs: [{ label: '0:v' }, { label: '1:v' }],
+    outputs: [{ label: 'out' }],
+  }
+);
+
+// Process frames from both inputs
+for await (using frame of complex.frames('out', {
+  '0:v': decoder1.frames(input1.packets(streamIndex1)),
+  '1:v': decoder2.frames(input2.packets(streamIndex2)),
+})) {
+  // Encode combined frame with overlay
+  for await (using packet of encoder.packets(frame)) {
+    await output.writePacket(packet, outputStreamIndex);
+  }
+}
+```
+
+### Fixed
+
+**EOF Handling & Stability Improvements**: Comprehensive improvements to end-of-file handling across the entire API stack:
+
+- **Decoder**: Proper EOF propagation through decode/receive pipeline, ensuring all buffered frames are flushed
+- **Encoder**: Correct EOF handling in encode/receive pipeline, guaranteeing all buffered packets are output
+- **FilterAPI**: Consistent EOF processing through filter chains, preventing dropped frames during flush
+- **Demuxer**: Reliable EOF detection and signaling for all stream types
+- **Muxer**: Proper finalization and trailer writing on EOF
+
+These improvements ensure data integrity and prevent frame/packet loss during stream termination, making the library more robust for production use.
+
+**Additional Fixes**:
+- Various bug fixes and stability improvements across the codebase
+
 ## [4.0.0] - 2025-11-12
 
 ### Major Focus: FFmpeg CLI Compatibility & Production Stability
