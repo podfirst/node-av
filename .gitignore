@@ -78,3 +78,4 @@ ffmpeg_examples
 /*.pdf
 /test_internal
 /analysis
+/ffbuild
