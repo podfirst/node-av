@@ -257,6 +257,7 @@
                             "/opt/ffbuild/prefix/lib/libspirv-cross-reflect.a",
                             "/opt/ffbuild/prefix/lib/libspirv-cross-util.a",
                             "/opt/ffbuild/prefix/lib/libOpenCL.a",
+                            "/opt/ffbuild/prefix/lib/libvulkan.a",
                             "/opt/ffbuild/prefix/lib/libiconv.a",
                             "/opt/ffbuild/prefix/lib/libfftw3f.a",
                             "/opt/ffbuild/prefix/lib/libcharset.a",
