@@ -423,7 +423,7 @@ export type EOFSignal = typeof EOF;
   // Manually add common "no flags" constants for flag types that need them
   output += '// Common "no flags" constants for APIs that accept 0 as valid flag value\n';
   output +=
-    'export const AVFLAG_NONE = 0 as AVSeekFlag & AVIOFlag & AVFilterFlag & AVFilterCmdFlag & AVFilterConstants & AVCodecFlag2 & AVFormatFlag & AVDictFlag & AVOptionSearchFlags & AVPacketFlag & AVCodecFlag & SWSFlag & AVFrameFlag & AVFifoFlag;\n';
+    'export const AVFLAG_NONE = 0 as AVSeekFlag & AVIOFlag & AVFilterFlag & AVFilterCmdFlag & AVFilterConstants & AVCodecFlag2 & AVFormatFlag & AVDictFlag & AVOptionSearchFlags & AVPacketFlag & AVCodecFlag & SWSFlag & AVFrameFlag & AVFifoFlag & AVCodecProp;\n';
 
   // Generate branded types for each enum
   const processedEnums = new Set();
