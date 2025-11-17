@@ -5,6 +5,7 @@ import { resolve } from 'path';
 import { RtpPacket } from 'werift';
 
 import {
+  AV_CODEC_PROP_FIELDS,
   AV_NOPTS_VALUE,
   AV_PIX_FMT_NONE,
   AV_ROUND_NEAR_INF,
@@ -1912,7 +1913,7 @@ export class Demuxer implements AsyncDisposable, Disposable {
     switch (par.codecType) {
       case AVMEDIA_TYPE_AUDIO:
         // Audio: duration from sample_rate or packet duration
-        if (par.sampleRate > 0 && par.frameSize > 0) {
+        if (par.sampleRate > 0) {
           state.nextDts += (BigInt(AV_TIME_BASE) * BigInt(par.frameSize)) / BigInt(par.sampleRate);
         } else {
           state.nextDts += avRescaleQ(packet.duration, packet.timeBase, AV_TIME_BASE_Q);
@@ -1930,9 +1931,9 @@ export class Demuxer implements AsyncDisposable, Disposable {
           const fieldRate = avMulQ(par.frameRate, { num: 2, den: 1 });
           let fields = 2; // Default: 2 fields (progressive or standard interlaced)
 
-          // Check if parser is available for accurate field count
+          // Check if codec has fields property and parser is available
           const parser = stream.parser;
-          if (parser) {
+          if (par.hasProperties(AV_CODEC_PROP_FIELDS) && parser) {
             // Get repeat_pict from parser for accurate field count
             fields = 1 + parser.repeatPict;
           }
