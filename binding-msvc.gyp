@@ -93,7 +93,6 @@
                 },
             },
             "libraries": [
-                # FFmpeg core libraries
                 "avformat.lib",
                 "avcodec.lib",
                 "avfilter.lib",
@@ -101,7 +100,6 @@
                 "avutil.lib",
                 "swscale.lib",
                 "swresample.lib",
-                # Codec libraries (from ffmpeg-msvc build)
                 "libx264.lib",
                 "x265-static.lib",
                 "vpxmt.lib",
@@ -118,28 +116,29 @@
                 "libwebpdemux.lib",
                 "libsharpyuv.lib",
                 "libzimg.lib",
-                # JPEG XL support
                 "jxl.lib",
                 "jxl_threads.lib",
                 "jxl_cms.lib",
                 "hwy.lib",
-                # Text/Subtitle rendering
                 "ass.lib",
                 "harfbuzz.lib",
                 "freetype.lib",
                 "fribidi.lib",
-                # Compression libraries
                 "brotlidec.lib",
                 "brotlienc.lib",
                 "brotlicommon.lib",
-                # Support libraries
                 "libxml2.lib",
                 "zlib.lib",
                 "liblzma.lib",
                 "iconv.lib",
-                # OpenCL
                 "OpenCL.lib",
-                # Vulkan/glslang
+                "libwhisper.lib",
+                "libggml.lib",
+                "libggml-base.lib",
+                "libggml-cpu.lib",
+                "libggml-vulkan.lib",
+                "libggml-opencl.lib",
+                "libomp.lib",
                 "glslang.lib",
                 "MachineIndependent.lib",
                 "GenericCodeGen.lib",
@@ -147,7 +146,6 @@
                 "OSDependent.lib",
                 "SPIRV-Tools-opt.lib",
                 "SPIRV-Tools.lib",
-                # Windows system libraries
                 "ole32.lib",
                 "shlwapi.lib",
                 "cfgmgr32.lib",
