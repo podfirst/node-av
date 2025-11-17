@@ -337,6 +337,20 @@ jobs:
             exit 1
           fi
 
+      - name: Check DLL dependencies
+        shell: msys2 {0}
+        run: |
+          echo "=== Checking node-av.node dependencies ==="
+          if [ -f "build/Release/node-av.node" ]; then
+            objdump -p "build/Release/node-av.node" | grep "DLL Name:"
+          fi
+
+          echo ""
+          echo "=== Checking FFmpeg binary dependencies ==="
+          if [ -f "binary/ffmpeg.exe" ]; then
+            objdump -p "binary/ffmpeg.exe" | grep "DLL Name:"
+          fi
+
       - name: Run Tests
         env:
           AV_FROM_SOURCE: 1
