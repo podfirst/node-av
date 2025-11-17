@@ -393,6 +393,7 @@
                             "-l:libggml-vulkan.a",
                             "-l:libggml-opencl.a",
                             "-l:OpenCL.a",
+                            "-l:libvulkan.a",
                             "-lomp",
                             "-lpthread",
                             "-Wl,-Bdynamic",
