@@ -131,6 +131,8 @@ private:
 
   Napi::Value GetNbCodedSideData(const Napi::CallbackInfo& info);
   Napi::Value GetAllCodedSideData(const Napi::CallbackInfo& info);
+
+  Napi::Value GetCodecProperties(const Napi::CallbackInfo& info);
 };
 
 } // namespace ffmpeg

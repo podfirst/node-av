@@ -62,6 +62,7 @@ Napi::Object CodecParameters::Init(Napi::Env env, Napi::Object exports) {
     InstanceAccessor<&CodecParameters::GetInitialPadding, &CodecParameters::SetInitialPadding>("initialPadding"),
     InstanceAccessor<&CodecParameters::GetVideoDelay, &CodecParameters::SetVideoDelay>("videoDelay"),
     InstanceAccessor<&CodecParameters::GetNbCodedSideData>("nbCodedSideData"),
+    InstanceAccessor<&CodecParameters::GetCodecProperties>("codecProperties"),
   });
   
   constructor = Napi::Persistent(func);
@@ -1399,6 +1400,23 @@ Napi::Value CodecParameters::GetAllCodedSideData(const Napi::CallbackInfo& info)
   }
 
   return result;
+}
+
+Napi::Value CodecParameters::GetCodecProperties(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+
+  if (!params_) {
+    return Napi::Number::New(env, 0);
+  }
+
+  // Get codec descriptor for the codec_id
+  const AVCodecDescriptor* desc = avcodec_descriptor_get(params_->codec_id);
+  if (!desc) {
+    return Napi::Number::New(env, 0);
+  }
+
+  // Return the props field from descriptor
+  return Napi::Number::New(env, desc->props);
 }
 
 Napi::Value CodecParameters::Dispose(const Napi::CallbackInfo& info) {

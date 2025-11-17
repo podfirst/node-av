@@ -15,6 +15,7 @@ import type {
   AVCodecFlag,
   AVCodecFlag2,
   AVCodecID,
+  AVCodecProp,
   AVColorPrimaries,
   AVColorRange,
   AVColorSpace,
@@ -292,6 +293,7 @@ export interface NativeCodecParameters extends Disposable {
   readonly codecTagString: string | null;
   readonly extradataSize: number;
   readonly nbCodedSideData: number;
+  readonly codecProperties: AVCodecProp;
   codecType: AVMediaType;
   codecId: AVCodecID;
   codecTag: number;

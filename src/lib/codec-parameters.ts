@@ -5,6 +5,7 @@ import { stringToFourCC } from './utilities.js';
 import type {
   AVChromaLocation,
   AVCodecID,
+  AVCodecProp,
   AVColorPrimaries,
   AVColorRange,
   AVColorSpace,
@@ -490,6 +491,63 @@ export class CodecParameters implements NativeWrapper<NativeCodecParameters> {
    */
   get nbCodedSideData(): number {
     return this.native.nbCodedSideData;
+  }
+
+  /**
+   * Codec properties.
+   *
+   * Bitfield of AV_CODEC_PROP_* flags indicating codec features.
+   *
+   * Direct mapping to AVCodecDescriptor->props.
+   *
+   * @example
+   * ```typescript
+   * import { AV_CODEC_PROP_FIELDS } from 'node-av/constants';
+   *
+   * const props = params.codecProperties;
+   * if (props & AV_CODEC_PROP_FIELDS) {
+   *   console.log('Codec supports interlaced video (fields)');
+   * }
+   * ```
+   *
+   * @see {@link hasProperties} For checking specific properties
+   */
+  get codecProperties(): AVCodecProp {
+    return this.native.codecProperties;
+  }
+
+  /**
+   * Check if codec has specific properties.
+   *
+   * Tests whether all specified properties are present using bitwise AND.
+   *
+   * @param props - One or more property values to check
+   *
+   * @returns true if all specified properties are present, false otherwise
+   *
+   * @example
+   * ```typescript
+   * import { AV_CODEC_PROP_FIELDS, AV_CODEC_PROP_REORDER } from 'node-av/constants';
+   *
+   * if (params.hasProperties(AV_CODEC_PROP_FIELDS)) {
+   *   console.log('Codec supports interlaced video (fields)');
+   * }
+   *
+   * // Check multiple properties
+   * if (params.hasProperties(AV_CODEC_PROP_LOSSY, AV_CODEC_PROP_REORDER)) {
+   *   console.log('Codec is lossy and supports frame reordering');
+   * }
+   * ```
+   *
+   * @see {@link codecProperties} For direct properties access
+   */
+  hasProperties(...props: AVCodecProp[]): boolean {
+    for (const prop of props) {
+      if ((this.native.codecProperties & prop) !== prop) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /**
