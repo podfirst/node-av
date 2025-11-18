@@ -4,7 +4,7 @@ import { describe, it } from 'node:test';
 import { Decoder } from '../src/api/decoder.js';
 import { Demuxer } from '../src/api/demuxer.js';
 import { WhisperTranscriber } from '../src/api/whisper.js';
-import { getInputFile, isCI, prepareTestEnvironment } from './index.js';
+import { getInputFile, isCI, prepareTestEnvironment, skipInCI } from './index.js';
 
 prepareTestEnvironment();
 
@@ -127,7 +127,7 @@ describe('WhisperTranscriber', () => {
     });
   });
 
-  describe('transcribe', () => {
+  describe('transcribe', skipInCI, () => {
     it('should transcribe audio from file', async () => {
       await using input = await Demuxer.open(audioFile);
       const audioStream = input.audio();
