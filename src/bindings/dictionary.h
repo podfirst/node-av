@@ -33,6 +33,7 @@ public:
 private:
   friend class FormatContext;
   friend class Stream;
+  friend class Frame;
 
   static Napi::FunctionReference constructor;
 

@@ -48,6 +48,7 @@ private:
   Napi::Value GetSideData(const Napi::CallbackInfo& info);
   Napi::Value NewSideData(const Napi::CallbackInfo& info);
   Napi::Value RemoveSideData(const Napi::CallbackInfo& info);
+  Napi::Value GetMetadata(const Napi::CallbackInfo& info);
   Napi::Value Dispose(const Napi::CallbackInfo& info);
 
   Napi::Value GetFormat(const Napi::CallbackInfo& info);

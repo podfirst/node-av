@@ -1,5 +1,6 @@
 #include "frame.h"
 #include "hardware_frames_context.h"
+#include "dictionary.h"
 
 namespace ffmpeg {
 
@@ -26,6 +27,7 @@ Napi::Object Frame::Init(Napi::Env env, Napi::Object exports) {
     InstanceMethod<&Frame::GetSideData>("getSideData"),
     InstanceMethod<&Frame::NewSideData>("newSideData"),
     InstanceMethod<&Frame::RemoveSideData>("removeSideData"),
+    InstanceMethod<&Frame::GetMetadata>("getMetadata"),
     InstanceMethod<&Frame::ApplyCropping>("applyCropping"),
     InstanceMethod<&Frame::Dispose>(Napi::Symbol::WellKnown(env, "dispose")),
 
@@ -1054,9 +1056,29 @@ Napi::Value Frame::RemoveSideData(const Napi::CallbackInfo& info) {
   }
   
   enum AVFrameSideDataType type = static_cast<AVFrameSideDataType>(info[0].As<Napi::Number>().Int32Value());
-  
+
   av_frame_remove_side_data(frame_, type);
   return env.Undefined();
+}
+
+Napi::Value Frame::GetMetadata(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+
+  if (!frame_) {
+    Napi::TypeError::New(env, "Invalid frame").ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+
+  // Create Dictionary wrapper from AVFrame metadata
+  Napi::Object obj = Dictionary::constructor.New({});
+  Dictionary* dict = Dictionary::Unwrap(obj);
+
+  // Copy frame metadata to dictionary
+  if (frame_->metadata) {
+    av_dict_copy(dict->GetDirectPtr(), frame_->metadata, 0);
+  }
+
+  return obj;
 }
 
 Napi::Value Frame::GetFlags(const Napi::CallbackInfo& info) {

@@ -1,5 +1,6 @@
 import { AV_NOPTS_VALUE, AV_TIME_BASE_Q, AVMEDIA_TYPE_AUDIO, AVMEDIA_TYPE_UNKNOWN, AVMEDIA_TYPE_VIDEO } from '../constants/constants.js';
 import { bindings } from './binding.js';
+import { FFmpegError } from './error.js';
 import { HardwareFramesContext } from './hardware-frames-context.js';
 import { Rational } from './rational.js';
 
@@ -15,8 +16,7 @@ import type {
   AVPixelFormat,
   AVSampleFormat,
 } from '../constants/constants.js';
-import { FFmpegError } from './error.js';
-
+import { Dictionary } from './dictionary.js';
 import type { NativeFrame, NativeWrapper } from './native-types.js';
 import type { AudioFrame, ChannelLayout, VideoFrame } from './types.js';
 
@@ -1326,6 +1326,46 @@ export class Frame implements Disposable, NativeWrapper<NativeFrame> {
    */
   removeSideData(type: AVFrameSideDataType): void {
     this.native.removeSideData(type);
+  }
+
+  /**
+   * Get frame metadata dictionary.
+   *
+   * Returns metadata attached to the frame by filters or demuxers.
+   * Metadata is stored as key-value pairs in a Dictionary.
+   * Useful for reading filter-generated metadata (e.g., whisper transcription).
+   *
+   * Direct mapping to AVFrame->metadata.
+   *
+   * @returns Dictionary containing frame metadata
+   *
+   * @example
+   * ```typescript
+   * // Read whisper filter metadata
+   * const metadata = frame.getMetadata();
+   * const text = metadata.get('lavfi.whisper.text');
+   * const duration = metadata.get('lavfi.whisper.duration');
+   *
+   * if (text) {
+   *   console.log(`Transcribed: ${text}`);
+   *   console.log(`Duration: ${duration}s`);
+   * }
+   * ```
+   *
+   * @example
+   * ```typescript
+   * // Read scene detection metadata
+   * const metadata = frame.getMetadata();
+   * const score = metadata.get('lavfi.scene_score');
+   * if (score) {
+   *   console.log(`Scene change score: ${score}`);
+   * }
+   * ```
+   *
+   * @see {@link Dictionary} For metadata dictionary operations
+   */
+  getMetadata(): Dictionary {
+    return Dictionary.fromNative(this.native.getMetadata());
   }
 
   /**

@@ -146,6 +146,7 @@ export interface NativeFrame extends Disposable {
   getSideData(type: AVFrameSideDataType): Buffer | null;
   newSideData(type: AVFrameSideDataType, size: number): Buffer;
   removeSideData(type: AVFrameSideDataType): void;
+  getMetadata(): NativeDictionary;
   applyCropping(flags?: number): number;
 
   [Symbol.dispose](): void;
