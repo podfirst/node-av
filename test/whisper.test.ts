@@ -4,20 +4,50 @@ import { describe, it } from 'node:test';
 import { Decoder } from '../src/api/decoder.js';
 import { Demuxer } from '../src/api/demuxer.js';
 import { WhisperTranscriber } from '../src/api/whisper.js';
-import { getInputFile, prepareTestEnvironment, skipInCI } from './index.js';
+import { getInputFile, isCI, prepareTestEnvironment } from './index.js';
 
 prepareTestEnvironment();
 
 const audioFile = getInputFile('audio-speech.mp3');
 
 describe('WhisperTranscriber', () => {
+  describe('model download', () => {
+    it('should download model if not present', async () => {
+      console.log('Downloading model test...');
+
+      // This will download the model if it doesn't exist
+      using transcriber = await WhisperTranscriber.create({
+        model: 'tiny.en',
+        modelDir: './models',
+        language: 'en',
+        useGpu: isCI() ? false : true,
+      });
+
+      assert.ok(transcriber, 'Transcriber should be created after model download');
+    });
+
+    it('should download VAD model if specified', async () => {
+      console.log('Downloading VAD model test...');
+
+      using transcriber = await WhisperTranscriber.create({
+        model: 'tiny.en',
+        vadModel: 'silero-v5.1.2',
+        modelDir: './models',
+        language: 'en',
+        useGpu: isCI() ? false : true,
+      });
+
+      assert.ok(transcriber, 'Transcriber should be created after VAD model download');
+    });
+  });
+
   describe('create', () => {
     it('should create transcriber with basic options', async () => {
       using transcriber = await WhisperTranscriber.create({
         model: 'tiny.en',
         modelDir: './models',
         language: 'en',
-        useGpu: skipInCI ? false : true,
+        useGpu: isCI() ? false : true,
       });
 
       assert.ok(transcriber, 'Transcriber should be created');
@@ -30,7 +60,7 @@ describe('WhisperTranscriber', () => {
         modelDir: './models',
         language: 'en',
         queue: 10,
-        useGpu: skipInCI ? false : true,
+        useGpu: isCI() ? false : true,
       });
 
       assert.ok(transcriber, 'Transcriber should be created');
@@ -41,7 +71,7 @@ describe('WhisperTranscriber', () => {
         model: 'tiny.en',
         modelDir: './models',
         gpuDevice: 0,
-        useGpu: skipInCI ? false : true,
+        useGpu: isCI() ? false : true,
       });
 
       assert.ok(transcriber, 'Transcriber should be created');
@@ -52,10 +82,48 @@ describe('WhisperTranscriber', () => {
         model: 'tiny.en',
         modelDir: './models',
         queue: 5,
-        useGpu: skipInCI ? false : true,
+        useGpu: isCI() ? false : true,
       });
 
       assert.ok(transcriber, 'Transcriber should be created');
+    });
+  });
+
+  describe('configuration options', () => {
+    it('should accept auto language detection', async () => {
+      using transcriber = await WhisperTranscriber.create({
+        model: 'tiny.en',
+        modelDir: './models',
+        language: 'auto',
+        useGpu: isCI() ? false : true,
+      });
+
+      assert.ok(transcriber, 'Transcriber should be created with auto language');
+    });
+
+    it('should accept different VAD parameters', async () => {
+      using transcriber = await WhisperTranscriber.create({
+        model: 'tiny.en',
+        vadModel: 'silero-v5.1.2',
+        modelDir: './models',
+        vadThreshold: 0.6,
+        vadMinSpeechDuration: 0.2,
+        vadMinSilenceDuration: 0.6,
+        useGpu: isCI() ? false : true,
+      });
+
+      assert.ok(transcriber, 'Transcriber should be created with custom VAD params');
+    });
+
+    it('should accept GPU device selection', async () => {
+      using transcriber = await WhisperTranscriber.create({
+        model: 'tiny.en',
+        modelDir: './models',
+        useGpu: isCI() ? false : true,
+        gpuDevice: 0,
+      });
+
+      assert.ok(transcriber, 'Transcriber should be created with GPU device');
     });
   });
 
@@ -70,7 +138,7 @@ describe('WhisperTranscriber', () => {
         model: 'tiny.en',
         modelDir: './models',
         language: 'en',
-        useGpu: skipInCI ? false : true,
+        useGpu: isCI() ? false : true,
       });
 
       const segments: {
@@ -114,7 +182,7 @@ describe('WhisperTranscriber', () => {
         language: 'en',
         queue: 10,
         vadThreshold: 0.5,
-        useGpu: skipInCI ? false : true,
+        useGpu: isCI() ? false : true,
       });
 
       const segments: {
@@ -154,7 +222,7 @@ describe('WhisperTranscriber', () => {
         model: 'tiny.en',
         modelDir: './models',
         language: 'en',
-        useGpu: skipInCI ? false : true,
+        useGpu: isCI() ? false : true,
       });
 
       const segments: any[] = [];
@@ -181,7 +249,7 @@ describe('WhisperTranscriber', () => {
         model: 'tiny.en',
         modelDir: './models',
         language: 'en',
-        useGpu: skipInCI ? false : true,
+        useGpu: isCI() ? false : true,
       });
 
       const segments: {
@@ -221,7 +289,7 @@ describe('WhisperTranscriber', () => {
         model: 'tiny.en',
         modelDir: './models',
         language: 'en',
-        useGpu: skipInCI ? false : true,
+        useGpu: isCI() ? false : true,
       });
 
       const inputGenerator = input.packets(audioStream.index);
@@ -249,7 +317,7 @@ describe('WhisperTranscriber', () => {
         model: 'tiny.en',
         modelDir: './models',
         language: 'en',
-        useGpu: skipInCI ? false : true,
+        useGpu: isCI() ? false : true,
       });
 
       transcriber.close();
@@ -264,76 +332,12 @@ describe('WhisperTranscriber', () => {
           model: 'tiny.en',
           modelDir: './models',
           language: 'en',
-          useGpu: skipInCI ? false : true,
+          useGpu: isCI() ? false : true,
         });
 
         assert.ok(transcriber, 'Transcriber should be created');
       }
       // Transcriber should be automatically closed
-    });
-  });
-
-  describe('configuration options', () => {
-    it('should accept auto language detection', async () => {
-      using transcriber = await WhisperTranscriber.create({
-        model: 'tiny.en',
-        modelDir: './models',
-        language: 'auto',
-        useGpu: skipInCI ? false : true,
-      });
-
-      assert.ok(transcriber, 'Transcriber should be created with auto language');
-    });
-
-    it('should accept different VAD parameters', async () => {
-      using transcriber = await WhisperTranscriber.create({
-        model: 'tiny.en',
-        vadModel: 'silero-v5.1.2',
-        modelDir: './models',
-        vadThreshold: 0.6,
-        vadMinSpeechDuration: 0.2,
-        vadMinSilenceDuration: 0.6,
-        useGpu: skipInCI ? false : true,
-      });
-
-      assert.ok(transcriber, 'Transcriber should be created with custom VAD params');
-    });
-
-    it('should accept GPU device selection', async () => {
-      using transcriber = await WhisperTranscriber.create({
-        model: 'tiny.en',
-        modelDir: './models',
-        useGpu: skipInCI ? false : true,
-        gpuDevice: 0,
-      });
-
-      assert.ok(transcriber, 'Transcriber should be created with GPU device');
-    });
-  });
-
-  describe('model download', () => {
-    it('should download model if not present', async () => {
-      // This will download the model if it doesn't exist
-      using transcriber = await WhisperTranscriber.create({
-        model: 'tiny.en',
-        modelDir: './models',
-        language: 'en',
-        useGpu: skipInCI ? false : true,
-      });
-
-      assert.ok(transcriber, 'Transcriber should be created after model download');
-    });
-
-    it('should download VAD model if specified', async () => {
-      using transcriber = await WhisperTranscriber.create({
-        model: 'tiny.en',
-        vadModel: 'silero-v5.1.2',
-        modelDir: './models',
-        language: 'en',
-        useGpu: skipInCI ? false : true,
-      });
-
-      assert.ok(transcriber, 'Transcriber should be created after VAD model download');
     });
   });
 });
