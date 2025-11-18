@@ -58,20 +58,7 @@ export function getArchitecture(): ARCH {
   const sysPlatform = getPlatform();
   let sysArch = arch() as ARCH;
 
-  if (sysPlatform === 'win32') {
-    try {
-      const output = execSync('wmic cpu get architecture', { encoding: 'utf8' });
-      const architecture = output.trim().split('\n')[1].trim();
-
-      if (architecture === '5') {
-        sysArch = 'arm6';
-      } else if (architecture === '7') {
-        sysArch = 'arm7';
-      }
-    } catch {
-      //
-    }
-  } else if (sysPlatform === 'linux') {
+  if (sysPlatform === 'linux') {
     try {
       const output = execSync('cat /proc/cpuinfo | grep "model name"', { encoding: 'utf8' });
       const modelName = output.trim().split(':')[1].trim();
