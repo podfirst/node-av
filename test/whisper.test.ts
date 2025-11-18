@@ -4,11 +4,12 @@ import { describe, it } from 'node:test';
 import { Decoder } from '../src/api/decoder.js';
 import { Demuxer } from '../src/api/demuxer.js';
 import { WhisperTranscriber } from '../src/api/whisper.js';
+import { AV_SAMPLE_FMT_S16 } from '../src/index.js';
 import { getInputFile, isCI, prepareTestEnvironment, skipInCI } from './index.js';
 
 prepareTestEnvironment();
 
-const audioFile = getInputFile('audio-speech.mp3');
+const audioFile = getInputFile('audio-speech.wav');
 
 describe('WhisperTranscriber', () => {
   describe('model download', () => {
@@ -129,7 +130,14 @@ describe('WhisperTranscriber', () => {
 
   describe('transcribe', skipInCI, () => {
     it('should transcribe audio from file', async () => {
-      await using input = await Demuxer.open(audioFile);
+      await using input = await Demuxer.open({
+        type: 'audio',
+        input: audioFile,
+        sampleRate: 48000,
+        sampleFormat: AV_SAMPLE_FMT_S16,
+        channels: 1,
+      });
+
       const audioStream = input.audio();
       assert.ok(audioStream, 'Audio stream should exist');
 
@@ -170,7 +178,14 @@ describe('WhisperTranscriber', () => {
     });
 
     it('should transcribe with VAD enabled', async () => {
-      await using input = await Demuxer.open(audioFile);
+      await using input = await Demuxer.open({
+        type: 'audio',
+        input: audioFile,
+        sampleRate: 48000,
+        sampleFormat: AV_SAMPLE_FMT_S16,
+        channels: 1,
+      });
+
       const audioStream = input.audio();
       assert.ok(audioStream, 'Audio stream should exist');
 
@@ -240,7 +255,14 @@ describe('WhisperTranscriber', () => {
     });
 
     it('should produce segments with sequential timestamps', async () => {
-      await using input = await Demuxer.open(audioFile);
+      await using input = await Demuxer.open({
+        type: 'audio',
+        input: audioFile,
+        sampleRate: 48000,
+        sampleFormat: AV_SAMPLE_FMT_S16,
+        channels: 1,
+      });
+
       const audioStream = input.audio();
       assert.ok(audioStream, 'Audio stream should exist');
 
@@ -280,7 +302,14 @@ describe('WhisperTranscriber', () => {
     });
 
     it('should produce non-empty text segments', async () => {
-      await using input = await Demuxer.open(audioFile);
+      await using input = await Demuxer.open({
+        type: 'audio',
+        input: audioFile,
+        sampleRate: 48000,
+        sampleFormat: AV_SAMPLE_FMT_S16,
+        channels: 1,
+      });
+
       const audioStream = input.audio();
       assert.ok(audioStream, 'Audio stream should exist');
 
