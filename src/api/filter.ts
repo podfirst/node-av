@@ -1727,11 +1727,23 @@ export class FilterAPI implements Disposable {
       );
     }
 
-    // Reinit is allowed - reinitialize filtergraph
-
     // Close current graph and reinitialize
     this.graph.free();
+
+    // Create new graph
     this.graph = new FilterGraph();
+    this.graph.alloc();
+
+    // Configure threading
+    if (this.options.threads !== undefined) {
+      this.graph.nbThreads = this.options.threads;
+    }
+
+    // Configure scaler options
+    if (this.options.scaleSwsOpts) {
+      this.graph.scaleSwsOpts = this.options.scaleSwsOpts;
+    }
+
     this.buffersrcCtx = null;
     this.buffersinkCtx = null;
     this.initialized = false;
