@@ -79,3 +79,4 @@ ffmpeg_examples
 /test_internal
 /analysis
 /ffbuild
+/*.bin
