@@ -46,7 +46,7 @@ export default [
   }),
   {
     ...jsdoc.configs['flat/recommended-typescript'],
-    files: ['src/lib/*.ts', 'src/api/*.ts'],
+    files: ['src/ffmpeg/*.ts', 'src/lib/*.ts', 'src/api/*.ts', 'src/api/utilities/*.ts'],
     rules: {
       ...jsdoc.configs['flat/recommended-typescript'].rules,
       'jsdoc/tag-lines': [
