@@ -29,6 +29,7 @@ export class MediaTypeUtils {
    * Direct mapping to av_get_media_type_string()
    *
    * @param type - Media type enum value
+   *
    * @returns String representation, or null for invalid type
    *
    * @example

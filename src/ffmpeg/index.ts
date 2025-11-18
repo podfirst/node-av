@@ -19,7 +19,7 @@ const ffmpegExtractedFilePath = resolve(ffmpegBinaryPath, ffmpegFile);
  * during package installation. The binary is platform-specific and matches
  * the FFmpeg version used by the native bindings.
  *
- * @returns {string} Absolute path to the FFmpeg binary
+ * @returns Absolute path to the FFmpeg binary
  *
  * @example
  * ```typescript
@@ -63,7 +63,7 @@ export function ffmpegPath(): string {
  * This is useful for checking if the installation was successful
  * before attempting to use the binary.
  *
- * @returns {boolean} `true` if FFmpeg binary exists, `false` otherwise
+ * @returns `true` if FFmpeg binary exists, `false` otherwise
  *
  * @example
  * ```typescript
@@ -106,7 +106,7 @@ export function isFfmpegAvailable(): boolean {
 /**
  * Get the FFmpeg version used by the binary.
  *
- * @returns {string} FFmpeg version string (e.g. "8.0")
+ * @returns FFmpeg version string (e.g. "8.0")
  *
  * @example
  * ```typescript

@@ -48,10 +48,15 @@ export class ImageUtils {
    * Direct mapping to av_image_alloc()
    *
    * @param width - Image width in pixels
+   *
    * @param height - Image height in pixels
+   *
    * @param pixFmt - Pixel format
+   *
    * @param align - Buffer alignment (typically 1, 16, or 32)
+   *
    * @returns Allocation result with buffer, size, and line sizes
+   *
    * @throws {FFmpegError} On allocation failure
    *
    * @example
@@ -82,11 +87,26 @@ export class ImageUtils {
    * This is an alias for compatibility.
    *
    * @param width - Image width in pixels
+   *
    * @param height - Image height in pixels
+   *
    * @param pixFmt - Pixel format
+   *
    * @param align - Buffer alignment
+   *
    * @returns Allocation result
+   *
    * @throws {FFmpegError} On allocation failure
+   *
+   * @example
+   * ```typescript
+   * import { ImageUtils } from 'node-av';
+   * import { AV_PIX_FMT_YUV420P } from 'node-av/constants';
+   *
+   * // Allocate image buffer using allocArrays
+   * const image = ImageUtils.allocArrays(1920, 1080, AV_PIX_FMT_YUV420P, 32);
+   * console.log(`Allocated ${image.size} bytes`);
+   * ```
    */
   static allocArrays(width: number, height: number, pixFmt: AVPixelFormat, align: number): ImageAllocation {
     return ImageUtils.alloc(width, height, pixFmt, align);
@@ -99,11 +119,17 @@ export class ImageUtils {
    * Direct mapping to av_image_copy2()
    *
    * @param dstData - Destination data buffers (one per plane)
+   *
    * @param dstLinesizes - Destination line sizes
+   *
    * @param srcData - Source data buffers (one per plane)
+   *
    * @param srcLinesizes - Source line sizes
+   *
    * @param pixFmt - Pixel format
+   *
    * @param width - Image width
+   *
    * @param height - Image height
    *
    * @example
@@ -130,9 +156,13 @@ export class ImageUtils {
    * Direct mapping to av_image_get_buffer_size()
    *
    * @param pixFmt - Pixel format
+   *
    * @param width - Image width
+   *
    * @param height - Image height
+   *
    * @param align - Buffer alignment
+   *
    * @returns Required buffer size in bytes
    *
    * @example
@@ -160,13 +190,21 @@ export class ImageUtils {
    * Direct mapping to av_image_copy_to_buffer()
    *
    * @param dst - Destination buffer
+   *
    * @param dstSize - Destination buffer size
+   *
    * @param srcData - Source data buffers (one per plane), or null
+   *
    * @param srcLinesize - Source line sizes, or null
+   *
    * @param pixFmt - Pixel format
+   *
    * @param width - Image width
+   *
    * @param height - Image height
+   *
    * @param align - Buffer alignment
+   *
    * @returns Bytes written, or negative error code
    *
    * @example

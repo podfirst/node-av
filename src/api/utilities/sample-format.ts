@@ -35,6 +35,7 @@ export class SampleFormatUtils {
    * Direct mapping to av_get_bytes_per_sample()
    *
    * @param format - Audio sample format
+   *
    * @returns Number of bytes per sample, or 0 for invalid format
    *
    * @example
@@ -57,6 +58,7 @@ export class SampleFormatUtils {
    * Direct mapping to av_get_sample_fmt_name()
    *
    * @param format - Audio sample format
+   *
    * @returns Format name string, or null for invalid format
    *
    * @example
@@ -80,6 +82,7 @@ export class SampleFormatUtils {
    * Direct mapping to av_get_packed_sample_fmt()
    *
    * @param format - Audio sample format
+   *
    * @returns Packed sample format
    *
    * @example
@@ -103,6 +106,7 @@ export class SampleFormatUtils {
    * Direct mapping to av_get_planar_sample_fmt()
    *
    * @param format - Audio sample format
+   *
    * @returns Planar sample format
    *
    * @example
@@ -126,6 +130,7 @@ export class SampleFormatUtils {
    * Direct mapping to av_sample_fmt_is_planar()
    *
    * @param format - Audio sample format
+   *
    * @returns True if format is planar, false if packed/interleaved
    *
    * @example

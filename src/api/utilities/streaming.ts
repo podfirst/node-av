@@ -37,7 +37,7 @@ export class StreamingUtils {
    * configured demuxer/muxer. The inputs/outputs should be configured with RTP
    * format and have their streams set up before calling this method.
    *
-   * @param inouts - Array of Demuxer or Muxer objects configured for RTP
+   * @param contexts - Alternatively, array of FormatContext objects
    *
    * @returns SDP string if successful, null if failed
    *
@@ -73,6 +73,7 @@ export class StreamingUtils {
    * This ensures correct codec names, clock rates, and formatting for all codecs.
    *
    * @param configs - Array of stream configurations
+   *
    * @param sessionName - Optional session name for the SDP (default: 'RTP Stream')
    *
    * @returns SDP string with proper rtpmap and optional crypto attributes
@@ -228,6 +229,7 @@ export class StreamingUtils {
    * Validate if an output is configured for RTP streaming
    *
    * @param output - Muxer to check
+   *
    * @returns true if configured for RTP
    *
    * @example
@@ -255,8 +257,19 @@ export class StreamingUtils {
    * Helper to construct RTP URLs with proper formatting.
    *
    * @param host - IP address or hostname
+   *
    * @param port - Port number
+   *
    * @param options - Additional options
+   *
+   * @param options.ttl - Time-to-live for multicast
+   *
+   * @param options.localrtpport - Local RTP port
+   *
+   * @param options.localrtcpport - Local RTCP port
+   *
+   * @param options.pkt_size - Packet size
+   *
    * @returns Formatted RTP URL
    *
    * @example
@@ -304,6 +317,24 @@ export class StreamingUtils {
    * @param sdp - SDP content string
    *
    * @returns Array of port numbers (one per stream)
+   *
+   * @example
+   * ```typescript
+   * import { StreamingUtils } from 'node-av/api';
+   *
+   * const sdp = `v=0
+   * o=- 0 0 IN IP4 127.0.0.1
+   * s=Test Stream
+   * c=IN IP4 127.0.0.1
+   * t=0 0
+   * m=audio 5004 RTP/AVP 111
+   * a=rtpmap:111 OPUS/48000/2
+   * m=video 5006 RTP/AVP 96
+   * a=rtpmap:96 H264/90000`;
+   *
+   * const ports = StreamingUtils.extractPortsFromSDP(sdp);
+   * console.log(ports); // [5004, 5006]
+   * ```
    */
   static extractPortsFromSDP(sdp: string): number[] {
     const ports: number[] = [];

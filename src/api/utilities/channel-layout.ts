@@ -45,6 +45,7 @@ export class ChannelLayoutUtils {
    * Direct mapping to av_channel_layout_describe()
    *
    * @param channelLayout - Channel layout to describe
+   *
    * @returns String description, or null on error
    *
    * @example

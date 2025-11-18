@@ -3,6 +3,16 @@ import { arch, platform, type } from 'node:os';
 
 export type ARCH = 'arm' | 'arm6' | 'arm7' | 'arm64' | 'ia32' | 'loong64' | 'mips' | 'mipsel' | 'ppc' | 'ppc64' | 'riscv64' | 's390' | 's390x' | 'x64';
 
+/**
+ * Get the current platform.
+ *
+ * If the environment variable `npm_config_os` is set, its value will be used
+ * instead. This is useful for cross-compilation scenarios.
+ *
+ * @returns The current platform
+ *
+ * @internal
+ */
 export function getPlatform(): NodeJS.Platform {
   if (process.env.npm_config_os) {
     if (!process.env.npm_config_cpu) {
@@ -15,10 +25,27 @@ export function getPlatform(): NodeJS.Platform {
   return platform();
 }
 
+/**
+ * Get the current platform type.
+ *
+ * @returns The current platform type
+ *
+ * @internal
+ */
 export function getPlatformType(): string {
   return type();
 }
 
+/**
+ * Get the current architecture.
+ *
+ * If the environment variable `npm_config_cpu` is set, its value will be used
+ * instead. This is useful for cross-compilation scenarios.
+ *
+ * @returns The current architecture
+ *
+ * @internal
+ */
 export function getArchitecture(): ARCH {
   if (process.env.npm_config_cpu) {
     if (!process.env.npm_config_os) {

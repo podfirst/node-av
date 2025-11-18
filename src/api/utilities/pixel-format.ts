@@ -33,6 +33,7 @@ export class PixelFormatUtils {
    * Direct mapping to av_get_pix_fmt_name()
    *
    * @param format - Video pixel format
+   *
    * @returns Format name string, or null for invalid format
    *
    * @example
@@ -55,6 +56,7 @@ export class PixelFormatUtils {
    * Direct mapping to av_get_pix_fmt()
    *
    * @param name - Pixel format name string
+   *
    * @returns Pixel format enum value, or AV_PIX_FMT_NONE for unknown formats
    *
    * @example
@@ -81,6 +83,7 @@ export class PixelFormatUtils {
    * Direct mapping to av_pix_fmt_desc_get() and checking for AV_PIX_FMT_FLAG_HWACCEL
    *
    * @param format - Video pixel format
+   *
    * @returns True if format is hardware accelerated
    *
    * @example

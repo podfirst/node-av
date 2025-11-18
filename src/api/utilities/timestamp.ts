@@ -41,6 +41,7 @@ export class TimestampUtils {
    * Direct mapping to av_ts2str()
    *
    * @param ts - Timestamp value (bigint or number), or null
+   *
    * @returns String representation
    *
    * @example
@@ -64,7 +65,9 @@ export class TimestampUtils {
    * Direct mapping to av_ts2timestr()
    *
    * @param ts - Timestamp value
+   *
    * @param timeBase - Time base for conversion
+   *
    * @returns Time string in seconds with decimal places
    *
    * @example
@@ -89,9 +92,13 @@ export class TimestampUtils {
    * Direct mapping to av_compare_ts()
    *
    * @param tsA - First timestamp
+   *
    * @param tbA - Time base of first timestamp
+   *
    * @param tsB - Second timestamp
+   *
    * @param tbB - Time base of second timestamp
+   *
    * @returns -1 if tsA < tsB, 0 if equal, 1 if tsA > tsB
    *
    * @example
@@ -121,8 +128,11 @@ export class TimestampUtils {
    * Direct mapping to av_rescale_q()
    *
    * @param a - Timestamp to rescale
+   *
    * @param bq - Source time base
+   *
    * @param cq - Destination time base
+   *
    * @returns Rescaled timestamp
    *
    * @example
@@ -150,9 +160,13 @@ export class TimestampUtils {
    * Direct mapping to av_rescale_rnd()
    *
    * @param a - Value to rescale
+   *
    * @param b - Multiplier
+   *
    * @param c - Divisor
+   *
    * @param rnd - Rounding mode
+   *
    * @returns Rescaled value: a * b / c
    *
    * @example

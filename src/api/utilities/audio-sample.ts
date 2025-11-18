@@ -60,10 +60,15 @@ export class AudioSampleUtils {
    * Direct mapping to av_samples_alloc()
    *
    * @param nbChannels - Number of audio channels
+   *
    * @param nbSamples - Number of samples per channel
+   *
    * @param sampleFmt - Audio sample format
+   *
    * @param align - Buffer alignment (0 for default)
+   *
    * @returns Allocation result with buffers and size information
+   *
    * @throws {FFmpegError} On allocation failure
    *
    * @example
@@ -96,10 +101,15 @@ export class AudioSampleUtils {
    * Direct mapping to av_samples_get_buffer_size()
    *
    * @param nbChannels - Number of audio channels
+   *
    * @param nbSamples - Number of samples per channel
+   *
    * @param sampleFmt - Audio sample format
+   *
    * @param align - Buffer alignment (0 for default)
+   *
    * @returns Buffer size and line size information
+   *
    * @throws {FFmpegError} On invalid parameters
    *
    * @example
