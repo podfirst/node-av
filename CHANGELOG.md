@@ -62,6 +62,32 @@ for await (using frame of complex.frames('out', {
 }
 ```
 
+- **WhisperTranscriber**: High-level API for automatic speech recognition using OpenAI's Whisper model
+
+```typescript
+import { Demuxer, Decoder, WhisperTranscriber } from 'node-av/api';
+
+// Create transcriber (downloads model automatically if needed)
+using transcriber = await WhisperTranscriber.create({
+  model: 'base.en',
+  modelDir: './models',
+  language: 'en',
+  useGpu: true,
+});
+
+// Transcribe audio file
+await using input = await Demuxer.open('podcast.mp3');
+using decoder = await Decoder.create(input.audio());
+
+for await (const segment of transcriber.transcribe(decoder.frames(input.packets()))) {
+  const timestamp = `[${(segment.start / 1000).toFixed(1)}s - ${(segment.end / 1000).toFixed(1)}s]`;
+  console.log(`${timestamp}: ${segment.text}`);
+
+  // [12.3s - 15.6s]: Welcome to the podcast episode on Node-AV...
+  // ...
+}
+```
+
 ### Fixed
 
 **EOF Handling & Stability Improvements**: Comprehensive improvements to end-of-file handling across the entire API stack:
