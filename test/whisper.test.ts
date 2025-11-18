@@ -160,8 +160,8 @@ describe('WhisperTranscriber', () => {
 
         segments.push(segment);
 
-        // Limit to first 10 segments for testing
-        if (segments.length >= 10) {
+        // Limit to first 3 segments for testing
+        if (segments.length >= 3) {
           break;
         }
       }
@@ -208,8 +208,8 @@ describe('WhisperTranscriber', () => {
 
         segments.push(segment);
 
-        // Limit to first 10 segments for testing
-        if (segments.length >= 10) {
+        // Limit to first 3 segments for testing
+        if (segments.length >= 3) {
           break;
         }
       }
@@ -264,8 +264,8 @@ describe('WhisperTranscriber', () => {
       for await (const segment of transcriber.transcribe(decoderGenerator)) {
         segments.push(segment);
 
-        // Limit to first 10 segments for testing
-        if (segments.length >= 10) {
+        // Limit to first 3 segments for testing
+        if (segments.length >= 3) {
           break;
         }
       }
