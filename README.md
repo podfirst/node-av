@@ -450,6 +450,8 @@ NodeAV provides direct bindings to FFmpeg's C APIs, which work with raw memory p
 | `api-stream-input` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-stream-input.ts) |
 | `api-sw-decode-hw-encode` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-sw-decode-hw-encode.ts) |
 | `api-sw-transcode` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-sw-transcode.ts) |
+| `api-whisper-subtitles` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-whisper-subtitles.ts) |
+| `api-whisper-transcribe` | | | [✓](https://github.com/seydx/node-av/tree/main/examples/api-whisper-transcribe.ts) |
 | `frame-utils` | | [✓](https://github.com/seydx/node-av/tree/main/examples/frame-utils.ts) | |
 | `avio-read-callback` | [✓](https://github.com/FFmpeg/FFmpeg/tree/master/doc/examples/avio_read_callback.c) | [✓](https://github.com/seydx/node-av/tree/main/examples/avio-read-callback.ts) | |
 | `decode-audio` | [✓](https://github.com/FFmpeg/FFmpeg/tree/master/doc/examples/decode_audio.c) | [✓](https://github.com/seydx/node-av/tree/main/examples/decode-audio.ts) | |
