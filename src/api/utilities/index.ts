@@ -22,6 +22,9 @@ export { TimestampUtils } from './timestamp.js';
 // Streaming
 export { StreamingUtils } from './streaming.js';
 
+// Whisper Model Downloader
+export { WhisperDownloader } from './whisper-model.js';
+
 // AsyncQueue
 export { AsyncQueue } from './async-queue.js';
 

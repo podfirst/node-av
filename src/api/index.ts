@@ -39,6 +39,9 @@ export { RTPStream, type RTPStreamOptions } from './rtp-stream.js';
 // fMP4 Stream
 export { FMP4_CODECS, FMP4Stream, type FMP4Data, type FMP4StreamOptions, type MP4Box } from './fmp4-stream.js';
 
+// Whisper Transcriber
+export { WhisperTranscriber, type WhisperSegment, type WhisperTranscriberOptions } from './whisper.js';
+
 // Utilities
 export * from './utilities/index.js';
 export * from './utils.js';

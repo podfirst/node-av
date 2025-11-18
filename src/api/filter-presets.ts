@@ -1856,6 +1856,120 @@ export class FilterPreset {
   }
 
   /**
+   * Adds a whisper filter for audio transcription using whisper.cpp.
+   * Transcribes audio and adds metadata to frames (lavfi.whisper.text, lavfi.whisper.duration).
+   *
+   * @param options - Whisper transcription options
+   *
+   * @param options.model - Path to whisper.cpp model file
+   *
+   * @param options.language - Language for transcription (default: 'auto')
+   *
+   * @param options.queue - Audio queue size in seconds (default: 3)
+   *
+   * @param options.useGpu - Use GPU for processing (default: true)
+   *
+   * @param options.gpuDevice - GPU device to use (default: 0)
+   *
+   * @param options.destination - Output destination for transcripts
+   *
+   * @param options.format - Output format: text|srt|json (default: 'text')
+   *
+   * @param options.vadModel - Path to VAD model file (optional)
+   *
+   * @param options.vadThreshold - VAD threshold 0.0-1.0 (default: 0.5)
+   *
+   * @param options.vadMinSpeechDuration - Minimum speech duration for VAD in seconds (default: 0.1)
+   *
+   * @param options.vadMinSilenceDuration - Minimum silence duration for VAD in seconds (default: 0.5)
+   *
+   * @returns This instance for chaining
+   *
+   * @example
+   * ```typescript
+   * // Basic transcription
+   * chain.whisper({
+   *   model: '/path/to/ggml-base.bin'
+   * });
+   *
+   * // With language and output
+   * chain.whisper({
+   *   model: '/path/to/ggml-base.bin',
+   *   language: 'en',
+   *   destination: 'output.srt',
+   *   format: 'srt'
+   * });
+   *
+   * // With VAD model
+   * chain.whisper({
+   *   model: '/path/to/ggml-base.bin',
+   *   vadModel: '/path/to/ggml-silero-v5.1.2.bin',
+   *   vadThreshold: 0.5
+   * });
+   * ```
+   *
+   * @see {@link https://ffmpeg.org/ffmpeg-filters.html#whisper | FFmpeg whisper filter}
+   */
+  whisper(options: {
+    model: string;
+    language?: string;
+    queue?: number;
+    useGpu?: boolean;
+    gpuDevice?: number;
+    destination?: string;
+    format?: 'text' | 'srt' | 'json';
+    vadModel?: string;
+    vadThreshold?: number;
+    vadMinSpeechDuration?: number;
+    vadMinSilenceDuration?: number;
+  }): FilterPreset {
+    const params: string[] = [`model=${options.model}`];
+
+    if (options.language !== undefined) {
+      params.push(`language=${options.language}`);
+    }
+
+    if (options.queue !== undefined) {
+      params.push(`queue=${options.queue}`);
+    }
+
+    if (options.useGpu !== undefined) {
+      params.push(`use_gpu=${options.useGpu ? 1 : 0}`);
+    }
+
+    if (options.gpuDevice !== undefined) {
+      params.push(`gpu_device=${options.gpuDevice}`);
+    }
+
+    if (options.destination !== undefined) {
+      params.push(`destination=${options.destination}`);
+    }
+
+    if (options.format !== undefined) {
+      params.push(`format=${options.format}`);
+    }
+
+    if (options.vadModel !== undefined) {
+      params.push(`vad_model=${options.vadModel}`);
+    }
+
+    if (options.vadThreshold !== undefined) {
+      params.push(`vad_threshold=${options.vadThreshold}`);
+    }
+
+    if (options.vadMinSpeechDuration !== undefined) {
+      params.push(`vad_min_speech_duration=${options.vadMinSpeechDuration}`);
+    }
+
+    if (options.vadMinSilenceDuration !== undefined) {
+      params.push(`vad_min_silence_duration=${options.vadMinSilenceDuration}`);
+    }
+
+    this.add(`whisper=${params.join(':')}`);
+    return this;
+  }
+
+  /**
    * Adds a hwupload filter to upload frames to hardware.
    * Only applied if hardware acceleration is configured.
    *
