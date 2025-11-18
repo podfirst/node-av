@@ -1923,7 +1923,7 @@ export class FilterPreset {
     vadMinSpeechDuration?: number;
     vadMinSilenceDuration?: number;
   }): FilterPreset {
-    const params: string[] = [`model=${options.model}`];
+    const params: string[] = [`model='${options.model}'`];
 
     if (options.language !== undefined) {
       params.push(`language=${options.language}`);
@@ -1942,7 +1942,7 @@ export class FilterPreset {
     }
 
     if (options.destination !== undefined) {
-      params.push(`destination=${options.destination}`);
+      params.push(`destination='${options.destination}'`);
     }
 
     if (options.format !== undefined) {
@@ -1950,7 +1950,7 @@ export class FilterPreset {
     }
 
     if (options.vadModel !== undefined) {
-      params.push(`vad_model=${options.vadModel}`);
+      params.push(`vad_model='${options.vadModel}'`);
     }
 
     if (options.vadThreshold !== undefined) {
