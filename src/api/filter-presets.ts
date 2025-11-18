@@ -1925,8 +1925,8 @@ export class FilterPreset {
   }): FilterPreset {
     // Normalize path for FFmpeg filter syntax:
     // 1. Convert backslashes to forward slashes (Windows compatibility)
-    // 2. Escape colons (special character in filter option syntax)
-    const normalizedModel = options.model.replace(/\\/g, '/').replace(/:/g, '\\:');
+    // 2. Escape colons with double backslash (for multi-level parsing: JS → C++ → FFmpeg)
+    const normalizedModel = options.model.replace(/\\/g, '/').replace(/:/g, '\\\\:');
     const params: string[] = [`model=${normalizedModel}`];
 
     if (options.language !== undefined) {
@@ -1946,7 +1946,7 @@ export class FilterPreset {
     }
 
     if (options.destination !== undefined) {
-      const normalizedDest = options.destination.replace(/\\/g, '/').replace(/:/g, '\\:');
+      const normalizedDest = options.destination.replace(/\\/g, '/').replace(/:/g, '\\\\:');
       params.push(`destination=${normalizedDest}`);
     }
 
@@ -1955,7 +1955,7 @@ export class FilterPreset {
     }
 
     if (options.vadModel !== undefined) {
-      const normalizedVadModel = options.vadModel.replace(/\\/g, '/').replace(/:/g, '\\:');
+      const normalizedVadModel = options.vadModel.replace(/\\/g, '/').replace(/:/g, '\\\\:');
       params.push(`vad_model=${normalizedVadModel}`);
     }
 
