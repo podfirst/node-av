@@ -2,7 +2,6 @@ import { FilterPreset } from './filter-presets.js';
 import { FilterAPI } from './filter.js';
 import { WhisperDownloader } from './utilities/whisper-model.js';
 
-import type { FilterGraph } from '../lib/filter-graph.js';
 import type { Frame } from '../lib/frame.js';
 import type { WhisperModelName, WhisperVADModelName } from './utilities/whisper-model.js';
 
@@ -208,7 +207,6 @@ export interface WhisperTranscriberOptions {
  */
 export class WhisperTranscriber implements Disposable {
   private options: Required<WhisperTranscriberOptions>;
-  private filterGraph: FilterGraph | null = null;
   private isClosed = false;
 
   /**
@@ -335,10 +333,6 @@ export class WhisperTranscriber implements Disposable {
    * ```
    */
   async *transcribe(frames: AsyncIterable<Frame | null> | Frame | null): AsyncGenerator<WhisperSegment, void, unknown> {
-    // Build filter chain with whisper filter
-    // Filter adds metadata tags to frames:
-    // - lavfi.whisper.text: transcribed text
-    // - lavfi.whisper.duration: duration in seconds
     const chain = FilterPreset.chain()
       .whisper({
         model: this.options.model,
@@ -354,7 +348,10 @@ export class WhisperTranscriber implements Disposable {
       .build();
 
     // Create filter API
-    using filter = FilterAPI.create(chain);
+    using filter = FilterAPI.create(chain, {
+      allowReinit: true,
+      dropOnChange: false,
+    });
 
     // Track cumulative time for start/end timestamps
     let cumulativeTime = 0; // in milliseconds
@@ -362,7 +359,9 @@ export class WhisperTranscriber implements Disposable {
 
     // Decode and process frames through filter
     for await (using frame of filterGenerator) {
-      if (this.isClosed) break;
+      if (this.isClosed) {
+        break;
+      }
 
       if (!frame?.isAudio()) {
         continue;
@@ -416,13 +415,11 @@ export class WhisperTranscriber implements Disposable {
    * ```
    */
   close(): void {
-    if (this.isClosed) return;
-    this.isClosed = true;
-
-    if (this.filterGraph) {
-      this.filterGraph.free();
-      this.filterGraph = null;
+    if (this.isClosed) {
+      return;
     }
+
+    this.isClosed = true;
   }
 
   /**
