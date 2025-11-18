@@ -1923,7 +1923,9 @@ export class FilterPreset {
     vadMinSpeechDuration?: number;
     vadMinSilenceDuration?: number;
   }): FilterPreset {
-    const params: string[] = [`model='${options.model}'`];
+    // Normalize path for FFmpeg: convert backslashes to forward slashes (Windows compatibility)
+    const normalizedModel = options.model.replace(/\\/g, '/');
+    const params: string[] = [`model='${normalizedModel}'`];
 
     if (options.language !== undefined) {
       params.push(`language=${options.language}`);
@@ -1942,7 +1944,8 @@ export class FilterPreset {
     }
 
     if (options.destination !== undefined) {
-      params.push(`destination='${options.destination}'`);
+      const normalizedDest = options.destination.replace(/\\/g, '/');
+      params.push(`destination='${normalizedDest}'`);
     }
 
     if (options.format !== undefined) {
@@ -1950,7 +1953,8 @@ export class FilterPreset {
     }
 
     if (options.vadModel !== undefined) {
-      params.push(`vad_model='${options.vadModel}'`);
+      const normalizedVadModel = options.vadModel.replace(/\\/g, '/');
+      params.push(`vad_model='${normalizedVadModel}'`);
     }
 
     if (options.vadThreshold !== undefined) {
