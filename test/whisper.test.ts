@@ -59,7 +59,7 @@ describe('WhisperTranscriber', () => {
         vadModel: 'silero-v5.1.2',
         modelDir: './models',
         language: 'en',
-        queue: 10,
+        queue: 3,
         useGpu: isCI() ? false : true,
       });
 
@@ -180,7 +180,7 @@ describe('WhisperTranscriber', () => {
         vadModel: 'silero-v5.1.2',
         modelDir: './models',
         language: 'en',
-        queue: 10,
+        queue: 3,
         vadThreshold: 0.5,
         useGpu: isCI() ? false : true,
       });
