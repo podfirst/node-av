@@ -80,3 +80,4 @@ ffmpeg_examples
 /analysis
 /ffbuild
 /*.bin
+/models
