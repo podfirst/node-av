@@ -1923,9 +1923,11 @@ export class FilterPreset {
     vadMinSpeechDuration?: number;
     vadMinSilenceDuration?: number;
   }): FilterPreset {
-    // Normalize path for FFmpeg: convert backslashes to forward slashes (Windows compatibility)
-    const normalizedModel = options.model.replace(/\\/g, '/');
-    const params: string[] = [`model='${normalizedModel}'`];
+    // Normalize path for FFmpeg filter syntax:
+    // 1. Convert backslashes to forward slashes (Windows compatibility)
+    // 2. Escape colons (special character in filter option syntax)
+    const normalizedModel = options.model.replace(/\\/g, '/').replace(/:/g, '\\:');
+    const params: string[] = [`model=${normalizedModel}`];
 
     if (options.language !== undefined) {
       params.push(`language=${options.language}`);
@@ -1944,8 +1946,8 @@ export class FilterPreset {
     }
 
     if (options.destination !== undefined) {
-      const normalizedDest = options.destination.replace(/\\/g, '/');
-      params.push(`destination='${normalizedDest}'`);
+      const normalizedDest = options.destination.replace(/\\/g, '/').replace(/:/g, '\\:');
+      params.push(`destination=${normalizedDest}`);
     }
 
     if (options.format !== undefined) {
@@ -1953,8 +1955,8 @@ export class FilterPreset {
     }
 
     if (options.vadModel !== undefined) {
-      const normalizedVadModel = options.vadModel.replace(/\\/g, '/');
-      params.push(`vad_model='${normalizedVadModel}'`);
+      const normalizedVadModel = options.vadModel.replace(/\\/g, '/').replace(/:/g, '\\:');
+      params.push(`vad_model=${normalizedVadModel}`);
     }
 
     if (options.vadThreshold !== undefined) {
