@@ -263,9 +263,13 @@ export class WhisperTranscriber implements Disposable {
     const modelsToDownload = [options.model, options.vadModel].filter(Boolean) as (WhisperModelName | WhisperVADModelName)[];
     const [modelPath, vadModelPath] = await WhisperDownloader.downloadModels(modelsToDownload, options.modelDir);
 
+    // Normalize paths for FFmpeg filter strings (convert backslashes to forward slashes on Windows)
+    const normalizedModelPath = modelPath?.replace(/\\/g, '/');
+    const normalizedVadModelPath = vadModelPath?.replace(/\\/g, '/');
+
     const fullOptions: Required<WhisperTranscriberOptions> = {
-      model: modelPath as WhisperModelName,
-      vadModel: vadModelPath as WhisperVADModelName,
+      model: normalizedModelPath as WhisperModelName,
+      vadModel: normalizedVadModelPath as WhisperVADModelName,
       modelDir: options.modelDir ?? WhisperDownloader.DEFAULT_MODEL_PATH,
       language: options.language ?? 'auto',
       queue: options.queue ?? 3,
