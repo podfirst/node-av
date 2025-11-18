@@ -1,6 +1,6 @@
 import { createWriteStream, existsSync } from 'node:fs';
-import { access, constants } from 'node:fs/promises';
-import { get } from 'node:https';
+import { access, constants, mkdir, rename, unlink } from 'node:fs/promises';
+import { Agent, get } from 'node:https';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -375,11 +375,6 @@ export class WhisperDownloader {
 
     const filePath = resolve(outputPath, `ggml-${model}.bin`);
 
-    // If file already exists, return path immediately
-    if (existsSync(filePath)) {
-      return filePath;
-    }
-
     // Check if download is already in progress
     const downloadKey = `${modelType}:${model}:${outputPath}`;
     const existingDownload = this.activeDownloads.get(downloadKey);
@@ -387,10 +382,33 @@ export class WhisperDownloader {
       return existingDownload;
     }
 
-    // Start new download
+    // If file already exists AND no download in progress, return path immediately
+    if (existsSync(filePath)) {
+      return filePath;
+    }
+
+    // Create output directory recursively if it doesn't exist
+    await mkdir(outputPath, { recursive: true });
+
+    // Start new download to temporary file
     const url = this.getModelUrl(model, modelType);
-    const downloadPromise = this.followRedirect(url, filePath, 0)
-      .then(() => filePath)
+    const tmpFilePath = `${filePath}.tmp`;
+
+    const downloadPromise = this.followRedirect(url, tmpFilePath, 0)
+      .then(async () => {
+        // Rename temporary file to final name after successful download
+        await rename(tmpFilePath, filePath);
+        return filePath;
+      })
+      .catch(async (error) => {
+        // Clean up temporary file on error
+        try {
+          await unlink(tmpFilePath);
+        } catch {
+          // Ignore errors when deleting temp file
+        }
+        throw error;
+      })
       .finally(() => {
         // Clean up from active downloads map
         this.activeDownloads.delete(downloadKey);
@@ -496,11 +514,15 @@ export class WhisperDownloader {
         return;
       }
 
-      get(url, (response: IncomingMessage) => {
+      // Use an agent with keepAlive disabled to ensure connections are closed
+      const agent = new Agent({ keepAlive: false });
+      const request = get(url, { agent }, (response: IncomingMessage) => {
         // Handle redirects
         if ([301, 302, 307, 308].includes(response.statusCode ?? 0)) {
           const redirectUrl = response.headers.location;
           if (redirectUrl) {
+            // Destroy the response to close the connection
+            response.destroy();
             this.followRedirect(redirectUrl, outputPath, redirectCount + 1)
               .then(resolve)
               .catch(reject);
@@ -509,23 +531,50 @@ export class WhisperDownloader {
         }
 
         if (response.statusCode !== 200) {
+          // Destroy the response to close the connection
+          response.destroy();
           reject(new Error(`Failed to download: HTTP ${response.statusCode}`));
           return;
         }
 
         const fileStream = createWriteStream(outputPath);
+        let hasError = false;
 
         response.pipe(fileStream);
 
         fileStream.on('finish', () => {
-          fileStream.close();
-          resolve();
+          // Don't close if we already had an error
+          if (!hasError) {
+            fileStream.close((err) => {
+              // Destroy the response to close the HTTP connection
+              response.destroy();
+              if (err) {
+                reject(err);
+              } else {
+                resolve();
+              }
+            });
+          }
         });
 
         fileStream.on('error', (err) => {
-          reject(err);
+          hasError = true;
+          // Destroy the response to close the HTTP connection
+          response.destroy();
+          fileStream.close(() => {
+            reject(err);
+          });
         });
-      }).on('error', (err) => {
+
+        response.on('error', (err) => {
+          hasError = true;
+          fileStream.close(() => {
+            reject(err);
+          });
+        });
+      });
+
+      request.on('error', (err) => {
         reject(err);
       });
     });
