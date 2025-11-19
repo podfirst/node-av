@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Encoder/Decoder/FilterAPI/BitStreamFilterAPI - Send/Receive Pattern
 
-The encode, decode, and process methods now follow FFmpeg's send/receive pattern more closely. FFmpeg can produce multiple output frames/packets for a single input (e.g., B-frames in encoding, frame buffering in decoding).
+The encode, decode, filter, and process methods now follow FFmpeg's send/receive pattern more closely. FFmpeg can produce multiple output frames/packets for a single input (e.g., B-frames in encoding, frame buffering in decoding).
 
 **Changes:**
 - Methods now return `void` instead of a single `Frame` or `Packet`
@@ -49,7 +49,6 @@ const packet = await encoder.receive(); // May return multiple packets
   - Voice Activity Detection (VAD) for better audio segmentation
   - Automatic model downloading from HuggingFace
   - Multiple model sizes: tiny, base, small, medium, large
-  - Reusable across multiple audio files without reinitialization
   - Type-safe transcription segments with precise timestamps
 
 #### Code Examples
@@ -93,6 +92,10 @@ using decoder = await Decoder.create(input.audio());
 for await (const segment of transcriber.transcribe(decoder.frames(input.packets()))) {
   const timestamp = `[${(segment.start / 1000).toFixed(1)}s - ${(segment.end / 1000).toFixed(1)}s]`;
   console.log(`${timestamp}: ${segment.text}`);
+
+  // [0.0s - 5.2s]: Welcome to the podcast...
+  // [5.2s - 10.8s]: Today we will discuss...
+  // ...
 }
 ```
 
