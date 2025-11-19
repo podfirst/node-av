@@ -9,14 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
-**Encoder/Decoder/Filter API Return Value Changes**: The encode, decode, and process methods now follow FFmpeg's send/receive pattern more closely:
+#### Encoder/Decoder/FilterAPI/BitStreamFilterAPI - Send/Receive Pattern
 
-- **Previous behavior**: `Decoder.decode()`, `Decoder.decodeSync()`, `Encoder.encode()`, `Encoder.encodeSync()`, `FilterAPI.process()`, and `FilterAPI.processSync()` returned a single `Frame` or `Packet`
-- **New behavior**: These methods now return `void`. You must call `receive()`/`receiveSync()` to retrieve output frames/packets
+The encode, decode, and process methods now follow FFmpeg's send/receive pattern more closely. FFmpeg can produce multiple output frames/packets for a single input (e.g., B-frames in encoding, frame buffering in decoding).
 
-**Reason**: FFmpeg can produce multiple output frames/packets for a single input (e.g., B-frames in encoding, frame buffering in decoding). The previous API couldn't handle this correctly.
+**Changes:**
+- Methods now return `void` instead of a single `Frame` or `Packet`
+- You must call `receive()`/`receiveSync()` to retrieve output frames/packets
+- Supports proper multi-frame/packet output handling
 
-**Migration**:
+**Migration Example:**
 ```typescript
 // Before
 const frame = await decoder.decode(packet);
@@ -32,16 +34,30 @@ const packet = await encoder.receive(); // May return multiple packets
 
 ### Added
 
-- **Fifo**: Generic FIFO buffer bindings (AVFifo) for arbitrary data types
-- **FilterComplexAPI**: Support for complex filtergraphs with multiple inputs/outputs
-  - Enables advanced multi-input/multi-output filter operations previously impossible with simple FilterAPI
-  - Direct mapping to FFmpeg's filtergraph functionality
-  - Perfect for overlay, picture-in-picture, side-by-side, and multi-stream mixing scenarios
+#### Core Features
 
+- **Fifo** - Generic FIFO buffer bindings (AVFifo) for arbitrary data types
+
+- **FilterComplexAPI** - Support for complex filtergraphs with multiple inputs/outputs
+  - Advanced multi-input/multi-output filter operations
+  - Direct mapping to FFmpeg's filtergraph functionality
+  - Use cases: overlay, picture-in-picture, side-by-side, multi-stream mixing
+
+- **WhisperTranscriber** - High-level API for automatic speech recognition
+  - Based on OpenAI's Whisper model with whisper.cpp integration
+  - GPU acceleration support (Metal/Vulkan/OpenCL)
+  - Voice Activity Detection (VAD) for better audio segmentation
+  - Automatic model downloading from HuggingFace
+  - Multiple model sizes: tiny, base, small, medium, large
+  - Reusable across multiple audio files without reinitialization
+  - Type-safe transcription segments with precise timestamps
+
+#### Code Examples
+
+**FilterComplexAPI - Picture-in-Picture Effect:**
 ```typescript
 import { FilterComplexAPI } from 'node-av/api';
 
-// Create picture-in-picture effect with two video inputs
 using complex = FilterComplexAPI.create(
   '[1:v]scale=320:240[pip];[0:v][pip]overlay=x=W-w-10:y=H-h-10[out]',
   {
@@ -50,24 +66,20 @@ using complex = FilterComplexAPI.create(
   }
 );
 
-// Process frames from both inputs
 for await (using frame of complex.frames('out', {
   '0:v': decoder1.frames(input1.packets(streamIndex1)),
   '1:v': decoder2.frames(input2.packets(streamIndex2)),
 })) {
-  // Encode combined frame with overlay
   for await (using packet of encoder.packets(frame)) {
     await output.writePacket(packet, outputStreamIndex);
   }
 }
 ```
 
-- **WhisperTranscriber**: High-level API for automatic speech recognition using OpenAI's Whisper model
-
+**WhisperTranscriber - Audio Transcription:**
 ```typescript
 import { Demuxer, Decoder, WhisperTranscriber } from 'node-av/api';
 
-// Create transcriber (downloads model automatically if needed)
 using transcriber = await WhisperTranscriber.create({
   model: 'base.en',
   modelDir: './models',
@@ -75,32 +87,29 @@ using transcriber = await WhisperTranscriber.create({
   useGpu: true,
 });
 
-// Transcribe audio file
 await using input = await Demuxer.open('podcast.mp3');
 using decoder = await Decoder.create(input.audio());
 
 for await (const segment of transcriber.transcribe(decoder.frames(input.packets()))) {
   const timestamp = `[${(segment.start / 1000).toFixed(1)}s - ${(segment.end / 1000).toFixed(1)}s]`;
   console.log(`${timestamp}: ${segment.text}`);
-
-  // [12.3s - 15.6s]: Welcome to the podcast episode on Node-AV...
-  // ...
 }
 ```
 
 ### Fixed
 
-**EOF Handling & Stability Improvements**: Comprehensive improvements to end-of-file handling across the entire API stack:
+#### EOF Handling & Stability
 
-- **Decoder**: Proper EOF propagation through decode/receive pipeline, ensuring all buffered frames are flushed
-- **Encoder**: Correct EOF handling in encode/receive pipeline, guaranteeing all buffered packets are output
-- **FilterAPI**: Consistent EOF processing through filter chains, preventing dropped frames during flush
-- **Demuxer**: Reliable EOF detection and signaling for all stream types
-- **Muxer**: Proper finalization and trailer writing on EOF
+Comprehensive improvements to end-of-file handling across the entire API stack, ensuring data integrity and preventing frame/packet loss during stream termination:
 
-These improvements ensure data integrity and prevent frame/packet loss during stream termination, making the library more robust for production use.
+- **Decoder** - Proper EOF propagation through decode/receive pipeline with complete buffer flushing
+- **Encoder** - Correct EOF handling in encode/receive pipeline guaranteeing all buffered packets output
+- **FilterAPI** - Consistent EOF processing through filter chains preventing dropped frames during flush
+- **Demuxer** - Reliable EOF detection and signaling for all stream types
+- **Muxer** - Proper finalization and trailer writing on EOF
 
-**Additional Fixes**:
+#### General Improvements
+
 - Various bug fixes and stability improvements across the codebase
 
 ## [4.0.0] - 2025-11-12
