@@ -22,6 +22,7 @@ Native Node.js bindings for FFmpeg with full TypeScript support. Provides direct
   - [Low-Level API](#low-level-api)
   - [High-Level API](#high-level-api)
   - [Pipeline API](#pipeline-api)
+- [Key Features](#key-features)
 - [Hardware Acceleration](#hardware-acceleration)
   - [Auto-Detection](#auto-detection)
   - [Specific Hardware](#specific-hardware)
@@ -218,6 +219,24 @@ await using output = await Muxer.open('output.mp4', {
 const control = pipeline(input, decoder, encoder, output);
 await control.completion;
 ```
+
+## Key Features
+
+Beyond basic transcoding, NodeAV provides advanced media processing capabilities:
+
+**Speech Recognition with Whisper**
+Integrate automatic speech-to-text transcription using OpenAI's Whisper model through the whisper.cpp implementation. The library handles automatic model downloading from HuggingFace, supports multiple model sizes (tiny, base, small, medium, large) for different accuracy/performance tradeoffs, and provides hardware-accelerated inference through Metal (macOS), Vulkan (cross-platform), or OpenCL backends. Transcription results include precise timestamps and can be processed in real-time from any audio source.
+
+**Advanced Video Filtering with FilterComplexAPI**
+Build sophisticated video processing pipelines using FFmpeg's complete filter ecosystem. The FilterComplexAPI provides direct access to complex filtergraphs with multiple inputs and outputs, enabling advanced operations like picture-in-picture overlays, multi-stream composition (side-by-side, grid layouts), real-time video effects, and custom processing chains. All filters support hardware acceleration where available, and filter configurations can be dynamically constructed based on runtime requirements.
+
+**Browser Streaming**
+Stream any media source directly to web browsers through fragmented MP4 (fMP4) or WebRTC protocols. The library can process inputs from RTSP cameras, local files, network streams, or custom sources and package them for browser consumption with minimal latency. Complete examples demonstrate both Media Source Extensions (MSE) based playback for on-demand content and WebRTC integration for real-time streaming scenarios.
+
+**RTSP Backchannel / Talkback**
+Implements bidirectional RTSP communication for IP camera integration. The library provides native support for RTSP backchannel streams, enabling audio transmission to camera devices. Transport is handled automatically with support for both TCP (interleaved mode) and UDP protocols, with proper RTP packet formatting and stream synchronization.
+
+See the [Examples](#examples) section for complete implementations.
 
 ## Hardware Acceleration
 
