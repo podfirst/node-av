@@ -151,6 +151,23 @@ export interface FMP4StreamOptions {
   inputOptions?: DemuxerOptions;
 
   /**
+   * Video stream configuration.
+   */
+  video?: {
+    fps?: number;
+    width?: number;
+    height?: number;
+    encoderOptions?: EncoderOptions['options'];
+  };
+
+  /**
+   * Audio stream configuration.
+   */
+  audio?: {
+    encoderOptions?: EncoderOptions['options'];
+  };
+
+  /**
    * Buffer size for I/O operations in bytes (output).
    *
    * @default 2 MB
@@ -236,6 +253,7 @@ export class FMP4Stream {
   private output?: Muxer;
   private hardwareContext?: HardwareContext | null;
   private videoDecoder?: Decoder;
+  private videoFilter?: FilterAPI;
   private videoEncoder?: Encoder;
   private audioDecoder?: Decoder;
   private audioFilter?: FilterAPI;
@@ -276,6 +294,15 @@ export class FMP4Stream {
       fragDuration: options.fragDuration ?? 1,
       hardware: options.hardware ?? { deviceType: AV_HWDEVICE_TYPE_NONE },
       inputOptions: options.inputOptions!,
+      video: {
+        fps: options.video?.fps,
+        width: options.video?.width,
+        height: options.video?.height,
+        encoderOptions: options.video?.encoderOptions ?? {},
+      },
+      audio: {
+        encoderOptions: options.audio?.encoderOptions ?? {},
+      },
       bufferSize: options.bufferSize ?? 2 * 1024 * 1024,
       boxMode: options.boxMode ?? false,
       movFlags: options.movFlags ?? '+frag_keyframe+separate_moof+default_base_moof+empty_moov',
@@ -485,13 +512,50 @@ export class FMP4Stream {
         exitOnError: false,
       });
 
+      // Determine if we need filters by comparing with current stream properties
+      const currentWidth = videoStream.codecpar.width;
+      const currentHeight = videoStream.codecpar.height;
+      const currentFps = videoStream.avgFrameRate.num / videoStream.avgFrameRate.den;
+
+      const needsScale =
+        (this.options.video.width !== undefined && this.options.video.width !== currentWidth) ||
+        (this.options.video.height !== undefined && this.options.video.height !== currentHeight);
+
+      const needsFps = this.options.video.fps !== undefined && isFinite(currentFps) && this.options.video.fps !== currentFps;
+
+      // Create filter chain only if needed
+      if (needsScale || needsFps) {
+        const filterChain = FilterPreset.chain(this.hardwareContext);
+
+        // Add scale filter if dimensions differ
+        if (needsScale) {
+          const targetWidth = this.options.video.width ?? -1;
+          const targetHeight = this.options.video.height ?? -1;
+          filterChain.scale(targetWidth, targetHeight);
+        }
+
+        // Add fps filter if fps differs
+        if (needsFps) {
+          filterChain.fps(this.options.video.fps!);
+        }
+
+        this.videoFilter = FilterAPI.create(filterChain.build(), {
+          hardware: this.hardwareContext,
+        });
+      }
+
       const encoderCodec = this.hardwareContext?.getEncoderCodec('h264') ?? Codec.findEncoderByName(FF_ENCODER_LIBX264)!;
 
-      const encoderOptions: EncoderOptions['options'] = {};
+      let encoderOptions: EncoderOptions['options'] = {};
       if (encoderCodec.name === FF_ENCODER_LIBX264 || encoderCodec.name === FF_ENCODER_LIBX264) {
         encoderOptions.preset = 'ultrafast';
         encoderOptions.tune = 'zerolatency';
       }
+
+      encoderOptions = {
+        ...encoderOptions,
+        ...this.options.video.encoderOptions,
+      };
 
       this.videoEncoder = await Encoder.create(encoderCodec, {
         decoder: this.videoDecoder,
@@ -515,6 +579,7 @@ export class FMP4Stream {
       this.audioEncoder = await Encoder.create(FF_ENCODER_AAC, {
         decoder: this.audioDecoder,
         filter: this.audioFilter,
+        options: this.options.audio.encoderOptions,
       });
     }
 
@@ -590,6 +655,8 @@ export class FMP4Stream {
 
     this.videoDecoder?.close();
     this.videoDecoder = undefined;
+    this.videoFilter?.close();
+    this.videoFilter = undefined;
     this.videoEncoder?.close();
     this.videoEncoder = undefined;
 
@@ -624,7 +691,7 @@ export class FMP4Stream {
       this.pipeline = pipeline(
         this.input,
         {
-          video: [this.videoDecoder, this.videoEncoder],
+          video: [this.videoDecoder, this.videoFilter, this.videoEncoder],
           audio: [this.audioDecoder, this.audioFilter, this.audioEncoder],
         },
         this.output,
@@ -633,7 +700,7 @@ export class FMP4Stream {
       this.pipeline = pipeline(
         this.input,
         {
-          video: [this.videoDecoder, this.videoEncoder],
+          video: [this.videoDecoder, this.videoFilter, this.videoEncoder],
         },
         this.output,
       );
