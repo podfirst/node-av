@@ -163,7 +163,7 @@ export class RTPStream {
       ...options.inputOptions,
       options: {
         flags: 'low_delay',
-        fflags: 'nobuffer',
+        // fflags: 'nobuffer',
         analyzeduration: 0,
         probesize: 32,
         timeout: 5000000,
