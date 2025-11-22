@@ -81,6 +81,8 @@ export interface RTPStreamOptions {
     payloadType?: number;
     mtu?: number;
     fps?: number;
+    width?: number;
+    height?: number;
     encoderOptions?: EncoderOptions['options'];
   };
 
@@ -139,6 +141,7 @@ export class RTPStream {
   private audioOutput?: Muxer;
   private hardwareContext?: HardwareContext | null;
   private videoDecoder?: Decoder;
+  private videoFilter?: FilterAPI;
   private videoEncoder?: Encoder;
   private audioDecoder?: Decoder;
   private audioFilter?: FilterAPI;
@@ -192,6 +195,8 @@ export class RTPStream {
         payloadType: options.video?.payloadType,
         mtu: options.video?.mtu ?? MAX_PACKET_SIZE,
         fps: options.video?.fps ?? 20,
+        width: options.video?.width,
+        height: options.video?.height,
         encoderOptions: options.video?.encoderOptions ?? {},
       },
       audio: {
@@ -321,6 +326,38 @@ export class RTPStream {
         exitOnError: false,
         hardware: this.hardwareContext,
       });
+
+      // Determine if we need filters by comparing with current stream properties
+      const currentWidth = videoStream.codecpar.width;
+      const currentHeight = videoStream.codecpar.height;
+      const currentFps = videoStream.avgFrameRate.num / videoStream.avgFrameRate.den;
+
+      const needsScale =
+        (this.options.video.width !== undefined && this.options.video.width !== currentWidth) ||
+        (this.options.video.height !== undefined && this.options.video.height !== currentHeight);
+
+      const needsFps = this.options.video.fps !== undefined && isFinite(currentFps) && this.options.video.fps !== currentFps;
+
+      // Create filter chain only if needed
+      if (needsScale || needsFps) {
+        const filterChain = FilterPreset.chain(this.hardwareContext);
+
+        // Add scale filter if dimensions differ
+        if (needsScale) {
+          const targetWidth = this.options.video.width ?? -1;
+          const targetHeight = this.options.video.height ?? -1;
+          filterChain.scale(targetWidth, targetHeight);
+        }
+
+        // Add fps filter if fps differs
+        if (needsFps) {
+          filterChain.fps(this.options.video.fps!);
+        }
+
+        this.videoFilter = FilterAPI.create(filterChain.build(), {
+          hardware: this.hardwareContext,
+        });
+      }
 
       // Get first supported codec
       const targetCodecId = this.options.supportedVideoCodecs[0];
@@ -550,7 +587,7 @@ export class RTPStream {
       this.pipeline = pipeline(
         this.input,
         {
-          video: [this.videoDecoder, this.videoEncoder],
+          video: [this.videoDecoder, this.videoFilter, this.videoEncoder],
           audio: [this.audioDecoder, this.audioFilter, this.audioEncoder],
         },
         {
@@ -562,7 +599,7 @@ export class RTPStream {
       this.pipeline = pipeline(
         this.input,
         {
-          video: [this.videoDecoder, this.videoEncoder],
+          video: [this.videoDecoder, this.videoFilter, this.videoEncoder],
         },
         this.videoOutput!,
       );
@@ -616,6 +653,8 @@ export class RTPStream {
 
     this.videoEncoder?.close();
     this.videoEncoder = undefined;
+    this.videoFilter?.close();
+    this.videoFilter = undefined;
     this.videoDecoder?.close();
     this.videoDecoder = undefined;
 
