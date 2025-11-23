@@ -281,7 +281,7 @@ export class FMP4Stream {
         fflags: 'nobuffer',
         // analyzeduration: 0,
         // probesize: 32,
-        timeout: 5000000,
+        timeout: 10000000,
         rtsp_transport: inputUrl.toLowerCase().startsWith('rtsp') ? 'tcp' : undefined,
         ...options.inputOptions?.options,
       },
