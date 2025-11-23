@@ -426,6 +426,60 @@ export class HardwareContext implements Disposable {
   }
 
   /**
+   * Get hardware frame constraints.
+   *
+   * Returns the resolution limits and supported pixel formats for this hardware device.
+   * Essential for validating encoder/decoder parameters before initialization.
+   *
+   * Direct mapping to av_hwdevice_get_hwframe_constraints().
+   *
+   * @param hwconfig - Optional hardware configuration pointer
+   *
+   * @returns Constraints object with resolution limits and formats, or null if not available
+   *
+   * @example
+   * ```typescript
+   * const hw = HardwareContext.auto();
+   * if (hw) {
+   *   const constraints = hw.getFrameConstraints();
+   *   if (constraints) {
+   *     console.log(`Resolution: ${constraints.minWidth}x${constraints.minHeight} to ${constraints.maxWidth}x${constraints.maxHeight}`);
+   *     console.log('Hardware formats:', constraints.validHwFormats);
+   *     console.log('Software formats:', constraints.validSwFormats);
+   *   }
+   * }
+   * ```
+   *
+   * @example
+   * ```typescript
+   * import { AV_HWDEVICE_TYPE_VIDEOTOOLBOX } from 'node-av/constants';
+   *
+   * // VideoToolbox has resolution limits
+   * const hw = HardwareContext.create(AV_HWDEVICE_TYPE_VIDEOTOOLBOX);
+   * const constraints = hw?.getFrameConstraints();
+   * if (constraints && (width > constraints.maxWidth || height > constraints.maxHeight)) {
+   *   console.log('Resolution exceeds hardware limits, falling back to software encoder');
+   * }
+   * ```
+   *
+   * @see {@link HardwareDeviceContext.getHwframeConstraints} For low-level API
+   */
+  getFrameConstraints(hwconfig?: bigint): {
+    validHwFormats?: number[];
+    validSwFormats?: number[];
+    minWidth: number;
+    minHeight: number;
+    maxWidth: number;
+    maxHeight: number;
+  } | null {
+    if (this._isDisposed) {
+      return null;
+    }
+
+    return this._deviceContext.getHwframeConstraints(hwconfig);
+  }
+
+  /**
    * Check if this hardware type supports a specific codec.
    *
    * Queries FFmpeg's codec configurations to verify hardware support.
