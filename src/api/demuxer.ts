@@ -1913,7 +1913,7 @@ export class Demuxer implements AsyncDisposable, Disposable {
     switch (par.codecType) {
       case AVMEDIA_TYPE_AUDIO:
         // Audio: duration from sample_rate or packet duration
-        if (par.sampleRate > 0) {
+        if (par.sampleRate >= 1 && par.frameSize > 0) {
           state.nextDts += (BigInt(AV_TIME_BASE) * BigInt(par.frameSize)) / BigInt(par.sampleRate);
         } else {
           state.nextDts += avRescaleQ(packet.duration, packet.timeBase, AV_TIME_BASE_Q);
