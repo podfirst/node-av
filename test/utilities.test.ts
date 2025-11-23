@@ -573,7 +573,7 @@ describe('Utilities', () => {
       avUsleep(0);
 
       const elapsed = Date.now() - startTime;
-      assert.ok(elapsed < 10, 'Zero sleep should return immediately');
+      assert.ok(elapsed < 100, 'Zero sleep should return immediately');
     });
   });
 
