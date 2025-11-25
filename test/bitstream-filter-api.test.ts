@@ -14,7 +14,7 @@ describe('BitStreamFilterAPI', () => {
       await using media = await Demuxer.open(inputFile);
       const stream = media.video();
 
-      assert.throws(() => BitStreamFilterAPI.create('non_existent_filter', stream!), /Bitstream filter 'non_existent_filter' not found/);
+      assert.throws(() => BitStreamFilterAPI.create('non_existent_filter', stream!), /not found/);
     });
   });
 

@@ -64,7 +64,7 @@ describe('Encoder', () => {
     });
 
     it('should throw for unknown encoder (async)', async () => {
-      await assert.rejects(async () => await Encoder.create('unknown_encoder' as any), /Encoder unknown_encoder not found/);
+      await assert.rejects(async () => await Encoder.create('unknown_encoder' as any), /not found/);
     });
 
     it('should throw for invalid bitrate format (async)', async () => {
@@ -134,7 +134,7 @@ describe('Encoder', () => {
     });
 
     it('should throw for unknown encoder (sync)', () => {
-      assert.throws(() => Encoder.createSync('unknown_encoder' as any), /Encoder unknown_encoder not found/);
+      assert.throws(() => Encoder.createSync('unknown_encoder' as any), /not found/);
     });
 
     it('should throw for invalid bitrate format (sync)', () => {

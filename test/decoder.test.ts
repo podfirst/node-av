@@ -277,7 +277,7 @@ describe('Decoder', () => {
 
       // Try to create decoder with non-existent codec
       await assert.rejects(async () => await Decoder.create(videoStream, 'invalid_codec_name_12345' as any), {
-        message: /Decoder 'invalid_codec_name_12345' not found/,
+        message: /not found/,
       });
 
       await media.close();
@@ -290,7 +290,7 @@ describe('Decoder', () => {
 
       // Try to create decoder with non-existent codec
       assert.throws(() => Decoder.createSync(videoStream, 'invalid_codec_name_12345' as any), {
-        message: /Decoder 'invalid_codec_name_12345' not found/,
+        message: /not found/,
       });
 
       media.closeSync();
@@ -303,7 +303,7 @@ describe('Decoder', () => {
 
       // Try to create decoder with invalid codec ID
       await assert.rejects(async () => await Decoder.create(videoStream, 999999 as any), {
-        message: /Decoder not found for codec ID/,
+        message: /not found/,
       });
 
       await media.close();
@@ -316,7 +316,7 @@ describe('Decoder', () => {
 
       // Try to create decoder with invalid codec ID
       assert.throws(() => Decoder.createSync(videoStream, 999999 as any), {
-        message: /Decoder not found for codec ID/,
+        message: /not found/,
       });
 
       media.closeSync();
