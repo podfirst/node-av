@@ -16,17 +16,21 @@ namespace ffmpeg {
 
 class FCOpenInputWorker : public Napi::AsyncWorker {
 public:
-  FCOpenInputWorker(Napi::Env env, FormatContext* parent, const std::string& url, 
-                  AVInputFormat* fmt, AVDictionary* options)
+  FCOpenInputWorker(Napi::Env env, Napi::Object parentObj, FormatContext* parent,
+                    const std::string& url, AVInputFormat* fmt, AVDictionary* options)
     : AsyncWorker(env),
       parent_(parent),
       url_(url),
       fmt_(fmt),
       options_(options),
       result_(0),
-      deferred_(Napi::Promise::Deferred::New(env)) {}
+      deferred_(Napi::Promise::Deferred::New(env)) {
+    // Hold reference to prevent GC during async operation
+    parent_ref_.Reset(parentObj, 1);
+  }
 
   ~FCOpenInputWorker() {
+    parent_ref_.Reset();
     if (options_) {
       av_dict_free(&options_);
     }
@@ -69,6 +73,7 @@ public:
   Napi::Promise GetPromise() { return deferred_.Promise(); }
 
 private:
+  Napi::ObjectReference parent_ref_;  // prevents GC during async operation
   FormatContext* parent_;
   std::string url_;
   AVInputFormat* fmt_;
@@ -79,20 +84,29 @@ private:
 
 class FCFindStreamInfoWorker : public Napi::AsyncWorker {
 public:
-  FCFindStreamInfoWorker(Napi::Env env, FormatContext* parent, AVDictionary* options)
+  FCFindStreamInfoWorker(Napi::Env env, Napi::Object parentObj, FormatContext* parent,
+                         AVDictionary* options)
     : AsyncWorker(env),
       parent_(parent),
       options_(options),
       result_(0),
-      deferred_(Napi::Promise::Deferred::New(env)) {}
+      deferred_(Napi::Promise::Deferred::New(env)) {
+    parent_ref_.Reset(parentObj, 1);
+  }
 
   ~FCFindStreamInfoWorker() {
+    parent_ref_.Reset();
     if (options_) {
       av_dict_free(&options_);
     }
   }
 
   void Execute() override {
+    if (!parent_) {
+      result_ = AVERROR(EINVAL);
+      return;
+    }
+
     if (parent_->ctx_) {
       result_ = avformat_find_stream_info(parent_->ctx_, options_ ? &options_ : nullptr);
     } else {
@@ -112,6 +126,7 @@ public:
   Napi::Promise GetPromise() { return deferred_.Promise(); }
 
 private:
+  Napi::ObjectReference parent_ref_;
   FormatContext* parent_;
   AVDictionary* options_;
   int result_;
@@ -120,15 +135,25 @@ private:
 
 class FCReadFrameWorker : public Napi::AsyncWorker {
 public:
-  FCReadFrameWorker(Napi::Env env, FormatContext* parent, Packet* packet)
+  FCReadFrameWorker(Napi::Env env, Napi::Object parentObj, FormatContext* parent,
+                    Napi::Object packetObj, Packet* packet)
     : AsyncWorker(env),
       parent_(parent),
       packet_(packet),
       result_(0),
-      deferred_(Napi::Promise::Deferred::New(env)) {}
+      deferred_(Napi::Promise::Deferred::New(env)) {
+    // Hold references to prevent GC during async operation
+    parent_ref_.Reset(parentObj, 1);
+    packet_ref_.Reset(packetObj, 1);
+  }
+
+  ~FCReadFrameWorker() {
+    parent_ref_.Reset();
+    packet_ref_.Reset();
+  }
 
   void Execute() override {
-    if (!parent_->ctx_ || !packet_) {
+    if (!parent_ || !packet_) {
       result_ = AVERROR(EINVAL);
       return;
     }
@@ -139,6 +164,11 @@ public:
     // callback won't be called. We must manually check here.
     if (parent_->interrupt_requested_.load()) {
       result_ = AVERROR_EXIT;
+      return;
+    }
+
+    if (!parent_->ctx_) {
+      result_ = AVERROR(EINVAL);
       return;
     }
 
@@ -164,6 +194,8 @@ public:
   Napi::Promise GetPromise() { return deferred_.Promise(); }
 
 private:
+  Napi::ObjectReference parent_ref_;
+  Napi::ObjectReference packet_ref_;
   FormatContext* parent_;
   Packet* packet_;
   int result_;
@@ -172,17 +204,28 @@ private:
 
 class FCSeekFrameWorker : public Napi::AsyncWorker {
 public:
-  FCSeekFrameWorker(Napi::Env env, FormatContext* parent, int stream_index, 
-                  int64_t timestamp, int flags)
+  FCSeekFrameWorker(Napi::Env env, Napi::Object parentObj, FormatContext* parent,
+                    int stream_index, int64_t timestamp, int flags)
     : AsyncWorker(env),
       parent_(parent),
       stream_index_(stream_index),
       timestamp_(timestamp),
       flags_(flags),
       result_(0),
-      deferred_(Napi::Promise::Deferred::New(env)) {}
+      deferred_(Napi::Promise::Deferred::New(env)) {
+    parent_ref_.Reset(parentObj, 1);
+  }
+
+  ~FCSeekFrameWorker() {
+    parent_ref_.Reset();
+  }
 
   void Execute() override {
+    if (!parent_) {
+      result_ = AVERROR(EINVAL);
+      return;
+    }
+
     if (parent_->ctx_) {
       result_ = av_seek_frame(parent_->ctx_, stream_index_, timestamp_, flags_);
     } else {
@@ -202,6 +245,7 @@ public:
   Napi::Promise GetPromise() { return deferred_.Promise(); }
 
 private:
+  Napi::ObjectReference parent_ref_;
   FormatContext* parent_;
   int stream_index_;
   int64_t timestamp_;
@@ -212,8 +256,8 @@ private:
 
 class FCSeekFileWorker : public Napi::AsyncWorker {
 public:
-  FCSeekFileWorker(Napi::Env env, FormatContext* parent, int stream_index, 
-                 int64_t min_ts, int64_t ts, int64_t max_ts, int flags)
+  FCSeekFileWorker(Napi::Env env, Napi::Object parentObj, FormatContext* parent,
+                   int stream_index, int64_t min_ts, int64_t ts, int64_t max_ts, int flags)
     : AsyncWorker(env),
       parent_(parent),
       stream_index_(stream_index),
@@ -222,11 +266,22 @@ public:
       max_ts_(max_ts),
       flags_(flags),
       result_(0),
-      deferred_(Napi::Promise::Deferred::New(env)) {}
+      deferred_(Napi::Promise::Deferred::New(env)) {
+    parent_ref_.Reset(parentObj, 1);
+  }
+
+  ~FCSeekFileWorker() {
+    parent_ref_.Reset();
+  }
 
   void Execute() override {
+    if (!parent_) {
+      result_ = AVERROR(EINVAL);
+      return;
+    }
+
     if (parent_->ctx_) {
-      result_ = avformat_seek_file(parent_->ctx_, stream_index_, 
+      result_ = avformat_seek_file(parent_->ctx_, stream_index_,
                                    min_ts_, ts_, max_ts_, flags_);
     } else {
       result_ = AVERROR(EINVAL);
@@ -245,6 +300,7 @@ public:
   Napi::Promise GetPromise() { return deferred_.Promise(); }
 
 private:
+  Napi::ObjectReference parent_ref_;
   FormatContext* parent_;
   int stream_index_;
   int64_t min_ts_;
@@ -257,23 +313,32 @@ private:
 
 class FCWriteHeaderWorker : public Napi::AsyncWorker {
 public:
-  FCWriteHeaderWorker(Napi::Env env, FormatContext* parent, AVDictionary* options)
+  FCWriteHeaderWorker(Napi::Env env, Napi::Object parentObj, FormatContext* parent,
+                      AVDictionary* options)
     : AsyncWorker(env),
       parent_(parent),
       options_(options),
       result_(0),
-      deferred_(Napi::Promise::Deferred::New(env)) {}
+      deferred_(Napi::Promise::Deferred::New(env)) {
+    parent_ref_.Reset(parentObj, 1);
+  }
 
   ~FCWriteHeaderWorker() {
+    parent_ref_.Reset();
     if (options_) {
       av_dict_free(&options_);
     }
   }
 
   void Execute() override {
+    if (!parent_) {
+      result_ = AVERROR(EINVAL);
+      return;
+    }
+
     if (parent_->ctx_) {
       AVFormatContext* ctx = parent_->ctx_;
-      
+
       // Check if pb is valid for formats that require file I/O
       // AVFMT_NOFILE formats don't need pb (e.g., image2, rawvideo output to pipe)
       if (ctx->oformat && !(ctx->oformat->flags & AVFMT_NOFILE)) {
@@ -284,7 +349,7 @@ public:
           return;
         }
       }
-      
+
       result_ = avformat_write_header(ctx, options_ ? &options_ : nullptr);
     } else {
       result_ = AVERROR(EINVAL);
@@ -303,6 +368,7 @@ public:
   Napi::Promise GetPromise() { return deferred_.Promise(); }
 
 private:
+  Napi::ObjectReference parent_ref_;
   FormatContext* parent_;
   AVDictionary* options_;
   int result_;
@@ -311,14 +377,30 @@ private:
 
 class FCWriteFrameWorker : public Napi::AsyncWorker {
 public:
-  FCWriteFrameWorker(Napi::Env env, FormatContext* parent, Packet* packet)
+  FCWriteFrameWorker(Napi::Env env, Napi::Object parentObj, FormatContext* parent,
+                     Napi::Value packetVal, Packet* packet)
     : AsyncWorker(env),
       parent_(parent),
       packet_(packet),
       result_(0),
-      deferred_(Napi::Promise::Deferred::New(env)) {}
+      deferred_(Napi::Promise::Deferred::New(env)) {
+    parent_ref_.Reset(parentObj, 1);
+    if (packet && packetVal.IsObject()) {
+      packet_ref_.Reset(packetVal.As<Napi::Object>(), 1);
+    }
+  }
+
+  ~FCWriteFrameWorker() {
+    parent_ref_.Reset();
+    packet_ref_.Reset();
+  }
 
   void Execute() override {
+    if (!parent_) {
+      result_ = AVERROR(EINVAL);
+      return;
+    }
+
     if (parent_->ctx_) {
       result_ = av_write_frame(parent_->ctx_, packet_ ? packet_->Get() : nullptr);
     } else {
@@ -338,6 +420,8 @@ public:
   Napi::Promise GetPromise() { return deferred_.Promise(); }
 
 private:
+  Napi::ObjectReference parent_ref_;
+  Napi::ObjectReference packet_ref_;
   FormatContext* parent_;
   Packet* packet_;
   int result_;
@@ -346,14 +430,30 @@ private:
 
 class FCInterleavedWriteFrameWorker : public Napi::AsyncWorker {
 public:
-  FCInterleavedWriteFrameWorker(Napi::Env env, FormatContext* parent, Packet* packet)
+  FCInterleavedWriteFrameWorker(Napi::Env env, Napi::Object parentObj, FormatContext* parent,
+                                Napi::Value packetVal, Packet* packet)
     : AsyncWorker(env),
       parent_(parent),
       packet_(packet),
       result_(0),
-      deferred_(Napi::Promise::Deferred::New(env)) {}
+      deferred_(Napi::Promise::Deferred::New(env)) {
+    parent_ref_.Reset(parentObj, 1);
+    if (packet && packetVal.IsObject()) {
+      packet_ref_.Reset(packetVal.As<Napi::Object>(), 1);
+    }
+  }
+
+  ~FCInterleavedWriteFrameWorker() {
+    parent_ref_.Reset();
+    packet_ref_.Reset();
+  }
 
   void Execute() override {
+    if (!parent_) {
+      result_ = AVERROR(EINVAL);
+      return;
+    }
+
     if (parent_->ctx_) {
       result_ = av_interleaved_write_frame(parent_->ctx_, packet_ ? packet_->Get() : nullptr);
     } else {
@@ -373,6 +473,8 @@ public:
   Napi::Promise GetPromise() { return deferred_.Promise(); }
 
 private:
+  Napi::ObjectReference parent_ref_;
+  Napi::ObjectReference packet_ref_;
   FormatContext* parent_;
   Packet* packet_;
   int result_;
@@ -381,13 +483,24 @@ private:
 
 class FCWriteTrailerWorker : public Napi::AsyncWorker {
 public:
-  FCWriteTrailerWorker(Napi::Env env, FormatContext* parent)
+  FCWriteTrailerWorker(Napi::Env env, Napi::Object parentObj, FormatContext* parent)
     : AsyncWorker(env),
       parent_(parent),
       result_(0),
-      deferred_(Napi::Promise::Deferred::New(env)) {}
+      deferred_(Napi::Promise::Deferred::New(env)) {
+    parent_ref_.Reset(parentObj, 1);
+  }
+
+  ~FCWriteTrailerWorker() {
+    parent_ref_.Reset();
+  }
 
   void Execute() override {
+    if (!parent_) {
+      result_ = AVERROR(EINVAL);
+      return;
+    }
+
     if (parent_->ctx_) {
       result_ = av_write_trailer(parent_->ctx_);
     } else {
@@ -407,6 +520,7 @@ public:
   Napi::Promise GetPromise() { return deferred_.Promise(); }
 
 private:
+  Napi::ObjectReference parent_ref_;
   FormatContext* parent_;
   int result_;
   Napi::Promise::Deferred deferred_;
@@ -414,26 +528,37 @@ private:
 
 class FCOpenOutputWorker : public Napi::AsyncWorker {
 public:
-  FCOpenOutputWorker(Napi::Env env, FormatContext* parent)
+  FCOpenOutputWorker(Napi::Env env, Napi::Object parentObj, FormatContext* parent)
     : AsyncWorker(env),
       parent_(parent),
       result_(0),
-      deferred_(Napi::Promise::Deferred::New(env)) {}
+      deferred_(Napi::Promise::Deferred::New(env)) {
+    parent_ref_.Reset(parentObj, 1);
+  }
+
+  ~FCOpenOutputWorker() {
+    parent_ref_.Reset();
+  }
 
   void Execute() override {
+    if (!parent_) {
+      result_ = AVERROR(EINVAL);
+      return;
+    }
+
     AVFormatContext* ctx = parent_->ctx_;
     if (!ctx || !ctx->oformat || !ctx->url) {
       result_ = AVERROR(EINVAL);
       return;
     }
-    
+
     // Check if we need to open the file (not NOFILE format)
     if (!(ctx->oformat->flags & AVFMT_NOFILE)) {
       result_ = avio_open(&ctx->pb, ctx->url, AVIO_FLAG_WRITE);
     } else {
       result_ = 0;
     }
-    
+
     if (result_ >= 0) {
       // Successfully opened
     }
@@ -452,6 +577,7 @@ public:
   }
 
 private:
+  Napi::ObjectReference parent_ref_;
   FormatContext* parent_;
   int result_;
   Napi::Promise::Deferred deferred_;
@@ -459,12 +585,22 @@ private:
 
 class FCCloseOutputWorker : public Napi::AsyncWorker {
 public:
-  FCCloseOutputWorker(Napi::Env env, FormatContext* parent)
+  FCCloseOutputWorker(Napi::Env env, Napi::Object parentObj, FormatContext* parent)
     : AsyncWorker(env),
       parent_(parent),
-      deferred_(Napi::Promise::Deferred::New(env)) {}
+      deferred_(Napi::Promise::Deferred::New(env)) {
+    parent_ref_.Reset(parentObj, 1);
+  }
+
+  ~FCCloseOutputWorker() {
+    parent_ref_.Reset();
+  }
 
   void Execute() override {
+    if (!parent_) {
+      return;
+    }
+
     AVFormatContext* ctx = parent_->ctx_;
     if (ctx && ctx->pb) {
       if (!ctx->oformat || !(ctx->oformat->flags & AVFMT_NOFILE)) {
@@ -487,26 +623,31 @@ public:
   }
 
 private:
+  Napi::ObjectReference parent_ref_;
   FormatContext* parent_;
   Napi::Promise::Deferred deferred_;
 };
 
 class FCCloseInputWorker : public Napi::AsyncWorker {
 public:
-  FCCloseInputWorker(Napi::Env env, FormatContext* parent)
+  FCCloseInputWorker(Napi::Env env, Napi::Object parentObj, FormatContext* parent)
     : AsyncWorker(env),
       parent_(parent),
-      deferred_(Napi::Promise::Deferred::New(env)) {}
+      deferred_(Napi::Promise::Deferred::New(env)) {
+    parent_ref_.Reset(parentObj, 1);
+  }
+
+  ~FCCloseInputWorker() {
+    parent_ref_.Reset();
+  }
 
   void Execute() override {
-    // Request interrupt to cancel any pending av_read_frame()
-    parent_->RequestInterrupt();
-
-    AVFormatContext* ctx = parent_->ctx_;
-
-    if (!ctx) {
+    if (!parent_) {
       return;
     }
+
+    // Request interrupt to cancel any pending av_read_frame()
+    parent_->RequestInterrupt();
 
     // Now wait a short time for any in-flight av_read_frame() to return with error
     int wait_count = 0;
@@ -514,9 +655,15 @@ public:
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
       // Timeout after 1 second
-      if (wait_count > 100) {
+      if (wait_count++ > 100) {
         break;
       }
+    }
+
+    AVFormatContext* ctx = parent_->ctx_;
+
+    if (!ctx) {
+      return;
     }
 
     // Clear our references
@@ -528,7 +675,7 @@ public:
 
     // Check if this is a custom IO context
     bool is_custom_io = (ctx->flags & AVFMT_FLAG_CUSTOM_IO) != 0;
-      
+
     if (ctx->pb || ctx->nb_streams > 0) {
       // Context was successfully opened (has pb or streams), use close_input
       // IMPORTANT: avformat_close_input will:
@@ -544,7 +691,7 @@ public:
       // Use avformat_free_context to free the allocated context
       avformat_free_context(ctx);
     }
-      
+
     parent_->is_output_ = false;
   }
 
@@ -561,18 +708,29 @@ public:
   }
 
 private:
+  Napi::ObjectReference parent_ref_;
   FormatContext* parent_;
   Napi::Promise::Deferred deferred_;
 };
 
 class FCFlushWorker : public Napi::AsyncWorker {
 public:
-  FCFlushWorker(Napi::Env env, FormatContext* parent)
+  FCFlushWorker(Napi::Env env, Napi::Object parentObj, FormatContext* parent)
     : AsyncWorker(env),
       parent_(parent),
-      deferred_(Napi::Promise::Deferred::New(env)) {}
+      deferred_(Napi::Promise::Deferred::New(env)) {
+    parent_ref_.Reset(parentObj, 1);
+  }
+
+  ~FCFlushWorker() {
+    parent_ref_.Reset();
+  }
 
   void Execute() override {
+    if (!parent_) {
+      return;
+    }
+
     if (parent_->ctx_ && parent_->ctx_->pb) {
       avio_flush(parent_->ctx_->pb);
     }
@@ -590,237 +748,255 @@ public:
   Napi::Promise GetPromise() { return deferred_.Promise(); }
 
 private:
+  Napi::ObjectReference parent_ref_;
   FormatContext* parent_;
   Napi::Promise::Deferred deferred_;
 };
 
 Napi::Value FormatContext::OpenInputAsync(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
+
   if (info.Length() < 1) {
     Napi::TypeError::New(env, "URL required").ThrowAsJavaScriptException();
     return env.Undefined();
   }
-  
+
   std::string url = info[0].As<Napi::String>().Utf8Value();
   AVInputFormat* fmt = nullptr;
   AVDictionary* options = nullptr;
-  
+
   if (info.Length() > 1 && !info[1].IsNull() && !info[1].IsUndefined()) {
     InputFormat* inputFormat = UnwrapNativeObject<InputFormat>(env, info[1], "InputFormat");
     if (inputFormat) {
       fmt = const_cast<AVInputFormat*>(inputFormat->Get());
     }
   }
-  
+
   if (info.Length() > 2 && !info[2].IsNull() && !info[2].IsUndefined()) {
     Dictionary* dict = UnwrapNativeObject<Dictionary>(env, info[2], "Dictionary");
     if (dict && dict->Get()) {
       av_dict_copy(&options, dict->Get(), 0);
     }
   }
-  
-  auto* worker = new FCOpenInputWorker(env, this, url, fmt, options);
+
+  Napi::Object thisObj = info.This().As<Napi::Object>();
+  auto* worker = new FCOpenInputWorker(env, thisObj, this, url, fmt, options);
   auto promise = worker->GetPromise();
   worker->Queue();
-  
+
   return promise;
 }
 
 Napi::Value FormatContext::FindStreamInfoAsync(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
+
   AVDictionary* options = nullptr;
-  
+
   if (info.Length() > 0 && !info[0].IsNull() && !info[0].IsUndefined()) {
     Dictionary* dict = UnwrapNativeObject<Dictionary>(env, info[0], "Dictionary");
     if (dict && dict->Get()) {
       av_dict_copy(&options, dict->Get(), 0);
     }
   }
-  
-  auto* worker = new FCFindStreamInfoWorker(env, this, options);
+
+  Napi::Object thisObj = info.This().As<Napi::Object>();
+  auto* worker = new FCFindStreamInfoWorker(env, thisObj, this, options);
   auto promise = worker->GetPromise();
   worker->Queue();
-  
+
   return promise;
 }
 
 Napi::Value FormatContext::ReadFrameAsync(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
+
   if (info.Length() < 1) {
     Napi::TypeError::New(env, "Packet required").ThrowAsJavaScriptException();
     return env.Undefined();
   }
-  
+
+  Napi::Object packetObj = info[0].As<Napi::Object>();
   Packet* packet = UnwrapNativeObject<Packet>(env, info[0], "Packet");
   if (!packet) {
     Napi::TypeError::New(env, "Invalid packet object").ThrowAsJavaScriptException();
     return env.Undefined();
   }
-  
-  auto* worker = new FCReadFrameWorker(env, this, packet);
+
+  Napi::Object thisObj = info.This().As<Napi::Object>();
+  auto* worker = new FCReadFrameWorker(env, thisObj, this, packetObj, packet);
   auto promise = worker->GetPromise();
   worker->Queue();
-  
+
   return promise;
 }
 
 Napi::Value FormatContext::SeekFrameAsync(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
+
   if (info.Length() < 3) {
     Napi::TypeError::New(env, "stream_index, timestamp, and flags required").ThrowAsJavaScriptException();
     return env.Undefined();
   }
-  
+
   int stream_index = info[0].As<Napi::Number>().Int32Value();
   bool lossless;
   int64_t timestamp = info[1].As<Napi::BigInt>().Int64Value(&lossless);
   int flags = info[2].As<Napi::Number>().Int32Value();
-  
-  auto* worker = new FCSeekFrameWorker(env, this, stream_index, timestamp, flags);
+
+  Napi::Object thisObj = info.This().As<Napi::Object>();
+  auto* worker = new FCSeekFrameWorker(env, thisObj, this, stream_index, timestamp, flags);
   auto promise = worker->GetPromise();
   worker->Queue();
-  
+
   return promise;
 }
 
 Napi::Value FormatContext::SeekFileAsync(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
+
   if (info.Length() < 5) {
     Napi::TypeError::New(env, "stream_index, min_ts, ts, max_ts, and flags required").ThrowAsJavaScriptException();
     return env.Undefined();
   }
-  
+
   int stream_index = info[0].As<Napi::Number>().Int32Value();
   bool lossless;
   int64_t min_ts = info[1].As<Napi::BigInt>().Int64Value(&lossless);
   int64_t ts = info[2].As<Napi::BigInt>().Int64Value(&lossless);
   int64_t max_ts = info[3].As<Napi::BigInt>().Int64Value(&lossless);
   int flags = info[4].As<Napi::Number>().Int32Value();
-  
-  auto* worker = new FCSeekFileWorker(env, this, stream_index, min_ts, ts, max_ts, flags);
+
+  Napi::Object thisObj = info.This().As<Napi::Object>();
+  auto* worker = new FCSeekFileWorker(env, thisObj, this, stream_index, min_ts, ts, max_ts, flags);
   auto promise = worker->GetPromise();
   worker->Queue();
-  
+
   return promise;
 }
 
 Napi::Value FormatContext::WriteHeaderAsync(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
+
   AVDictionary* options = nullptr;
-  
+
   if (info.Length() > 0 && !info[0].IsNull() && !info[0].IsUndefined()) {
     Dictionary* dict = UnwrapNativeObject<Dictionary>(env, info[0], "Dictionary");
     if (dict && dict->Get()) {
       av_dict_copy(&options, dict->Get(), 0);
     }
   }
-  
-  auto* worker = new FCWriteHeaderWorker(env, this, options);
+
+  Napi::Object thisObj = info.This().As<Napi::Object>();
+  auto* worker = new FCWriteHeaderWorker(env, thisObj, this, options);
   auto promise = worker->GetPromise();
   worker->Queue();
-  
+
   return promise;
 }
 
 Napi::Value FormatContext::WriteFrameAsync(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
+
   Packet* packet = nullptr;
-  
+  Napi::Value packetVal = env.Undefined();
+
   if (info.Length() > 0 && !info[0].IsNull() && !info[0].IsUndefined()) {
+    packetVal = info[0];
     packet = UnwrapNativeObject<Packet>(env, info[0], "Packet");
   }
-  
-  auto* worker = new FCWriteFrameWorker(env, this, packet);
+
+  Napi::Object thisObj = info.This().As<Napi::Object>();
+  auto* worker = new FCWriteFrameWorker(env, thisObj, this, packetVal, packet);
   auto promise = worker->GetPromise();
   worker->Queue();
-  
+
   return promise;
 }
 
 Napi::Value FormatContext::InterleavedWriteFrameAsync(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
+
   Packet* packet = nullptr;
-  
+  Napi::Value packetVal = env.Undefined();
+
   if (info.Length() > 0 && !info[0].IsNull() && !info[0].IsUndefined()) {
+    packetVal = info[0];
     packet = UnwrapNativeObject<Packet>(env, info[0], "Packet");
   }
-  
-  auto* worker = new FCInterleavedWriteFrameWorker(env, this, packet);
+
+  Napi::Object thisObj = info.This().As<Napi::Object>();
+  auto* worker = new FCInterleavedWriteFrameWorker(env, thisObj, this, packetVal, packet);
   auto promise = worker->GetPromise();
   worker->Queue();
-  
+
   return promise;
 }
 
 Napi::Value FormatContext::WriteTrailerAsync(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
-  auto* worker = new FCWriteTrailerWorker(env, this);
+
+  Napi::Object thisObj = info.This().As<Napi::Object>();
+  auto* worker = new FCWriteTrailerWorker(env, thisObj, this);
   auto promise = worker->GetPromise();
   worker->Queue();
-  
+
   return promise;
 }
 
 Napi::Value FormatContext::OpenOutputAsync(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
+
   AVFormatContext* ctx = ctx_;
   if (!ctx) {
     Napi::Error::New(env, "No format context allocated").ThrowAsJavaScriptException();
     return env.Null();
   }
-  
+
   if (!is_output_) {
     Napi::Error::New(env, "Not an output context").ThrowAsJavaScriptException();
     return env.Null();
   }
-  
+
   // Check if oformat is set
   if (!ctx->oformat) {
     Napi::Error::New(env, "No output format set").ThrowAsJavaScriptException();
     return env.Null();
   }
-  
-  auto* worker = new FCOpenOutputWorker(env, this);
+
+  Napi::Object thisObj = info.This().As<Napi::Object>();
+  auto* worker = new FCOpenOutputWorker(env, thisObj, this);
   worker->Queue();
   return worker->GetPromise();
 }
 
 Napi::Value FormatContext::CloseOutputAsync(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
+
   AVFormatContext* ctx = ctx_;
   if (!ctx) {
     return env.Null();
   }
-  
+
   if (!is_output_) {
     Napi::Error::New(env, "Not an output context").ThrowAsJavaScriptException();
     return env.Null();
   }
-  
-  auto* worker = new FCCloseOutputWorker(env, this);
+
+  Napi::Object thisObj = info.This().As<Napi::Object>();
+  auto* worker = new FCCloseOutputWorker(env, thisObj, this);
   worker->Queue();
   return worker->GetPromise();
 }
 
 Napi::Value FormatContext::CloseInputAsync(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
+
   if (!ctx_) {
     return env.Null();
   }
-  
-  auto* worker = new FCCloseInputWorker(env, this);
+
+  Napi::Object thisObj = info.This().As<Napi::Object>();
+  auto* worker = new FCCloseInputWorker(env, thisObj, this);
   worker->Queue();
   return worker->GetPromise();
 }
@@ -833,23 +1009,36 @@ Napi::Value FormatContext::FlushAsync(const Napi::CallbackInfo& info) {
     return env.Undefined();
   }
 
-  auto* worker = new FCFlushWorker(env, this);
+  Napi::Object thisObj = info.This().As<Napi::Object>();
+  auto* worker = new FCFlushWorker(env, thisObj, this);
   worker->Queue();
   return worker->GetPromise();
 }
 
 class FCSendRTSPPacketWorker : public Napi::AsyncWorker {
 public:
-  FCSendRTSPPacketWorker(Napi::Env env, FormatContext* parent, int stream_index,
-                         const uint8_t* data, size_t len)
+  FCSendRTSPPacketWorker(Napi::Env env, Napi::Object parentObj, FormatContext* parent,
+                         int stream_index, const uint8_t* data, size_t len)
     : AsyncWorker(env),
       parent_(parent),
       stream_index_(stream_index),
       rtp_data_(data, data + len),
       result_(0),
-      deferred_(Napi::Promise::Deferred::New(env)) {}
+      deferred_(Napi::Promise::Deferred::New(env)) {
+    // Hold reference to prevent GC during async operation
+    parent_ref_.Reset(parentObj, 1);
+  }
+
+  ~FCSendRTSPPacketWorker() {
+    parent_ref_.Reset();
+  }
 
   void Execute() override {
+    if (!parent_) {
+      result_ = AVERROR(EINVAL);
+      return;
+    }
+
     if (!parent_->ctx_) {
       result_ = AVERROR(EINVAL);
       return;
@@ -934,6 +1123,7 @@ public:
   Napi::Promise GetPromise() { return deferred_.Promise(); }
 
 private:
+  Napi::ObjectReference parent_ref_;
   FormatContext* parent_;
   int stream_index_;
   std::vector<uint8_t> rtp_data_;
@@ -970,7 +1160,8 @@ Napi::Value FormatContext::SendRTSPPacketAsync(const Napi::CallbackInfo& info) {
   uint8_t* data = buffer.Data();
   size_t len = buffer.Length();
 
-  auto* worker = new FCSendRTSPPacketWorker(env, this, stream_index, data, len);
+  Napi::Object thisObj = info.This().As<Napi::Object>();
+  auto* worker = new FCSendRTSPPacketWorker(env, thisObj, this, stream_index, data, len);
   worker->Queue();
   return worker->GetPromise();
 }

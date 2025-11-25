@@ -11,6 +11,7 @@ class InputFormatProbeBufferWorker : public Napi::AsyncWorker {
 public:
   InputFormatProbeBufferWorker(
     Napi::Env env,
+    Napi::Object ioCtxObj,
     IOContext* ioContext,
     int maxProbeSize
   ) : AsyncWorker(env),
@@ -18,9 +19,14 @@ public:
       max_probe_size_(maxProbeSize),
       result_format_(nullptr),
       ret_(0),
-      deferred_(Napi::Promise::Deferred::New(env)) {}
+      deferred_(Napi::Promise::Deferred::New(env)) {
+    // Hold reference to prevent GC during async operation
+    io_ctx_ref_.Reset(ioCtxObj, 1);
+  }
 
-  ~InputFormatProbeBufferWorker() = default;
+  ~InputFormatProbeBufferWorker() {
+    io_ctx_ref_.Reset();
+  }
 
   void Execute() override {
     // Null checks to prevent use-after-free crashes
@@ -84,6 +90,7 @@ public:
   }
 
 private:
+  Napi::ObjectReference io_ctx_ref_;
   IOContext* io_context_;
   int max_probe_size_;
   const AVInputFormat* result_format_;
@@ -120,7 +127,7 @@ Napi::Value InputFormat::ProbeBufferAsync(const Napi::CallbackInfo& info) {
     maxProbeSize = info[1].As<Napi::Number>().Int32Value();
   }
 
-  auto* worker = new InputFormatProbeBufferWorker(env, ioContext, maxProbeSize);
+  auto* worker = new InputFormatProbeBufferWorker(env, obj, ioContext, maxProbeSize);
   auto promise = worker->GetPromise();
   worker->Queue();
 

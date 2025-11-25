@@ -11,13 +11,23 @@ namespace ffmpeg {
 
 class HWFCTransferDataWorker : public Napi::AsyncWorker {
 public:
-  HWFCTransferDataWorker(Napi::Env env, Frame* dst, Frame* src, int flags)
-    : Napi::AsyncWorker(env), 
+  HWFCTransferDataWorker(Napi::Env env, Napi::Object dstObj, Frame* dst,
+                         Napi::Object srcObj, Frame* src, int flags)
+    : Napi::AsyncWorker(env),
       dst_(dst),
       src_(src),
       flags_(flags),
       ret_(0),
-      deferred_(Napi::Promise::Deferred::New(env)) {}
+      deferred_(Napi::Promise::Deferred::New(env)) {
+    // Hold references to prevent GC during async operation
+    dst_ref_.Reset(dstObj, 1);
+    src_ref_.Reset(srcObj, 1);
+  }
+
+  ~HWFCTransferDataWorker() {
+    dst_ref_.Reset();
+    src_ref_.Reset();
+  }
 
   void Execute() override {
     // Null checks to prevent use-after-free crashes
@@ -42,6 +52,8 @@ public:
   }
 
 private:
+  Napi::ObjectReference dst_ref_;
+  Napi::ObjectReference src_ref_;
   Frame* dst_;
   Frame* src_;
   int flags_;
@@ -70,8 +82,10 @@ Napi::Value HardwareFramesContext::TransferDataAsync(const Napi::CallbackInfo& i
   if (info.Length() > 2 && info[2].IsNumber()) {
     flags = info[2].As<Napi::Number>().Int32Value();
   }
-  
-  auto* worker = new HWFCTransferDataWorker(env, dst, src, flags);
+
+  Napi::Object dstObj = info[0].As<Napi::Object>();
+  Napi::Object srcObj = info[1].As<Napi::Object>();
+  auto* worker = new HWFCTransferDataWorker(env, dstObj, dst, srcObj, src, flags);
   worker->Queue();
   return worker->GetPromise();
 }

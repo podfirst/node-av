@@ -11,12 +11,24 @@ namespace ffmpeg {
 
 class BSFSendPacketWorker : public Napi::AsyncWorker {
 public:
-  BSFSendPacketWorker(Napi::Env env, BitStreamFilterContext* context, AVPacket* packet)
-    : Napi::AsyncWorker(env), 
-      context_(context), 
-      packet_(packet), 
+  BSFSendPacketWorker(Napi::Env env, Napi::Object ctxObj, BitStreamFilterContext* context,
+                      Napi::Value packetVal, AVPacket* packet)
+    : Napi::AsyncWorker(env),
+      context_(context),
+      packet_(packet),
       ret_(0),
-      deferred_(Napi::Promise::Deferred::New(env)) {}
+      deferred_(Napi::Promise::Deferred::New(env)) {
+    // Hold references to prevent GC during async operation
+    ctx_ref_.Reset(ctxObj, 1);
+    if (packet && packetVal.IsObject()) {
+      packet_ref_.Reset(packetVal.As<Napi::Object>(), 1);
+    }
+  }
+
+  ~BSFSendPacketWorker() {
+    ctx_ref_.Reset();
+    packet_ref_.Reset();
+  }
 
   void Execute() override {
     // Null checks to prevent use-after-free crashes
@@ -41,6 +53,8 @@ public:
   }
 
 private:
+  Napi::ObjectReference ctx_ref_;
+  Napi::ObjectReference packet_ref_;
   BitStreamFilterContext* context_;
   AVPacket* packet_;
   int ret_;
@@ -49,12 +63,22 @@ private:
 
 class BSFReceivePacketWorker : public Napi::AsyncWorker {
 public:
-  BSFReceivePacketWorker(Napi::Env env, BitStreamFilterContext* context, AVPacket* packet)
-    : Napi::AsyncWorker(env), 
-      context_(context), 
-      packet_(packet), 
+  BSFReceivePacketWorker(Napi::Env env, Napi::Object ctxObj, BitStreamFilterContext* context,
+                         Napi::Object packetObj, AVPacket* packet)
+    : Napi::AsyncWorker(env),
+      context_(context),
+      packet_(packet),
       ret_(0),
-      deferred_(Napi::Promise::Deferred::New(env)) {}
+      deferred_(Napi::Promise::Deferred::New(env)) {
+    // Hold references to prevent GC during async operation
+    ctx_ref_.Reset(ctxObj, 1);
+    packet_ref_.Reset(packetObj, 1);
+  }
+
+  ~BSFReceivePacketWorker() {
+    ctx_ref_.Reset();
+    packet_ref_.Reset();
+  }
 
   void Execute() override {
     // Null checks to prevent use-after-free crashes
@@ -84,6 +108,8 @@ public:
   }
 
 private:
+  Napi::ObjectReference ctx_ref_;
+  Napi::ObjectReference packet_ref_;
   BitStreamFilterContext* context_;
   AVPacket* packet_;
   int ret_;
@@ -124,8 +150,10 @@ Napi::Value BitStreamFilterContext::SendPacketAsync(const Napi::CallbackInfo& in
     
     packet = pkt->Get();
   }
-  
-  auto* worker = new BSFSendPacketWorker(env, this, packet);
+
+  Napi::Object thisObj = info.This().As<Napi::Object>();
+  Napi::Value packetVal = (info.Length() > 0) ? info[0] : env.Undefined();
+  auto* worker = new BSFSendPacketWorker(env, thisObj, this, packetVal, packet);
   auto promise = worker->GetPromise();
   worker->Queue();
   
@@ -165,8 +193,10 @@ Napi::Value BitStreamFilterContext::ReceivePacketAsync(const Napi::CallbackInfo&
         .ThrowAsJavaScriptException();
     return env.Undefined();
   }
-  
-  auto* worker = new BSFReceivePacketWorker(env, this, packet->Get());
+
+  Napi::Object thisObj = info.This().As<Napi::Object>();
+  Napi::Object packetObj = info[0].As<Napi::Object>();
+  auto* worker = new BSFReceivePacketWorker(env, thisObj, this, packetObj, packet->Get());
   auto promise = worker->GetPromise();
   worker->Queue();
   

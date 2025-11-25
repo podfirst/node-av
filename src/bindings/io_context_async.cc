@@ -6,14 +6,21 @@ namespace ffmpeg {
 
 class IOOpen2Worker : public Napi::AsyncWorker {
 public:
-  IOOpen2Worker(Napi::Env env, IOContext* ctx, 
+  IOOpen2Worker(Napi::Env env, Napi::Object ctxObj, IOContext* ctx,
               const std::string& url, int flags)
-    : Napi::AsyncWorker(env), 
-      ctx_(ctx), 
-      url_(url), 
-      flags_(flags), 
+    : Napi::AsyncWorker(env),
+      ctx_(ctx),
+      url_(url),
+      flags_(flags),
       ret_(0),
-      deferred_(Napi::Promise::Deferred::New(env)) {}
+      deferred_(Napi::Promise::Deferred::New(env)) {
+    // Hold reference to prevent GC during async operation
+    ctx_ref_.Reset(ctxObj, 1);
+  }
+
+  ~IOOpen2Worker() {
+    ctx_ref_.Reset();
+  }
 
   void Execute() override {
     // Null checks to prevent use-after-free crashes
@@ -46,6 +53,7 @@ public:
   }
 
 private:
+  Napi::ObjectReference ctx_ref_;
   IOContext* ctx_;
   std::string url_;
   int flags_;
@@ -55,11 +63,18 @@ private:
 
 class IOClosepWorker : public Napi::AsyncWorker {
 public:
-  IOClosepWorker(Napi::Env env, IOContext* ctx)
-    : Napi::AsyncWorker(env), 
-      ctx_(ctx), 
+  IOClosepWorker(Napi::Env env, Napi::Object ctxObj, IOContext* ctx)
+    : Napi::AsyncWorker(env),
+      ctx_(ctx),
       ret_(0),
-      deferred_(Napi::Promise::Deferred::New(env)) {}
+      deferred_(Napi::Promise::Deferred::New(env)) {
+    // Hold reference to prevent GC during async operation
+    ctx_ref_.Reset(ctxObj, 1);
+  }
+
+  ~IOClosepWorker() {
+    ctx_ref_.Reset();
+  }
 
   void Execute() override {
     AVIOContext* ctx = ctx_->Get();
@@ -92,6 +107,7 @@ public:
   }
 
 private:
+  Napi::ObjectReference ctx_ref_;
   IOContext* ctx_;
   int ret_;
   Napi::Promise::Deferred deferred_;
@@ -99,13 +115,19 @@ private:
 
 class IOReadWorker : public Napi::AsyncWorker {
 public:
-  IOReadWorker(Napi::Env env, IOContext* ctx, int size)
-    : Napi::AsyncWorker(env), 
-      ctx_(ctx), 
-      size_(size), 
+  IOReadWorker(Napi::Env env, Napi::Object ctxObj, IOContext* ctx, int size)
+    : Napi::AsyncWorker(env),
+      ctx_(ctx),
+      size_(size),
       bytes_read_(0),
       deferred_(Napi::Promise::Deferred::New(env)) {
+    // Hold reference to prevent GC during async operation
+    ctx_ref_.Reset(ctxObj, 1);
     buffer_.resize(size);
+  }
+
+  ~IOReadWorker() {
+    ctx_ref_.Reset();
   }
 
   void Execute() override {
@@ -145,6 +167,7 @@ public:
   }
 
 private:
+  Napi::ObjectReference ctx_ref_;
   IOContext* ctx_;
   int size_;
   int bytes_read_;
@@ -154,13 +177,19 @@ private:
 
 class IOWriteWorker : public Napi::AsyncWorker {
 public:
-  IOWriteWorker(Napi::Env env, IOContext* ctx, 
+  IOWriteWorker(Napi::Env env, Napi::Object ctxObj, IOContext* ctx,
               const uint8_t* data, size_t length)
-    : Napi::AsyncWorker(env), 
+    : Napi::AsyncWorker(env),
       ctx_(ctx),
       deferred_(Napi::Promise::Deferred::New(env)) {
+    // Hold reference to prevent GC during async operation
+    ctx_ref_.Reset(ctxObj, 1);
     // Copy the data since the buffer might be freed before Execute runs
     buffer_.assign(data, data + length);
+  }
+
+  ~IOWriteWorker() {
+    ctx_ref_.Reset();
   }
 
   void Execute() override {
@@ -190,6 +219,7 @@ public:
   }
 
 private:
+  Napi::ObjectReference ctx_ref_;
   IOContext* ctx_;
   std::vector<uint8_t> buffer_;
   Napi::Promise::Deferred deferred_;
@@ -197,14 +227,21 @@ private:
 
 class IOSeekWorker : public Napi::AsyncWorker {
 public:
-  IOSeekWorker(Napi::Env env, IOContext* ctx, 
+  IOSeekWorker(Napi::Env env, Napi::Object ctxObj, IOContext* ctx,
              int64_t offset, int whence)
-    : Napi::AsyncWorker(env), 
-      ctx_(ctx), 
-      offset_(offset), 
-      whence_(whence), 
+    : Napi::AsyncWorker(env),
+      ctx_(ctx),
+      offset_(offset),
+      whence_(whence),
       new_pos_(0),
-      deferred_(Napi::Promise::Deferred::New(env)) {}
+      deferred_(Napi::Promise::Deferred::New(env)) {
+    // Hold reference to prevent GC during async operation
+    ctx_ref_.Reset(ctxObj, 1);
+  }
+
+  ~IOSeekWorker() {
+    ctx_ref_.Reset();
+  }
 
   void Execute() override {
     // Null checks to prevent use-after-free crashes
@@ -235,6 +272,7 @@ public:
   }
 
 private:
+  Napi::ObjectReference ctx_ref_;
   IOContext* ctx_;
   int64_t offset_;
   int whence_;
@@ -244,11 +282,18 @@ private:
 
 class IOSizeWorker : public Napi::AsyncWorker {
 public:
-  IOSizeWorker(Napi::Env env, IOContext* ctx)
-    : Napi::AsyncWorker(env), 
-      ctx_(ctx), 
+  IOSizeWorker(Napi::Env env, Napi::Object ctxObj, IOContext* ctx)
+    : Napi::AsyncWorker(env),
+      ctx_(ctx),
       size_(0),
-      deferred_(Napi::Promise::Deferred::New(env)) {}
+      deferred_(Napi::Promise::Deferred::New(env)) {
+    // Hold reference to prevent GC during async operation
+    ctx_ref_.Reset(ctxObj, 1);
+  }
+
+  ~IOSizeWorker() {
+    ctx_ref_.Reset();
+  }
 
   void Execute() override {
     // Null checks to prevent use-after-free crashes
@@ -279,6 +324,7 @@ public:
   }
 
 private:
+  Napi::ObjectReference ctx_ref_;
   IOContext* ctx_;
   int64_t size_;
   Napi::Promise::Deferred deferred_;
@@ -286,10 +332,17 @@ private:
 
 class IOFlushWorker : public Napi::AsyncWorker {
 public:
-  IOFlushWorker(Napi::Env env, IOContext* ctx)
-    : Napi::AsyncWorker(env), 
+  IOFlushWorker(Napi::Env env, Napi::Object ctxObj, IOContext* ctx)
+    : Napi::AsyncWorker(env),
       ctx_(ctx),
-      deferred_(Napi::Promise::Deferred::New(env)) {}
+      deferred_(Napi::Promise::Deferred::New(env)) {
+    // Hold reference to prevent GC during async operation
+    ctx_ref_.Reset(ctxObj, 1);
+  }
+
+  ~IOFlushWorker() {
+    ctx_ref_.Reset();
+  }
 
   void Execute() override {
     // Null checks to prevent use-after-free crashes
@@ -318,18 +371,26 @@ public:
   }
 
 private:
+  Napi::ObjectReference ctx_ref_;
   IOContext* ctx_;
   Napi::Promise::Deferred deferred_;
 };
 
 class IOSkipWorker : public Napi::AsyncWorker {
 public:
-  IOSkipWorker(Napi::Env env, IOContext* ctx, int64_t offset)
-    : Napi::AsyncWorker(env), 
-      ctx_(ctx), 
-      offset_(offset), 
+  IOSkipWorker(Napi::Env env, Napi::Object ctxObj, IOContext* ctx, int64_t offset)
+    : Napi::AsyncWorker(env),
+      ctx_(ctx),
+      offset_(offset),
       new_pos_(0),
-      deferred_(Napi::Promise::Deferred::New(env)) {}
+      deferred_(Napi::Promise::Deferred::New(env)) {
+    // Hold reference to prevent GC during async operation
+    ctx_ref_.Reset(ctxObj, 1);
+  }
+
+  ~IOSkipWorker() {
+    ctx_ref_.Reset();
+  }
 
   void Execute() override {
     // Null checks to prevent use-after-free crashes
@@ -360,6 +421,7 @@ public:
   }
 
 private:
+  Napi::ObjectReference ctx_ref_;
   IOContext* ctx_;
   int64_t offset_;
   int64_t new_pos_;
@@ -382,8 +444,9 @@ Napi::Value IOContext::Open2Async(const Napi::CallbackInfo& info) {
   
   std::string url = info[0].As<Napi::String>().Utf8Value();
   int flags = info[1].As<Napi::Number>().Int32Value();
-  
-  auto* worker = new IOOpen2Worker(env, this, url, flags);
+
+  Napi::Object thisObj = info.This().As<Napi::Object>();
+  auto* worker = new IOOpen2Worker(env, thisObj, this, url, flags);
   auto promise = worker->GetPromise();
   worker->Queue();
   
@@ -392,8 +455,9 @@ Napi::Value IOContext::Open2Async(const Napi::CallbackInfo& info) {
 
 Napi::Value IOContext::ClosepAsync(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
-  auto* worker = new IOClosepWorker(env, this);
+
+  Napi::Object thisObj = info.This().As<Napi::Object>();
+  auto* worker = new IOClosepWorker(env, thisObj, this);
   auto promise = worker->GetPromise();
   worker->Queue();
   
@@ -410,8 +474,9 @@ Napi::Value IOContext::ReadAsync(const Napi::CallbackInfo& info) {
   }
   
   int size = info[0].As<Napi::Number>().Int32Value();
-  
-  auto* worker = new IOReadWorker(env, this, size);
+
+  Napi::Object thisObj = info.This().As<Napi::Object>();
+  auto* worker = new IOReadWorker(env, thisObj, this, size);
   auto promise = worker->GetPromise();
   worker->Queue();
   
@@ -428,8 +493,9 @@ Napi::Value IOContext::WriteAsync(const Napi::CallbackInfo& info) {
   }
   
   Napi::Buffer<uint8_t> buffer = info[0].As<Napi::Buffer<uint8_t>>();
-  
-  auto* worker = new IOWriteWorker(env, this, buffer.Data(), buffer.Length());
+
+  Napi::Object thisObj = info.This().As<Napi::Object>();
+  auto* worker = new IOWriteWorker(env, thisObj, this, buffer.Data(), buffer.Length());
   auto promise = worker->GetPromise();
   worker->Queue();
   
@@ -448,8 +514,9 @@ Napi::Value IOContext::SeekAsync(const Napi::CallbackInfo& info) {
   bool lossless;
   int64_t offset = info[0].As<Napi::BigInt>().Int64Value(&lossless);
   int whence = info[1].As<Napi::Number>().Int32Value();
-  
-  auto* worker = new IOSeekWorker(env, this, offset, whence);
+
+  Napi::Object thisObj = info.This().As<Napi::Object>();
+  auto* worker = new IOSeekWorker(env, thisObj, this, offset, whence);
   auto promise = worker->GetPromise();
   worker->Queue();
   
@@ -458,8 +525,9 @@ Napi::Value IOContext::SeekAsync(const Napi::CallbackInfo& info) {
 
 Napi::Value IOContext::SizeAsync(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
-  auto* worker = new IOSizeWorker(env, this);
+
+  Napi::Object thisObj = info.This().As<Napi::Object>();
+  auto* worker = new IOSizeWorker(env, thisObj, this);
   auto promise = worker->GetPromise();
   worker->Queue();
   
@@ -468,8 +536,9 @@ Napi::Value IOContext::SizeAsync(const Napi::CallbackInfo& info) {
 
 Napi::Value IOContext::FlushAsync(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
-  auto* worker = new IOFlushWorker(env, this);
+
+  Napi::Object thisObj = info.This().As<Napi::Object>();
+  auto* worker = new IOFlushWorker(env, thisObj, this);
   auto promise = worker->GetPromise();
   worker->Queue();
   
@@ -487,8 +556,9 @@ Napi::Value IOContext::SkipAsync(const Napi::CallbackInfo& info) {
   
   bool lossless;
   int64_t offset = info[0].As<Napi::BigInt>().Int64Value(&lossless);
-  
-  auto* worker = new IOSkipWorker(env, this, offset);
+
+  Napi::Object thisObj = info.This().As<Napi::Object>();
+  auto* worker = new IOSkipWorker(env, thisObj, this, offset);
   auto promise = worker->GetPromise();
   worker->Queue();
   

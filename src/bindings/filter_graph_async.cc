@@ -9,11 +9,18 @@ namespace ffmpeg {
 
 class FGConfigWorker : public Napi::AsyncWorker {
 public:
-  FGConfigWorker(Napi::Env env, FilterGraph* graph)
-    : Napi::AsyncWorker(env), 
-      graph_(graph), 
+  FGConfigWorker(Napi::Env env, Napi::Object graphObj, FilterGraph* graph)
+    : Napi::AsyncWorker(env),
+      graph_(graph),
       ret_(0),
-      deferred_(Napi::Promise::Deferred::New(env)) {}
+      deferred_(Napi::Promise::Deferred::New(env)) {
+    // Hold reference to prevent GC during async operation
+    graph_ref_.Reset(graphObj, 1);
+  }
+
+  ~FGConfigWorker() {
+    graph_ref_.Reset();
+  }
 
   void Execute() override {
     // Null checks to prevent use-after-free crashes
@@ -38,6 +45,7 @@ public:
   }
 
 private:
+  Napi::ObjectReference graph_ref_;
   FilterGraph* graph_;
   int ret_;
   Napi::Promise::Deferred deferred_;
@@ -45,11 +53,18 @@ private:
 
 class FGRequestOldestWorker : public Napi::AsyncWorker {
 public:
-  FGRequestOldestWorker(Napi::Env env, FilterGraph* graph)
-    : Napi::AsyncWorker(env), 
-      graph_(graph), 
+  FGRequestOldestWorker(Napi::Env env, Napi::Object graphObj, FilterGraph* graph)
+    : Napi::AsyncWorker(env),
+      graph_(graph),
       ret_(0),
-      deferred_(Napi::Promise::Deferred::New(env)) {}
+      deferred_(Napi::Promise::Deferred::New(env)) {
+    // Hold reference to prevent GC during async operation
+    graph_ref_.Reset(graphObj, 1);
+  }
+
+  ~FGRequestOldestWorker() {
+    graph_ref_.Reset();
+  }
 
   void Execute() override {
     // Null checks to prevent use-after-free crashes
@@ -74,6 +89,7 @@ public:
   }
 
 private:
+  Napi::ObjectReference graph_ref_;
   FilterGraph* graph_;
   int ret_;
   Napi::Promise::Deferred deferred_;
@@ -81,26 +97,28 @@ private:
 
 Napi::Value FilterGraph::ConfigAsync(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
+
   if (!graph_) {
     Napi::TypeError::New(env, "FilterGraph is not initialized").ThrowAsJavaScriptException();
     return env.Null();
   }
-  
-  auto* worker = new FGConfigWorker(env, this);
+
+  Napi::Object thisObj = info.This().As<Napi::Object>();
+  auto* worker = new FGConfigWorker(env, thisObj, this);
   worker->Queue();
   return worker->GetPromise();
 }
 
 Napi::Value FilterGraph::RequestOldestAsync(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
+
   if (!graph_) {
     Napi::TypeError::New(env, "FilterGraph is not initialized").ThrowAsJavaScriptException();
     return env.Null();
   }
-  
-  auto* worker = new FGRequestOldestWorker(env, this);
+
+  Napi::Object thisObj = info.This().As<Napi::Object>();
+  auto* worker = new FGRequestOldestWorker(env, thisObj, this);
   worker->Queue();
   return worker->GetPromise();
 }

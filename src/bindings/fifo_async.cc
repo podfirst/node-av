@@ -10,13 +10,22 @@ namespace ffmpeg {
 
 class FifoWriteWorker : public Napi::AsyncWorker {
 public:
-  FifoWriteWorker(Napi::Env env, AVFifo* fifo, void* buf, size_t nb_elems)
+  FifoWriteWorker(Napi::Env env, Napi::Object fifoObj, AVFifo* fifo,
+                  Napi::Object bufObj, void* buf, size_t nb_elems)
     : AsyncWorker(env),
       fifo_(fifo),
       buf_(buf),
       nb_elems_(nb_elems),
       result_(0),
       deferred_(Napi::Promise::Deferred::New(env)) {
+    // Hold references to prevent GC during async operation
+    fifo_ref_.Reset(fifoObj, 1);
+    buf_ref_.Reset(bufObj, 1);
+  }
+
+  ~FifoWriteWorker() {
+    fifo_ref_.Reset();
+    buf_ref_.Reset();
   }
 
   void Execute() override {
@@ -43,6 +52,8 @@ public:
   Napi::Promise GetPromise() { return deferred_.Promise(); }
 
 private:
+  Napi::ObjectReference fifo_ref_;
+  Napi::ObjectReference buf_ref_;
   AVFifo* fifo_;
   void* buf_;
   size_t nb_elems_;
@@ -52,13 +63,22 @@ private:
 
 class FifoReadWorker : public Napi::AsyncWorker {
 public:
-  FifoReadWorker(Napi::Env env, AVFifo* fifo, void* buf, size_t nb_elems)
+  FifoReadWorker(Napi::Env env, Napi::Object fifoObj, AVFifo* fifo,
+                 Napi::Object bufObj, void* buf, size_t nb_elems)
     : AsyncWorker(env),
       fifo_(fifo),
       buf_(buf),
       nb_elems_(nb_elems),
       result_(0),
       deferred_(Napi::Promise::Deferred::New(env)) {
+    // Hold references to prevent GC during async operation
+    fifo_ref_.Reset(fifoObj, 1);
+    buf_ref_.Reset(bufObj, 1);
+  }
+
+  ~FifoReadWorker() {
+    fifo_ref_.Reset();
+    buf_ref_.Reset();
   }
 
   void Execute() override {
@@ -92,6 +112,8 @@ public:
   Napi::Promise GetPromise() { return deferred_.Promise(); }
 
 private:
+  Napi::ObjectReference fifo_ref_;
+  Napi::ObjectReference buf_ref_;
   AVFifo* fifo_;
   void* buf_;
   size_t nb_elems_;
@@ -101,7 +123,8 @@ private:
 
 class FifoPeekWorker : public Napi::AsyncWorker {
 public:
-  FifoPeekWorker(Napi::Env env, AVFifo* fifo, void* buf, size_t nb_elems, size_t offset)
+  FifoPeekWorker(Napi::Env env, Napi::Object fifoObj, AVFifo* fifo,
+                 Napi::Object bufObj, void* buf, size_t nb_elems, size_t offset)
     : AsyncWorker(env),
       fifo_(fifo),
       buf_(buf),
@@ -109,6 +132,14 @@ public:
       offset_(offset),
       result_(0),
       deferred_(Napi::Promise::Deferred::New(env)) {
+    // Hold references to prevent GC during async operation
+    fifo_ref_.Reset(fifoObj, 1);
+    buf_ref_.Reset(bufObj, 1);
+  }
+
+  ~FifoPeekWorker() {
+    fifo_ref_.Reset();
+    buf_ref_.Reset();
   }
 
   void Execute() override {
@@ -135,6 +166,8 @@ public:
   Napi::Promise GetPromise() { return deferred_.Promise(); }
 
 private:
+  Napi::ObjectReference fifo_ref_;
+  Napi::ObjectReference buf_ref_;
   AVFifo* fifo_;
   void* buf_;
   size_t nb_elems_;
@@ -164,7 +197,9 @@ Napi::Value Fifo::WriteAsync(const Napi::CallbackInfo& info) {
   Napi::Buffer<uint8_t> buffer = info[0].As<Napi::Buffer<uint8_t>>();
   size_t nb_elems = static_cast<size_t>(info[1].As<Napi::Number>().Int64Value());
 
-  auto* worker = new FifoWriteWorker(env, fifo_, buffer.Data(), nb_elems);
+  Napi::Object thisObj = info.This().As<Napi::Object>();
+  Napi::Object bufObj = info[0].As<Napi::Object>();
+  auto* worker = new FifoWriteWorker(env, thisObj, fifo_, bufObj, buffer.Data(), nb_elems);
   auto promise = worker->GetPromise();
   worker->Queue();
 
@@ -192,7 +227,9 @@ Napi::Value Fifo::ReadAsync(const Napi::CallbackInfo& info) {
   Napi::Buffer<uint8_t> buffer = info[0].As<Napi::Buffer<uint8_t>>();
   size_t nb_elems = static_cast<size_t>(info[1].As<Napi::Number>().Int64Value());
 
-  auto* worker = new FifoReadWorker(env, fifo_, buffer.Data(), nb_elems);
+  Napi::Object thisObj = info.This().As<Napi::Object>();
+  Napi::Object bufObj = info[0].As<Napi::Object>();
+  auto* worker = new FifoReadWorker(env, thisObj, fifo_, bufObj, buffer.Data(), nb_elems);
   auto promise = worker->GetPromise();
   worker->Queue();
 
@@ -225,7 +262,9 @@ Napi::Value Fifo::PeekAsync(const Napi::CallbackInfo& info) {
     offset = static_cast<size_t>(info[2].As<Napi::Number>().Int64Value());
   }
 
-  auto* worker = new FifoPeekWorker(env, fifo_, buffer.Data(), nb_elems, offset);
+  Napi::Object thisObj = info.This().As<Napi::Object>();
+  Napi::Object bufObj = info[0].As<Napi::Object>();
+  auto* worker = new FifoPeekWorker(env, thisObj, fifo_, bufObj, buffer.Data(), nb_elems, offset);
   auto promise = worker->GetPromise();
   worker->Queue();
 

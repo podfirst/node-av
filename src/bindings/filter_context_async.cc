@@ -14,13 +14,25 @@ namespace ffmpeg {
 
 class FCBuffersrcAddFrameWorker : public Napi::AsyncWorker {
 public:
-  FCBuffersrcAddFrameWorker(Napi::Env env, FilterContext* ctx, Frame* frame, int flags)
+  FCBuffersrcAddFrameWorker(Napi::Env env, Napi::Object ctxObj, FilterContext* ctx,
+                            Napi::Value frameVal, Frame* frame, int flags)
     : Napi::AsyncWorker(env),
       ctx_(ctx),
       frame_(frame),
       flags_(flags),
       ret_(0),
-      deferred_(Napi::Promise::Deferred::New(env)) {}
+      deferred_(Napi::Promise::Deferred::New(env)) {
+    // Hold references to prevent GC during async operation
+    ctx_ref_.Reset(ctxObj, 1);
+    if (frame && frameVal.IsObject()) {
+      frame_ref_.Reset(frameVal.As<Napi::Object>(), 1);
+    }
+  }
+
+  ~FCBuffersrcAddFrameWorker() {
+    ctx_ref_.Reset();
+    frame_ref_.Reset();
+  }
 
   void Execute() override {
     // Null checks to prevent use-after-free crashes
@@ -45,6 +57,8 @@ public:
   }
 
 private:
+  Napi::ObjectReference ctx_ref_;
+  Napi::ObjectReference frame_ref_;
   FilterContext* ctx_;
   Frame* frame_;
   int flags_;
@@ -54,12 +68,22 @@ private:
 
 class FCBuffersinkGetFrameWorker : public Napi::AsyncWorker {
 public:
-  FCBuffersinkGetFrameWorker(Napi::Env env, FilterContext* ctx, Frame* frame)
-    : Napi::AsyncWorker(env), 
-      ctx_(ctx), 
-      frame_(frame), 
+  FCBuffersinkGetFrameWorker(Napi::Env env, Napi::Object ctxObj, FilterContext* ctx,
+                             Napi::Object frameObj, Frame* frame)
+    : Napi::AsyncWorker(env),
+      ctx_(ctx),
+      frame_(frame),
       ret_(0),
-      deferred_(Napi::Promise::Deferred::New(env)) {}
+      deferred_(Napi::Promise::Deferred::New(env)) {
+    // Hold references to prevent GC during async operation
+    ctx_ref_.Reset(ctxObj, 1);
+    frame_ref_.Reset(frameObj, 1);
+  }
+
+  ~FCBuffersinkGetFrameWorker() {
+    ctx_ref_.Reset();
+    frame_ref_.Reset();
+  }
 
   void Execute() override {
     // Null checks to prevent use-after-free crashes
@@ -89,6 +113,8 @@ public:
   }
 
 private:
+  Napi::ObjectReference ctx_ref_;
+  Napi::ObjectReference frame_ref_;
   FilterContext* ctx_;
   Frame* frame_;
   int ret_;
@@ -99,7 +125,9 @@ Napi::Value FilterContext::BuffersrcAddFrameAsync(const Napi::CallbackInfo& info
   Napi::Env env = info.Env();
 
   Frame* frame = nullptr;
+  Napi::Value frameVal = env.Undefined();
   if (!info[0].IsNull() && !info[0].IsUndefined()) {
+    frameVal = info[0];
     frame = UnwrapNativeObject<Frame>(env, info[0], "Frame");
   }
 
@@ -109,22 +137,25 @@ Napi::Value FilterContext::BuffersrcAddFrameAsync(const Napi::CallbackInfo& info
     flags = info[1].As<Napi::Number>().Int32Value();
   }
 
-  auto* worker = new FCBuffersrcAddFrameWorker(env, this, frame, flags);
+  Napi::Object thisObj = info.This().As<Napi::Object>();
+  auto* worker = new FCBuffersrcAddFrameWorker(env, thisObj, this, frameVal, frame, flags);
   worker->Queue();
   return worker->GetPromise();
 }
 
 Napi::Value FilterContext::BuffersinkGetFrameAsync(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
+
   if (info.Length() < 1 || !info[0].IsObject()) {
     Napi::TypeError::New(env, "Frame expected").ThrowAsJavaScriptException();
     return env.Null();
   }
-  
+
+  Napi::Object frameObj = info[0].As<Napi::Object>();
   Frame* frame = UnwrapNativeObject<Frame>(env, info[0], "Frame");
-  
-  auto* worker = new FCBuffersinkGetFrameWorker(env, this, frame);
+
+  Napi::Object thisObj = info.This().As<Napi::Object>();
+  auto* worker = new FCBuffersinkGetFrameWorker(env, thisObj, this, frameObj, frame);
   worker->Queue();
   return worker->GetPromise();
 }
