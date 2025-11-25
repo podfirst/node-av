@@ -828,26 +828,47 @@ async function runDemuxerPipelineAsync(input: Demuxer, output: Muxer, shouldStop
     }
   }
 
-  // Copy all packets
-  for await (using packet of input.packets()) {
-    // Check if we should stop
-    if (shouldStop()) {
-      break;
-    }
+  // Get iterator to properly clean up on stop
+  const packetsIterable = input.packets();
+  const iterator = packetsIterable[Symbol.asyncIterator]();
 
-    // Handle EOF signal (null packet from input means all streams are done)
-    if (packet === null) {
-      // Signal EOF for all streams
-      for (const mapping of streams) {
-        await output.writePacket(null, mapping.index);
+  try {
+    // Copy all packets
+    while (true) {
+      // Check if we should stop before getting next item
+      if (shouldStop()) {
+        break;
       }
-      break;
-    }
 
-    // Find the corresponding output stream index
-    const mapping = streams.find((s) => s.stream.index === packet.streamIndex);
-    if (mapping) {
-      await output.writePacket(packet, mapping.index);
+      const { value: packet, done } = await iterator.next();
+      if (done) break;
+
+      // Handle EOF signal (null packet from input means all streams are done)
+      if (packet === null) {
+        // Signal EOF for all streams
+        for (const mapping of streams) {
+          await output.writePacket(null, mapping.index);
+        }
+        break;
+      }
+
+      try {
+        // Find the corresponding output stream index
+        const mapping = streams.find((s) => s.stream.index === packet.streamIndex);
+        if (mapping) {
+          await output.writePacket(packet, mapping.index);
+        }
+      } finally {
+        // Free the packet after use
+        if (packet && typeof packet.free === 'function') {
+          packet.free();
+        }
+      }
+    }
+  } finally {
+    // Always clean up the generator to prevent memory leaks
+    if (iterator.return) {
+      await iterator.return(undefined);
     }
   }
 
@@ -1013,23 +1034,44 @@ async function consumeSimplePipeline(stream: AsyncIterable<Packet | Frame | null
     throw new Error('Cannot determine stream configuration. This is likely a bug in the pipeline.');
   }
 
-  // Process stream
-  for await (using item of stream) {
-    // Check if we should stop
-    if (shouldStop()) {
-      break;
-    }
+  // Get iterator to properly clean up on stop
+  const iterator = stream[Symbol.asyncIterator]();
 
-    // Handle EOF signal
-    if (item === null) {
-      await output.writePacket(null, streamIndex);
-      break;
-    }
+  try {
+    // Process stream
+    while (true) {
+      // Check if we should stop before getting next item
+      if (shouldStop()) {
+        break;
+      }
 
-    if (isPacket(item) || item === null) {
-      await output.writePacket(item, streamIndex);
-    } else {
-      throw new Error('Cannot write frames directly to Muxer. Use an encoder first.');
+      const { value: item, done } = await iterator.next();
+      if (done) break;
+
+      // Handle EOF signal
+      if (item === null) {
+        await output.writePacket(null, streamIndex);
+        break;
+      }
+
+      // Use explicit resource management for the item
+      try {
+        if (isPacket(item) || item === null) {
+          await output.writePacket(item, streamIndex);
+        } else {
+          throw new Error('Cannot write frames directly to Muxer. Use an encoder first.');
+        }
+      } finally {
+        // Free the packet/frame after use
+        if (item && typeof item.free === 'function') {
+          item.free();
+        }
+      }
+    }
+  } finally {
+    // Always clean up the generator to prevent memory leaks
+    if (iterator.return) {
+      await iterator.return(undefined);
     }
   }
 
@@ -1156,10 +1198,10 @@ async function runNamedPipelineAsync<K extends StreamName>(
   const allSameInput = inputValues.length > 1 && inputValues.every((input) => input === inputValues[0]);
 
   // Track metadata for each stream
-  const streamMetadata: Record<StreamName, StreamMetadata> = {} as any;
+  const streamMetadata: Partial<Record<StreamName, StreamMetadata>> = {};
 
   // Process each named stream into generators
-  const processedStreams: Record<StreamName, AsyncIterable<Packet>> = {} as any;
+  const processedStreams: Partial<Record<StreamName, AsyncIterable<Packet | null>>> = {};
 
   // If all inputs are the same instance, use Demuxer's built-in parallel packet generators
   if (allSameInput) {
@@ -1171,7 +1213,7 @@ async function runNamedPipelineAsync<K extends StreamName>(
       (Decoder | FilterAPI | FilterAPI[] | Encoder | BitStreamFilterAPI | BitStreamFilterAPI[] | undefined)[] | 'passthrough',
     ][]) {
       const metadata: StreamMetadata = {};
-      (streamMetadata as any)[streamName] = metadata;
+      streamMetadata[streamName] = metadata;
 
       // Normalize stages
       let normalizedStages: typeof streamStages = streamStages;
@@ -1214,7 +1256,7 @@ async function runNamedPipelineAsync<K extends StreamName>(
         }
 
         // Build pipeline with packets from this specific stream
-        (processedStreams as any)[streamName] = buildNamedStreamPipeline(sharedInput.packets(streamIndex), stages, metadata);
+        processedStreams[streamName] = buildNamedStreamPipeline(sharedInput.packets(streamIndex), stages, metadata);
       } else {
         // Passthrough - use Demuxer's built-in stream filtering
         metadata.type = streamName;
@@ -1226,7 +1268,7 @@ async function runNamedPipelineAsync<K extends StreamName>(
         streamIndex = stream.index;
 
         // Direct passthrough using input.packets(streamIndex)
-        (processedStreams as any)[streamName] = sharedInput.packets(streamIndex);
+        processedStreams[streamName] = sharedInput.packets(streamIndex);
       }
     }
   } else {
@@ -1236,7 +1278,7 @@ async function runNamedPipelineAsync<K extends StreamName>(
       (Decoder | FilterAPI | FilterAPI[] | Encoder | BitStreamFilterAPI | BitStreamFilterAPI[] | undefined)[] | 'passthrough',
     ][]) {
       const metadata: StreamMetadata = {};
-      (streamMetadata as any)[streamName] = metadata;
+      streamMetadata[streamName] = metadata;
 
       const input = (inputs as any)[streamName] as Demuxer;
       if (!input) {
@@ -1274,7 +1316,7 @@ async function runNamedPipelineAsync<K extends StreamName>(
           throw new Error(`No ${streamName} stream found in input for passthrough.`);
         }
 
-        (processedStreams as any)[streamName] = input.packets(stream.index);
+        processedStreams[streamName] = input.packets(stream.index);
         metadata.demuxer = input; // Track Demuxer for passthrough
       } else {
         // Process the stream - normalizedStages is guaranteed to be an array here
@@ -1319,7 +1361,7 @@ async function runNamedPipelineAsync<K extends StreamName>(
         }
 
         // Build pipeline for this stream
-        (processedStreams as any)[streamName] = buildNamedStreamPipeline(packets, stages, metadata);
+        processedStreams[streamName] = buildNamedStreamPipeline(packets, stages, metadata);
       }
     }
   }
@@ -1327,7 +1369,7 @@ async function runNamedPipelineAsync<K extends StreamName>(
   // Write to output(s)
   if (isMuxer(output)) {
     // Always write streams in parallel - Muxer's SyncQueue handles interleaving internally
-    const streamIndices: Record<StreamName, number> = {} as any;
+    const streamIndices: Partial<Record<StreamName, number>> = {};
 
     // Add all streams to output first
     for (const [name, meta] of Object.entries(streamMetadata) as [StreamName, StreamMetadata][]) {
@@ -1365,7 +1407,9 @@ async function runNamedPipelineAsync<K extends StreamName>(
     const promises: Promise<void>[] = [];
     for (const [name, stream] of Object.entries(processedStreams) as [StreamName, AsyncIterable<Packet>][]) {
       const streamIndex = streamIndices[name];
-      promises.push(consumeStreamInParallel(stream, output, streamIndex, shouldStop));
+      if (streamIndex !== undefined) {
+        promises.push(consumeStreamInParallel(stream, output, streamIndex, shouldStop));
+      }
     }
 
     await Promise.all(promises);
@@ -1377,8 +1421,8 @@ async function runNamedPipelineAsync<K extends StreamName>(
 
     for (const [streamName, stream] of Object.entries(processedStreams) as [StreamName, AsyncIterable<Packet>][]) {
       const streamOutput = (outputs as any)[streamName] as Muxer | undefined;
-      if (streamOutput) {
-        const metadata = streamMetadata[streamName];
+      const metadata = streamMetadata[streamName];
+      if (streamOutput && metadata) {
         promises.push(consumeNamedStream(stream, streamOutput, metadata, shouldStop));
       }
     }
@@ -1504,14 +1548,34 @@ async function* buildNamedStreamPipeline(
  * @internal
  */
 async function consumeStreamInParallel(stream: AsyncIterable<Packet | null>, output: Muxer, streamIndex: number, shouldStop: () => boolean): Promise<void> {
-  // Write all packets (including EOF null)
-  for await (using packet of stream) {
-    // Check if we should stop
-    if (shouldStop()) {
-      break;
-    }
+  // Get iterator to properly clean up on stop
+  const iterator = stream[Symbol.asyncIterator]();
 
-    await output.writePacket(packet, streamIndex);
+  try {
+    // Write all packets (including EOF null)
+    while (true) {
+      // Check if we should stop before getting next item
+      if (shouldStop()) {
+        break;
+      }
+
+      const { value: packet, done } = await iterator.next();
+      if (done) break;
+
+      try {
+        await output.writePacket(packet, streamIndex);
+      } finally {
+        // Free the packet after use (but not null)
+        if (packet && typeof packet.free === 'function') {
+          packet.free();
+        }
+      }
+    }
+  } finally {
+    // Always clean up the generator to prevent memory leaks
+    if (iterator.return) {
+      await iterator.return(undefined);
+    }
   }
 
   // Note: Don't close output here - it will be closed by the caller after all streams finish
@@ -1567,14 +1631,34 @@ async function consumeNamedStream(stream: AsyncIterable<Packet | null>, output: 
   // Store for later use
   metadata.streamIndex = streamIndex;
 
-  // Write all packets (including EOF null)
-  for await (using packet of stream) {
-    // Check if we should stop
-    if (shouldStop()) {
-      break;
-    }
+  // Get iterator to properly clean up on stop
+  const iterator = stream[Symbol.asyncIterator]();
 
-    await output.writePacket(packet, streamIndex);
+  try {
+    // Write all packets (including EOF null)
+    while (true) {
+      // Check if we should stop before getting next item
+      if (shouldStop()) {
+        break;
+      }
+
+      const { value: packet, done } = await iterator.next();
+      if (done) break;
+
+      try {
+        await output.writePacket(packet, streamIndex);
+      } finally {
+        // Free the packet after use (but not null)
+        if (packet && typeof packet.free === 'function') {
+          packet.free();
+        }
+      }
+    }
+  } finally {
+    // Always clean up the generator to prevent memory leaks
+    if (iterator.return) {
+      await iterator.return(undefined);
+    }
   }
 
   // Note: Output is closed by the caller after all streams finish
