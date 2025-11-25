@@ -81,6 +81,16 @@ export interface LogOptions {
 }
 
 /**
+ * DTS prediction state.
+ */
+export interface DtsPredictState {
+  sawFirstTs: boolean;
+  dts: bigint;
+  nextDts: bigint;
+  firstDts: bigint;
+}
+
+/**
  * Image output format
  */
 export type ImageOutputFormat = 'nv12' | 'yuv420p' | 'rgb' | 'rgba' | 'gray';

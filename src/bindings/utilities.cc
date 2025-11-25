@@ -2,6 +2,9 @@
 #include "common.h"
 #include "format_context.h"
 #include "codec_parameters.h"
+#include "packet.h"
+#include "stream.h"
+#include "codec_parser.h"
 #include <cstring>
 #include <vector>
 extern "C" {
@@ -79,6 +82,9 @@ Napi::Object Utilities::Init(Napi::Env env, Napi::Object exports) {
 
   // SDP utilities
   exports.Set("avSdpCreate", Napi::Function::New(env, SdpCreate));
+
+  // Timestamp prediction utilities
+  exports.Set("dtsPredict", Napi::Function::New(env, DtsPredict));
 
   // FFmpeg information
   exports.Set("getFFmpegInfo", Napi::Function::New(env, GetFFmpegInfo));
@@ -1682,6 +1688,159 @@ Napi::Value Utilities::RescaleQRnd(const Napi::CallbackInfo& info) {
   int64_t result = av_rescale_q_rnd(a, bq, cq, (AVRounding)rnd);
 
   return Napi::BigInt::New(env, result);
+}
+
+Napi::Value Utilities::DtsPredict(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+
+  if (info.Length() < 3) {
+    Napi::TypeError::New(env, "Expected 3 arguments: packet, stream, state").ThrowAsJavaScriptException();
+    return env.Null();
+  }
+
+  // Get native Packet
+  Packet* packetWrapper = UnwrapNativeObject<Packet>(env, info[0].As<Napi::Object>(), "Packet");
+  if (!packetWrapper) {
+    Napi::TypeError::New(env, "Invalid packet object").ThrowAsJavaScriptException();
+    return env.Null();
+  }
+  AVPacket* pkt = packetWrapper->Get();
+  if (!pkt) {
+    Napi::TypeError::New(env, "Packet is null").ThrowAsJavaScriptException();
+    return env.Null();
+  }
+
+  // Get native Stream
+  Stream* streamWrapper = UnwrapNativeObject<Stream>(env, info[1].As<Napi::Object>(), "Stream");
+  if (!streamWrapper) {
+    Napi::TypeError::New(env, "Invalid stream object").ThrowAsJavaScriptException();
+    return env.Null();
+  }
+  AVStream* stream = streamWrapper->Get();
+  if (!stream) {
+    Napi::TypeError::New(env, "Stream is null").ThrowAsJavaScriptException();
+    return env.Null();
+  }
+
+  // Get codecpar from stream
+  AVCodecParameters* par = stream->codecpar;
+  if (!par) {
+    Napi::TypeError::New(env, "Stream codecpar is null").ThrowAsJavaScriptException();
+    return env.Null();
+  }
+
+  // Extract state
+  Napi::Object stateObj = info[2].As<Napi::Object>();
+  bool saw_first_ts = stateObj.Get("sawFirstTs").As<Napi::Boolean>().Value();
+
+  int64_t dts = AV_NOPTS_VALUE;
+  int64_t next_dts = AV_NOPTS_VALUE;
+  int64_t first_dts = AV_NOPTS_VALUE;
+
+  auto extractInt64 = [](Napi::Object& obj, const char* key, int64_t defaultVal) -> int64_t {
+    if (!obj.Has(key)) return defaultVal;
+    Napi::Value val = obj.Get(key);
+    if (val.IsBigInt()) {
+      bool lossless;
+      return val.As<Napi::BigInt>().Int64Value(&lossless);
+    } else if (val.IsNumber()) {
+      return val.As<Napi::Number>().Int64Value();
+    }
+    return defaultVal;
+  };
+
+  dts = extractInt64(stateObj, "dts", AV_NOPTS_VALUE);
+  next_dts = extractInt64(stateObj, "nextDts", AV_NOPTS_VALUE);
+  first_dts = extractInt64(stateObj, "firstDts", AV_NOPTS_VALUE);
+
+  // Extract values from native objects
+  int64_t pkt_pts = pkt->pts;
+  int64_t pkt_dts = pkt->dts;
+  int64_t pkt_duration = pkt->duration;
+  AVRational pkt_time_base = pkt->time_base;
+
+  AVRational avg_frame_rate = stream->avg_frame_rate;
+  int video_delay = par->video_delay;
+  int codec_type = par->codec_type;
+  int sample_rate = par->sample_rate;
+  int frame_size = par->frame_size;
+  AVRational frame_rate = par->framerate;
+
+  // Get parser context from stream (if available)
+  AVCodecParserContext* parser_ctx = av_stream_get_parser(stream);
+  int repeat_pict = parser_ctx ? parser_ctx->repeat_pict : 0;
+
+  // Check if codec has AV_CODEC_PROP_FIELDS property
+  const AVCodecDescriptor* desc = avcodec_descriptor_get(par->codec_id);
+  bool has_fields_property = desc && (desc->props & AV_CODEC_PROP_FIELDS);
+
+  // First timestamp seen
+  if (!saw_first_ts) {
+    first_dts = dts = (avg_frame_rate.num && avg_frame_rate.den)
+        ? -video_delay * AV_TIME_BASE / av_q2d(avg_frame_rate)
+        : 0;
+
+    if (pkt_pts != AV_NOPTS_VALUE) {
+      first_dts = dts += av_rescale_q(pkt_pts, pkt_time_base, AV_TIME_BASE_Q);
+    }
+    saw_first_ts = true;
+  }
+
+  // Initialize next_dts if not set
+  if (next_dts == AV_NOPTS_VALUE) {
+    next_dts = dts;
+  }
+
+  // Update from packet DTS if available
+  if (pkt_dts != AV_NOPTS_VALUE) {
+    next_dts = dts = av_rescale_q(pkt_dts, pkt_time_base, AV_TIME_BASE_Q);
+  }
+
+  dts = next_dts;
+
+  // Predict next DTS based on codec type
+  switch (codec_type) {
+    case AVMEDIA_TYPE_AUDIO:
+      if (sample_rate > 0) {
+        next_dts += ((int64_t)AV_TIME_BASE * frame_size) / sample_rate;
+      } else {
+        next_dts += av_rescale_q(pkt_duration, pkt_time_base, AV_TIME_BASE_Q);
+      }
+      break;
+
+    case AVMEDIA_TYPE_VIDEO:
+      if (pkt_duration > 0) {
+        next_dts += av_rescale_q(pkt_duration, pkt_time_base, AV_TIME_BASE_Q);
+      } else if (frame_rate.num != 0 && frame_rate.den != 0) {
+        AVRational field_rate = av_mul_q(frame_rate, (AVRational){2, 1});
+        int fields = 2;
+
+        if (has_fields_property && parser_ctx && repeat_pict >= 0) {
+          fields = 1 + repeat_pict;
+        }
+
+        if (field_rate.num != 0 && field_rate.den != 0) {
+          next_dts += av_rescale_q(fields, av_inv_q(field_rate), AV_TIME_BASE_Q);
+        }
+      }
+      break;
+
+    default:
+      // For other codec types, try using packet duration
+      if (pkt_duration > 0) {
+        next_dts += av_rescale_q(pkt_duration, pkt_time_base, AV_TIME_BASE_Q);
+      }
+      break;
+  }
+
+  // Return updated state
+  Napi::Object result = Napi::Object::New(env);
+  result.Set("sawFirstTs", Napi::Boolean::New(env, saw_first_ts));
+  result.Set("dts", Napi::BigInt::New(env, dts));
+  result.Set("nextDts", Napi::BigInt::New(env, next_dts));
+  result.Set("firstDts", Napi::BigInt::New(env, first_dts));
+
+  return result;
 }
 
 } // namespace ffmpeg

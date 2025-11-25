@@ -83,6 +83,9 @@ public:
   // SDP utilities
   static Napi::Value SdpCreate(const Napi::CallbackInfo& info);
 
+  // Timestamp prediction utilities (based on FFmpeg's ist_dts_update)
+  static Napi::Value DtsPredict(const Napi::CallbackInfo& info);
+
 private:
   explicit Utilities(const Napi::CallbackInfo& info);
 };

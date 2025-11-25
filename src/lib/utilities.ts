@@ -5,8 +5,8 @@ import { FFmpegError } from './error.js';
 import type { AVCodecID, AVHWDeviceType, AVMediaType, AVPixelFormat, AVSampleFormat } from '../constants/constants.js';
 import type { FFHWDeviceType } from '../constants/hardware.js';
 import type { FormatContext } from './format-context.js';
-import type { NativeCodecParameters, NativeWrapper } from './native-types.js';
-import type { ChannelLayout, IRational } from './types.js';
+import type { NativeCodecParameters, NativePacket, NativeStream, NativeWrapper } from './native-types.js';
+import type { ChannelLayout, DtsPredictState, IRational } from './types.js';
 
 /**
  * Get FFmpeg library information.
@@ -1301,6 +1301,35 @@ export function avSdpCreate(contexts: FormatContext[]): string | null {
   }
 
   return bindings.avSdpCreate(nativeContexts);
+}
+
+/**
+ * Predict and update DTS timestamps for demuxed packets.
+ *
+ * This is a native implementation of FFmpeg's `ist_dts_update()`.
+ * It predicts the next DTS based on codec type and stream metadata,
+ * handling both audio (sample-based) and video (frame-rate-based) timing.
+ *
+ * @param packet - Native Packet
+ *
+ * @param stream - Native Stream
+ *
+ * @param state - Current DTS prediction state
+ *
+ * @returns Updated state with new DTS values
+ *
+ * @example
+ * ```typescript
+ * const newState = dtsPredict(packet, stream, {
+ *   sawFirstTs: false,
+ *   dts: AV_NOPTS_VALUE,
+ *   nextDts: AV_NOPTS_VALUE,
+ *   firstDts: AV_NOPTS_VALUE,
+ * });
+ * ```
+ */
+export function dtsPredict(packet: NativeWrapper<NativePacket>, stream: NativeWrapper<NativeStream>, state: DtsPredictState): DtsPredictState {
+  return bindings.dtsPredict(packet.getNative(), stream.getNative(), state);
 }
 
 /**

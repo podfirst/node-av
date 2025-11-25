@@ -55,7 +55,7 @@ import type {
   NativeStream,
   NativeSyncQueue,
 } from './native-types.js';
-import type { ChannelLayout, IDimension, IRational } from './types.js';
+import type { ChannelLayout, DtsPredictState, IDimension, IRational } from './types.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -328,6 +328,7 @@ export interface NativeBinding {
   avSamplesGetBufferSize: (nbChannels: number, nbSamples: number, sampleFmt: AVSampleFormat, align: number) => { size: number; linesize: number } | number;
   avChannelLayoutDescribe: (channelLayout: Partial<ChannelLayout>) => string | null;
   avSdpCreate: (contexts: NativeFormatContext[]) => string | null;
+  dtsPredict: (packet: NativePacket, stream: NativeStream, state: DtsPredictState) => DtsPredictState;
 }
 
 /**
