@@ -5,7 +5,6 @@ import { resolve } from 'path';
 import { RtpPacket } from 'werift';
 
 import {
-  AV_CODEC_PROP_FIELDS,
   AV_NOPTS_VALUE,
   AV_PIX_FMT_NONE,
   AV_ROUND_NEAR_INF,
@@ -29,7 +28,7 @@ import { InputFormat } from '../lib/input-format.js';
 import { IOContext } from '../lib/io-context.js';
 import { Packet } from '../lib/packet.js';
 import { Rational } from '../lib/rational.js';
-import { avGetPixFmtName, avGetSampleFmtName, avInvQ, avMulQ, avRescaleQ, avRescaleQRnd } from '../lib/utilities.js';
+import { avGetPixFmtName, avGetSampleFmtName, avRescaleQ, avRescaleQRnd, dtsPredict as nativeDtsPredict } from '../lib/utilities.js';
 import { DELTA_THRESHOLD, DTS_ERROR_THRESHOLD, IO_BUFFER_SIZE, MAX_INPUT_QUEUE_SIZE } from './constants.js';
 import { IOStream } from './io-stream.js';
 import { StreamingUtils } from './utilities/streaming.js';
@@ -1667,6 +1666,14 @@ export class Demuxer implements AsyncDisposable, Disposable {
 
         // Read next packet
         const ret = await this.formatContext.readFrame(packet);
+
+        // IMPORTANT: Check isClosed again after await - the demuxer may have been
+        // closed while we were waiting for readFrame(). If closed, the native
+        // AVStreams have been freed and accessing them would cause use-after-free!
+        if (this.isClosed) {
+          break;
+        }
+
         if (ret < 0) {
           // End of stream - notify all waiting consumers
           this.demuxEof = true;
@@ -1876,74 +1883,20 @@ export class Demuxer implements AsyncDisposable, Disposable {
    */
   private dtsPredict(packet: Packet, stream: Stream): void {
     const state = this.getStreamState(packet.streamIndex);
-    const par = stream.codecpar;
 
-    // First timestamp seen
-    if (!state.sawFirstTs) {
-      // For video with avg_frame_rate, account for video_delay
-      const avgFrameRate = stream.avgFrameRate;
-      if (avgFrameRate && avgFrameRate.num > 0) {
-        const frameRateD = Number(avgFrameRate.num) / Number(avgFrameRate.den);
-        state.firstDts = state.dts = BigInt(Math.floor((-par.videoDelay * Number(AV_TIME_BASE)) / frameRateD));
-      } else {
-        state.firstDts = state.dts = 0n;
-      }
+    // Call native implementation with native objects
+    const newState = nativeDtsPredict(packet, stream, {
+      sawFirstTs: state.sawFirstTs,
+      dts: state.dts,
+      nextDts: state.nextDts,
+      firstDts: state.firstDts,
+    });
 
-      if (packet.pts !== AV_NOPTS_VALUE) {
-        const ptsDts = avRescaleQ(packet.pts, packet.timeBase, AV_TIME_BASE_Q);
-        state.firstDts += ptsDts;
-        state.dts += ptsDts;
-      }
-      state.sawFirstTs = true;
-    }
-
-    // Initialize next_dts if not set
-    if (state.nextDts === AV_NOPTS_VALUE) {
-      state.nextDts = state.dts;
-    }
-
-    // Update from packet DTS if available
-    if (packet.dts !== AV_NOPTS_VALUE) {
-      state.nextDts = state.dts = avRescaleQ(packet.dts, packet.timeBase, AV_TIME_BASE_Q);
-    }
-
-    state.dts = state.nextDts;
-
-    // Predict next DTS based on codec type
-    switch (par.codecType) {
-      case AVMEDIA_TYPE_AUDIO:
-        // Audio: duration from sample_rate or packet duration
-        if (par.sampleRate >= 1 && par.frameSize > 0) {
-          state.nextDts += (BigInt(AV_TIME_BASE) * BigInt(par.frameSize)) / BigInt(par.sampleRate);
-        } else {
-          state.nextDts += avRescaleQ(packet.duration, packet.timeBase, AV_TIME_BASE_Q);
-        }
-        break;
-
-      case AVMEDIA_TYPE_VIDEO: {
-        // Video: various methods depending on available metadata
-        // Note: FFmpeg has ist->framerate (forced with -r), but we don't support that option
-        if (packet.duration > 0n) {
-          // Use packet duration
-          state.nextDts += avRescaleQ(packet.duration, packet.timeBase, AV_TIME_BASE_Q);
-        } else if (par.frameRate && par.frameRate.num > 0) {
-          // Use codec framerate with field handling
-          const fieldRate = avMulQ(par.frameRate, { num: 2, den: 1 });
-          let fields = 2; // Default: 2 fields (progressive or standard interlaced)
-
-          // Check if codec has fields property and parser is available
-          const parser = stream.parser;
-          if (par.hasProperties(AV_CODEC_PROP_FIELDS) && parser) {
-            // Get repeat_pict from parser for accurate field count
-            fields = 1 + parser.repeatPict;
-          }
-
-          const invFieldRate = avInvQ(fieldRate);
-          state.nextDts += avRescaleQ(BigInt(fields), invFieldRate, AV_TIME_BASE_Q);
-        }
-        break;
-      }
-    }
+    // Update state with results
+    state.sawFirstTs = newState.sawFirstTs;
+    state.dts = newState.dts;
+    state.nextDts = newState.nextDts;
+    state.firstDts = newState.firstDts;
   }
 
   /**
