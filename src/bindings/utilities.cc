@@ -1812,7 +1812,8 @@ Napi::Value Utilities::DtsPredict(const Napi::CallbackInfo& info) {
       if (pkt_duration > 0) {
         next_dts += av_rescale_q(pkt_duration, pkt_time_base, AV_TIME_BASE_Q);
       } else if (frame_rate.num != 0 && frame_rate.den != 0) {
-        AVRational field_rate = av_mul_q(frame_rate, (AVRational){2, 1});
+        AVRational two_one = {2, 1};
+        AVRational field_rate = av_mul_q(frame_rate, two_one);
         int fields = 2;
 
         if (has_fields_property && parser_ctx && repeat_pict >= 0) {
