@@ -206,6 +206,8 @@ export class AudioFrameBuffer implements Disposable {
    *
    * @returns Audio frame with exactly frameSize samples, or null if insufficient samples
    *
+   * @throws {Error} If frame cloning fails (out of memory)
+   *
    * @example
    * ```typescript
    * using frame = await buffer.pull();
@@ -231,7 +233,11 @@ export class AudioFrameBuffer implements Disposable {
     this.nextPts += BigInt(this.frameSize);
 
     // Clone frame for user (like Decoder does)
-    return this.frame.clone();
+    const cloned = this.frame.clone();
+    if (!cloned) {
+      throw new Error('Failed to clone frame (out of memory)');
+    }
+    return cloned;
   }
 
   /**
@@ -243,6 +249,8 @@ export class AudioFrameBuffer implements Disposable {
    * Reuses internal frame buffer for efficiency (like Decoder does).
    *
    * @returns Audio frame with exactly frameSize samples, or null if insufficient samples
+   *
+   * @throws {Error} If frame cloning fails (out of memory)
    *
    * @example
    * ```typescript
@@ -269,7 +277,11 @@ export class AudioFrameBuffer implements Disposable {
     this.nextPts += BigInt(this.frameSize);
 
     // Clone frame for user (like Decoder does)
-    return this.frame.clone();
+    const cloned = this.frame.clone();
+    if (!cloned) {
+      throw new Error('Failed to clone frame (out of memory)');
+    }
+    return cloned;
   }
 
   /**

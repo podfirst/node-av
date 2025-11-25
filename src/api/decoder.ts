@@ -3,8 +3,10 @@ import {
   AV_FRAME_FLAG_CORRUPT,
   AV_NOPTS_VALUE,
   AV_ROUND_UP,
+  AVERROR_DECODER_NOT_FOUND,
   AVERROR_EAGAIN,
   AVERROR_EOF,
+  AVERROR_INVALIDDATA,
   AVMEDIA_TYPE_AUDIO,
   AVMEDIA_TYPE_VIDEO,
   EOF,
@@ -135,8 +137,6 @@ export class Decoder implements Disposable {
    *
    * @returns Configured decoder instance
    *
-   * @throws {Error} If decoder not found for codec
-   *
    * @throws {FFmpegError} If codec initialization fails
    *
    * @example
@@ -214,13 +214,13 @@ export class Decoder implements Disposable {
         // FFDecoderCodec string
         codec = Codec.findDecoderByName(explicitCodec);
         if (!codec) {
-          throw new Error(`Decoder '${explicitCodec}' not found`);
+          throw new FFmpegError(AVERROR_DECODER_NOT_FOUND);
         }
       } else {
         // AVCodecID number
         codec = Codec.findDecoder(explicitCodec);
         if (!codec) {
-          throw new Error(`Decoder not found for codec ID ${explicitCodec}`);
+          throw new FFmpegError(AVERROR_DECODER_NOT_FOUND);
         }
       }
     } else {
@@ -238,7 +238,7 @@ export class Decoder implements Disposable {
       if (!codec) {
         codec = Codec.findDecoder(stream.codecpar.codecId);
         if (!codec) {
-          throw new Error(`Decoder not found for codec ${stream.codecpar.codecId}`);
+          throw new FFmpegError(AVERROR_DECODER_NOT_FOUND);
         }
       }
     }
@@ -317,8 +317,6 @@ export class Decoder implements Disposable {
    *
    * @returns Configured decoder instance
    *
-   * @throws {Error} If decoder not found for codec
-   *
    * @throws {FFmpegError} If codec initialization fails
    *
    * @example
@@ -394,13 +392,13 @@ export class Decoder implements Disposable {
         // FFDecoderCodec string
         codec = Codec.findDecoderByName(explicitCodec);
         if (!codec) {
-          throw new Error(`Decoder '${explicitCodec}' not found`);
+          throw new FFmpegError(AVERROR_DECODER_NOT_FOUND);
         }
       } else {
         // AVCodecID number
         codec = Codec.findDecoder(explicitCodec);
         if (!codec) {
-          throw new Error(`Decoder not found for codec ID ${explicitCodec}`);
+          throw new FFmpegError(AVERROR_DECODER_NOT_FOUND);
         }
       }
     } else {
@@ -418,7 +416,7 @@ export class Decoder implements Disposable {
       if (!codec) {
         codec = Codec.findDecoder(stream.codecpar.codecId);
         if (!codec) {
-          throw new Error(`Decoder not found for codec ${stream.codecpar.codecId}`);
+          throw new FFmpegError(AVERROR_DECODER_NOT_FOUND);
         }
       }
     }
@@ -627,7 +625,7 @@ export class Decoder implements Disposable {
     // EAGAIN during send_packet is a decoder bug (FFmpeg treats this as AVERROR_BUG)
     // We read all decoded frames with receive() until done, so decoder should never be full
     if (sendRet === AVERROR_EAGAIN) {
-      throw new Error('Decoder returned EAGAIN on send - this is a decoder bug');
+      FFmpegError.throwIfError(sendRet, 'Decoder returned EAGAIN on send - this is a decoder bug');
     }
 
     // Handle send errors
@@ -715,7 +713,7 @@ export class Decoder implements Disposable {
     // EAGAIN during send_packet is a decoder bug (FFmpeg treats this as AVERROR_BUG)
     // We read all decoded frames with receive() until done, so decoder should never be full
     if (sendRet === AVERROR_EAGAIN) {
-      throw new Error('Decoder returned EAGAIN on send - this is a decoder bug');
+      FFmpegError.throwIfError(AVERROR_EAGAIN, 'Decoder returned EAGAIN on send - this is a decoder bug');
     }
 
     // Handle send errors
@@ -1227,6 +1225,8 @@ export class Decoder implements Disposable {
    *
    * @throws {FFmpegError} If receive fails with error other than AVERROR_EAGAIN or AVERROR_EOF
    *
+   * @throws {Error} If frame cloning fails (out of memory)
+   *
    * @example
    * ```typescript
    * const frame = await decoder.receive();
@@ -1272,7 +1272,7 @@ export class Decoder implements Disposable {
       // Check for corrupt frame
       if (this.frame.decodeErrorFlags || this.frame.hasFlags(AV_FRAME_FLAG_CORRUPT)) {
         if (this.options.exitOnError) {
-          throw new Error('Corrupt decoded frame detected');
+          throw new FFmpegError(AVERROR_INVALIDDATA);
         }
         // exitOnError=false: skip corrupt frame
         return null;
@@ -1289,7 +1289,11 @@ export class Decoder implements Disposable {
       }
 
       // Got a frame, clone it for the user
-      return this.frame.clone();
+      const cloned = this.frame.clone();
+      if (!cloned) {
+        throw new Error('Failed to clone frame (out of memory)');
+      }
+      return cloned;
     } else if (ret === AVERROR_EAGAIN) {
       // Need more data
       return null;
@@ -1325,6 +1329,8 @@ export class Decoder implements Disposable {
    * @returns Decoded frame, null (need more data), or undefined (end of stream)
    *
    * @throws {FFmpegError} If receive fails with error other than AVERROR_EAGAIN or AVERROR_EOF
+   *
+   * @throws {Error} If frame cloning fails (out of memory)
    *
    * @example
    * ```typescript
@@ -1371,7 +1377,7 @@ export class Decoder implements Disposable {
       // Check for corrupt frame
       if (this.frame.decodeErrorFlags || this.frame.hasFlags(AV_FRAME_FLAG_CORRUPT)) {
         if (this.options.exitOnError) {
-          throw new Error('Corrupt decoded frame detected');
+          throw new FFmpegError(AVERROR_INVALIDDATA);
         }
         // exitOnError=false: skip corrupt frame
         return null;
@@ -1390,7 +1396,11 @@ export class Decoder implements Disposable {
       }
 
       // Got a frame, clone it for the user
-      return this.frame.clone();
+      const cloned = this.frame.clone();
+      if (!cloned) {
+        throw new Error('Failed to clone frame (out of memory)');
+      }
+      return cloned;
     } else if (ret === AVERROR_EAGAIN) {
       // Need more data
       return null;
@@ -1566,10 +1576,13 @@ export class Decoder implements Disposable {
         if (!frame) break;
         await this.outputQueue.send(frame);
       }
-    } catch {
-      // Ignore ?
+    } catch (error) {
+      // Propagate error to both queues so upstream and downstream know
+      const err = error instanceof Error ? error : new Error(String(error));
+      this.inputQueue?.closeWithError(err);
+      this.outputQueue?.closeWithError(err);
     } finally {
-      // Close output queue when done
+      // Close output queue when done (if not already closed with error)
       this.outputQueue?.close();
     }
   }

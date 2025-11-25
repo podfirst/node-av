@@ -10,6 +10,7 @@ import {
   AV_PKT_FLAG_TRUSTED,
   AVCHROMA_LOC_UNSPECIFIED,
   AVERROR_EAGAIN,
+  AVERROR_ENCODER_NOT_FOUND,
   AVERROR_EOF,
   AVMEDIA_TYPE_AUDIO,
   AVMEDIA_TYPE_VIDEO,
@@ -188,21 +189,17 @@ export class Encoder implements Disposable {
    */
   static async create(encoderCodec: FFEncoderCodec | AVCodecID | Codec, options: EncoderOptions = {}): Promise<Encoder> {
     let codec: Codec | null = null;
-    let codecName = '';
 
     if (encoderCodec instanceof Codec) {
       codec = encoderCodec;
-      codecName = codec.name ?? 'Unknown';
     } else if (typeof encoderCodec === 'string') {
       codec = Codec.findEncoderByName(encoderCodec);
-      codecName = codec?.name ?? encoderCodec;
     } else {
       codec = Codec.findEncoder(encoderCodec);
-      codecName = codec?.name ?? encoderCodec.toString();
     }
 
     if (!codec) {
-      throw new Error(`Encoder ${codecName} not found`);
+      throw new FFmpegError(AVERROR_ENCODER_NOT_FOUND);
     }
 
     // Allocate codec context
@@ -307,21 +304,17 @@ export class Encoder implements Disposable {
    */
   static createSync(encoderCodec: FFEncoderCodec | AVCodecID | Codec, options: EncoderOptions = {}): Encoder {
     let codec: Codec | null = null;
-    let codecName = '';
 
     if (encoderCodec instanceof Codec) {
       codec = encoderCodec;
-      codecName = codec.name ?? 'Unknown';
     } else if (typeof encoderCodec === 'string') {
       codec = Codec.findEncoderByName(encoderCodec);
-      codecName = codec?.name ?? encoderCodec;
     } else {
       codec = Codec.findEncoder(encoderCodec);
-      codecName = codec?.name ?? encoderCodec.toString();
     }
 
     if (!codec) {
-      throw new Error(`Encoder ${codecName} not found`);
+      throw new FFmpegError(AVERROR_ENCODER_NOT_FOUND);
     }
 
     // Allocate codec context
@@ -1220,6 +1213,8 @@ export class Encoder implements Disposable {
    *
    * @throws {FFmpegError} If receive fails with error other than AVERROR_EAGAIN or AVERROR_EOF
    *
+   * @throws {Error} If packet cloning fails (out of memory)
+   *
    * @example
    * ```typescript
    * // Process all buffered packets
@@ -1281,7 +1276,11 @@ export class Encoder implements Disposable {
       this.packet.setFlags(AV_PKT_FLAG_TRUSTED);
 
       // Got a packet, clone it for the user
-      return this.packet.clone();
+      const cloned = this.packet.clone();
+      if (!cloned) {
+        throw new Error('Failed to clone packet (out of memory)');
+      }
+      return cloned;
     } else if (ret === AVERROR_EAGAIN) {
       // Need more data
       return null;
@@ -1313,6 +1312,8 @@ export class Encoder implements Disposable {
    * @returns Cloned packet, null if need more data, or undefined if stream ended
    *
    * @throws {FFmpegError} If receive fails with error other than AVERROR_EAGAIN or AVERROR_EOF
+   *
+   * @throws {Error} If packet cloning fails (out of memory)
    *
    * @example
    * ```typescript
@@ -1375,7 +1376,11 @@ export class Encoder implements Disposable {
       this.packet.setFlags(AV_PKT_FLAG_TRUSTED);
 
       // Got a packet, clone it for the user
-      return this.packet.clone();
+      const cloned = this.packet.clone();
+      if (!cloned) {
+        throw new Error('Failed to clone packet (out of memory)');
+      }
+      return cloned;
     } else if (ret === AVERROR_EAGAIN) {
       // Need more data
       return null;
@@ -1528,10 +1533,13 @@ export class Encoder implements Disposable {
         if (!packet) break; // Stop on EAGAIN or EOF
         await this.outputQueue.send(packet); // Only send actual packets
       }
-    } catch {
-      // Ignore error ?
+    } catch (error) {
+      // Propagate error to both queues so upstream and downstream know
+      const err = error instanceof Error ? error : new Error(String(error));
+      this.inputQueue?.closeWithError(err);
+      this.outputQueue?.closeWithError(err);
     } finally {
-      // Close output queue when done
+      // Close output queue when done (if not already closed with error)
       this.outputQueue?.close();
     }
   }

@@ -24,6 +24,7 @@ export class AsyncQueue<T> {
   private receiveWaiters: (() => void)[] = [];
   private maxSize: number;
   private closed = false;
+  private error: Error | null = null;
 
   /**
    * Creates a new AsyncQueue.
@@ -52,6 +53,13 @@ export class AsyncQueue<T> {
   }
 
   /**
+   * Error that caused the queue to close, if any.
+   */
+  get closedWithError(): Error | null {
+    return this.error;
+  }
+
+  /**
    * Maximum queue size (from constructor).
    */
   get capacity(): number {
@@ -76,10 +84,13 @@ export class AsyncQueue<T> {
    * Sends an item to the queue.
    *
    * If the queue is full, this method blocks (awaits) until space is available.
+   * If the queue was closed with an error, throws that error.
    *
    * @param item Item to send
    *
    * @returns Promise that resolves when item is sent
+   *
+   * @throws {Error} If the queue was closed with an error via closeWithError()
    *
    * @example
    * ```typescript
@@ -87,6 +98,11 @@ export class AsyncQueue<T> {
    * ```
    */
   async send(item: T): Promise<void> {
+    // If closed with error, throw it
+    if (this.error) {
+      throw this.error;
+    }
+
     if (this.closed) {
       return;
     }
@@ -94,6 +110,11 @@ export class AsyncQueue<T> {
     // Block if queue full
     while (this.queue.length >= this.maxSize && !this.closed) {
       await new Promise<void>((resolve) => this.sendWaiters.push(resolve));
+
+      // Check for error after waking up
+      if (this.error) {
+        throw this.error as Error;
+      }
     }
 
     if (this.closed) {
@@ -114,8 +135,11 @@ export class AsyncQueue<T> {
    *
    * If the queue is empty and not closed, this method blocks (awaits) until an item is available.
    * If the queue is closed and empty, returns null.
+   * If the queue was closed with an error, throws that error.
    *
    * @returns Next item from queue, or null if closed and empty
+   *
+   * @throws {Error} If the queue was closed with an error via closeWithError()
    *
    * @example
    * ```typescript
@@ -136,6 +160,11 @@ export class AsyncQueue<T> {
         }
 
         return item;
+      }
+
+      // If closed with error, throw it
+      if (this.error) {
+        throw this.error;
       }
 
       // If closed and empty, return null
@@ -178,5 +207,31 @@ export class AsyncQueue<T> {
     for (const receiver of receivers) {
       receiver();
     }
+  }
+
+  /**
+   * Closes the queue with an error.
+   *
+   * All pending and future receive() calls will throw this error.
+   * Use this to propagate errors through the pipeline.
+   *
+   * @param error - Error to propagate to consumers
+   *
+   * @example
+   * ```typescript
+   * try {
+   *   await processItem(item);
+   * } catch (error) {
+   *   queue.closeWithError(error);
+   * }
+   * ```
+   */
+  closeWithError(error: Error): void {
+    if (this.closed) {
+      return;
+    }
+
+    this.error = error;
+    this.close();
   }
 }

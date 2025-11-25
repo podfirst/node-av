@@ -1,5 +1,5 @@
 /* eslint-disable @stylistic/indent-binary-ops */
-import { AV_BUFFERSRC_FLAG_PUSH, AVERROR_EAGAIN, AVERROR_EOF, AVFILTER_FLAG_HWDEVICE, EOF } from '../constants/constants.js';
+import { AV_BUFFERSRC_FLAG_PUSH, AVERROR_EAGAIN, AVERROR_EOF, AVERROR_FILTER_NOT_FOUND, AVFILTER_FLAG_HWDEVICE, EOF } from '../constants/constants.js';
 import { FFmpegError } from '../lib/error.js';
 import { FilterGraph } from '../lib/filter-graph.js';
 import { FilterInOut } from '../lib/filter-inout.js';
@@ -1170,6 +1170,8 @@ export class FilterAPI implements Disposable {
    *
    * @throws {FFmpegError} If receiving fails
    *
+   * @throws {Error} If frame cloning fails (out of memory)
+   *
    * @example
    * ```typescript
    * // Process all buffered frames
@@ -1219,7 +1221,11 @@ export class FilterAPI implements Disposable {
       // Post-process output frame (set timeBase from buffersink, calculate duration)
       this.postProcessOutputFrame(this.frame);
       // Clone for user (keeps internal frame for reuse)
-      return this.frame.clone();
+      const cloned = this.frame.clone();
+      if (!cloned) {
+        throw new Error('Failed to clone frame (out of memory)');
+      }
+      return cloned;
     } else if (ret === AVERROR_EAGAIN) {
       // Need more data
       return null;
@@ -1250,6 +1256,8 @@ export class FilterAPI implements Disposable {
    * @returns Buffered frame, null if need more data, or undefined if stream ended
    *
    * @throws {FFmpegError} If receiving fails
+   *
+   * @throws {Error} If frame cloning fails (out of memory)
    *
    * @example
    * ```typescript
@@ -1300,7 +1308,11 @@ export class FilterAPI implements Disposable {
       // Post-process output frame (set timeBase from buffersink, calculate duration)
       this.postProcessOutputFrame(this.frame);
       // Clone for user (keeps internal frame for reuse)
-      return this.frame.clone();
+      const cloned = this.frame.clone();
+      if (!cloned) {
+        throw new Error('Failed to clone frame (out of memory)');
+      }
+      return cloned;
     } else if (ret === AVERROR_EAGAIN) {
       return null; // Need more data
     } else if (ret === AVERROR_EOF) {
@@ -1502,10 +1514,13 @@ export class FilterAPI implements Disposable {
         if (!frame) break; // Stop on EAGAIN or EOF
         await this.outputQueue.send(frame); // Only send actual frames
       }
-    } catch {
-      // Ignore error ?
+    } catch (error) {
+      // Propagate error to both queues so upstream and downstream know
+      const err = error instanceof Error ? error : new Error(String(error));
+      this.inputQueue?.closeWithError(err);
+      this.outputQueue?.closeWithError(err);
     } finally {
-      // Close output queue when done
+      // Close output queue when done (if not already closed with error)
       this.outputQueue?.close();
     }
   }
@@ -1834,7 +1849,7 @@ export class FilterAPI implements Disposable {
     const filterName = frame.isVideo() ? 'buffer' : 'abuffer';
     const bufferFilter = Filter.getByName(filterName);
     if (!bufferFilter) {
-      throw new Error(`${filterName} filter not found`);
+      throw new FFmpegError(AVERROR_FILTER_NOT_FOUND);
     }
 
     // Ensure timeBase was calculated
@@ -1892,7 +1907,7 @@ export class FilterAPI implements Disposable {
     const filterName = frame.isVideo() ? 'buffersink' : 'abuffersink';
     const sinkFilter = Filter.getByName(filterName);
     if (!sinkFilter) {
-      throw new Error(`${filterName} filter not found`);
+      throw new FFmpegError(AVERROR_FILTER_NOT_FOUND);
     }
 
     this.buffersinkCtx = this.graph.createFilter(sinkFilter, 'out', null);

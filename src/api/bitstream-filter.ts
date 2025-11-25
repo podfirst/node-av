@@ -1,4 +1,4 @@
-import { AVERROR_EAGAIN, AVERROR_EOF } from '../constants/constants.js';
+import { AVERROR_BSF_NOT_FOUND, AVERROR_EAGAIN, AVERROR_EOF } from '../constants/constants.js';
 import { BitStreamFilterContext } from '../lib/bitstream-filter-context.js';
 import { BitStreamFilter } from '../lib/bitstream-filter.js';
 import { FFmpegError } from '../lib/error.js';
@@ -99,7 +99,7 @@ export class BitStreamFilterAPI implements Disposable {
    *
    * @returns Configured bitstream filter
    *
-   * @throws {Error} If filter not found or initialization fails
+   * @throws {Error} If initialization fails
    *
    * @throws {FFmpegError} If allocation or initialization fails
    *
@@ -131,7 +131,7 @@ export class BitStreamFilterAPI implements Disposable {
     // Find the bitstream filter
     const filter = BitStreamFilter.getByName(filterName);
     if (!filter) {
-      throw new Error(`Bitstream filter '${filterName}' not found`);
+      throw new FFmpegError(AVERROR_BSF_NOT_FOUND);
     }
 
     // Create and allocate context
@@ -749,6 +749,8 @@ export class BitStreamFilterAPI implements Disposable {
    *
    * @throws {FFmpegError} If receive fails with error other than AVERROR_EAGAIN or AVERROR_EOF
    *
+   * @throws {Error} If packet cloning fails (out of memory)
+   *
    * @example
    * ```typescript
    * const packet = await filter.receive();
@@ -786,7 +788,11 @@ export class BitStreamFilterAPI implements Disposable {
 
     if (recvRet === 0) {
       // Got a packet, clone it for the user
-      return this.packet.clone();
+      const cloned = this.packet.clone();
+      if (!cloned) {
+        throw new Error('Failed to clone packet (out of memory)');
+      }
+      return cloned;
     } else if (recvRet === AVERROR_EAGAIN || recvRet === AVERROR_EOF) {
       // Need more data or end of stream
       return null;
@@ -811,6 +817,8 @@ export class BitStreamFilterAPI implements Disposable {
    * @returns Cloned packet or null if no packets available
    *
    * @throws {FFmpegError} If receive fails with error other than AVERROR_EAGAIN or AVERROR_EOF
+   *
+   * @throws {Error} If packet cloning fails (out of memory)
    *
    * @example
    * ```typescript
@@ -849,7 +857,11 @@ export class BitStreamFilterAPI implements Disposable {
 
     if (recvRet === 0) {
       // Got a packet, clone it for the user
-      return this.packet.clone();
+      const cloned = this.packet.clone();
+      if (!cloned) {
+        throw new Error('Failed to clone packet (out of memory)');
+      }
+      return cloned;
     } else if (recvRet === AVERROR_EAGAIN || recvRet === AVERROR_EOF) {
       // Need more data or end of stream
       return null;
@@ -1119,10 +1131,13 @@ export class BitStreamFilterAPI implements Disposable {
         if (!outPacket) break;
         await this.outputQueue.send(outPacket);
       }
-    } catch {
-      // Ignore error
+    } catch (error) {
+      // Propagate error to both queues so upstream and downstream know
+      const err = error instanceof Error ? error : new Error(String(error));
+      this.inputQueue?.closeWithError(err);
+      this.outputQueue?.closeWithError(err);
     } finally {
-      // Close output queue when done
+      // Close output queue when done (if not already closed with error)
       this.outputQueue?.close();
     }
   }
