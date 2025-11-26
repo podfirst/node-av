@@ -32,7 +32,6 @@ private:
 
   AVCodecContext* context_ = nullptr;
   bool is_open_ = false;
-  bool is_freed_ = false;
 
   enum AVPixelFormat hw_pix_fmt_ = AV_PIX_FMT_NONE;
   enum AVPixelFormat sw_pix_fmt_ = AV_PIX_FMT_NONE;

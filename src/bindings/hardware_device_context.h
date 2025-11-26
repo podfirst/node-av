@@ -18,25 +18,18 @@ public:
   HardwareDeviceContext(const Napi::CallbackInfo& info);
   ~HardwareDeviceContext();
 
-  AVBufferRef* Get() { 
-    return device_ref_ ? device_ref_ : unowned_ref_; 
+  AVBufferRef* Get() {
+    return device_ref_ ? device_ref_ : unowned_ref_;
   }
-  void SetOwned(AVBufferRef* ref) { 
-    // Free old ref if exists
-    if (device_ref_ && !is_freed_) {
-      av_buffer_unref(&device_ref_);
-    }
+  void SetOwned(AVBufferRef* ref) {
+    av_buffer_unref(&device_ref_);
     device_ref_ = ref;
     unowned_ref_ = nullptr;
-    is_freed_ = false;
   }
-  void SetUnowned(AVBufferRef* ref) { 
-    if (device_ref_ && !is_freed_) {
-      av_buffer_unref(&device_ref_);
-    }
+  void SetUnowned(AVBufferRef* ref) {
+    av_buffer_unref(&device_ref_);
     device_ref_ = nullptr;
     unowned_ref_ = ref;
-    is_freed_ = true;  // Mark as freed since we don't own it
   }
   
   // Static factory
@@ -52,7 +45,6 @@ private:
   // Resources
   AVBufferRef* device_ref_ = nullptr;
   AVBufferRef* unowned_ref_ = nullptr;
-  bool is_freed_ = false;
 
   static Napi::Value GetTypeName(const Napi::CallbackInfo& info);
   static Napi::Value IterateTypes(const Napi::CallbackInfo& info);

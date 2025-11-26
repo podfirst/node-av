@@ -23,25 +23,18 @@ public:
   HardwareFramesContext(const Napi::CallbackInfo& info);
   ~HardwareFramesContext();
 
-  AVBufferRef* Get() { 
-    return frames_ref_ ? frames_ref_ : unowned_ref_; 
+  AVBufferRef* Get() {
+    return frames_ref_ ? frames_ref_ : unowned_ref_;
   }
-  void SetOwned(AVBufferRef* ref) { 
-    // Free old ref if exists
-    if (frames_ref_ && !is_freed_) {
-      av_buffer_unref(&frames_ref_);
-    }
+  void SetOwned(AVBufferRef* ref) {
+    av_buffer_unref(&frames_ref_);
     frames_ref_ = ref;
     unowned_ref_ = nullptr;
-    is_freed_ = false;
   }
-  void SetUnowned(AVBufferRef* ref) { 
-    if (frames_ref_ && !is_freed_) {
-      av_buffer_unref(&frames_ref_);
-    }
+  void SetUnowned(AVBufferRef* ref) {
+    av_buffer_unref(&frames_ref_);
     frames_ref_ = nullptr;
     unowned_ref_ = ref;
-    is_freed_ = true;  // Mark as freed since we don't own it
   }
   
   // Static factory
@@ -55,7 +48,6 @@ private:
 
   AVBufferRef* frames_ref_ = nullptr;
   AVBufferRef* unowned_ref_ = nullptr;
-  bool is_freed_ = false;
 
   Napi::Value Alloc(const Napi::CallbackInfo& info);
   Napi::Value Init(const Napi::CallbackInfo& info);

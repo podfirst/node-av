@@ -20,26 +20,22 @@ public:
   FilterContext(const Napi::CallbackInfo& info);
   ~FilterContext();
 
-  AVFilterContext* Get() { 
-    return ctx_ ? ctx_ : unowned_ctx_; 
+  AVFilterContext* Get() {
+    return ctx_ ? ctx_ : unowned_ctx_;
   }
-  void SetOwned(AVFilterContext* ctx) { 
-    // Free old context if exists
-    if (ctx_ && !is_freed_) {
+  void SetOwned(AVFilterContext* ctx) {
+    if (ctx_) {
       avfilter_free(ctx_);
     }
     ctx_ = ctx;
     unowned_ctx_ = nullptr;
-    is_freed_ = false;
   }
-  void SetUnowned(AVFilterContext* ctx) { 
-    // For contexts owned by FilterGraph
-    if (ctx_ && !is_freed_) {
+  void SetUnowned(AVFilterContext* ctx) {
+    if (ctx_) {
       avfilter_free(ctx_);
     }
     ctx_ = nullptr;
     unowned_ctx_ = ctx;
-    is_freed_ = true;  // Mark as freed since we don't own it
   }
 
 private:
@@ -54,7 +50,6 @@ private:
 
   AVFilterContext* ctx_ = nullptr;
   AVFilterContext* unowned_ctx_ = nullptr;
-  bool is_freed_ = false;
 
   Napi::Value Init(const Napi::CallbackInfo& info);
   Napi::Value InitStr(const Napi::CallbackInfo& info);

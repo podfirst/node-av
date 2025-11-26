@@ -66,12 +66,10 @@ FilterContext::FilterContext(const Napi::CallbackInfo& info)
 }
 
 FilterContext::~FilterContext() {
-  // Manual cleanup if not already done
-  if (ctx_ && !is_freed_) {
+  if (ctx_) {
     avfilter_free(ctx_);
     ctx_ = nullptr;
   }
-  // Unowned contexts are managed by FilterGraph
 }
 
 Napi::Value FilterContext::Init(const Napi::CallbackInfo& info) {
@@ -182,11 +180,13 @@ Napi::Value FilterContext::Unlink(const Napi::CallbackInfo& info) {
 
 Napi::Value FilterContext::Free(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
-  // Free owned context
-  if (ctx_ && !is_freed_) { avfilter_free(ctx_); ctx_ = nullptr; is_freed_ = true; }
+
+  if (ctx_) {
+    avfilter_free(ctx_);
+    ctx_ = nullptr;
+  }
   unowned_ctx_ = nullptr;
-  
+
   return env.Undefined();
 }
 

@@ -27,7 +27,6 @@ private:
   static Napi::FunctionReference constructor;
 
   SwrContext* ctx_ = nullptr;
-  bool is_freed_ = false;
 
   Napi::Value Alloc(const Napi::CallbackInfo& info);
   Napi::Value AllocSetOpts2(const Napi::CallbackInfo& info);

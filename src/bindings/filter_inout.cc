@@ -35,26 +35,23 @@ FilterInOut::FilterInOut(const Napi::CallbackInfo& info)
 }
 
 FilterInOut::~FilterInOut() {
-  // Manual cleanup if not already done
-  // Only free if we own it and it hasn't been freed
-  if (inout_ && !is_freed_ && is_owned_) {
+  // Only free if we own it
+  if (is_owned_) {
     avfilter_inout_free(&inout_);
-    inout_ = nullptr;
   }
 }
 
 Napi::Value FilterInOut::Alloc(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
+
   // Free old inout if exists and we own it
-  if (inout_ && !is_freed_ && is_owned_) {
+  if (is_owned_) {
     avfilter_inout_free(&inout_);
   }
-  
+
   inout_ = avfilter_inout_alloc();
-  is_freed_ = false;
   is_owned_ = true;  // We allocated it, so we own it
-  
+
   if (!inout_) {
     Napi::Error::New(env, "Failed to allocate FilterInOut").ThrowAsJavaScriptException();
     return env.Undefined();
@@ -64,14 +61,12 @@ Napi::Value FilterInOut::Alloc(const Napi::CallbackInfo& info) {
 
 Napi::Value FilterInOut::Free(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
-  if (inout_ && !is_freed_ && is_owned_) {
-    // avfilter_inout_free frees the entire linked list
+
+  // Only free if we own it
+  if (is_owned_) {
     avfilter_inout_free(&inout_);
-    inout_ = nullptr;
-    is_freed_ = true;
   }
-  
+
   return env.Undefined();
 }
 
@@ -165,8 +160,7 @@ Napi::Value FilterInOut::GetNext(const Napi::CallbackInfo& info) {
   // The next element is part of our chain, so we don't own it separately
   wrapper->inout_ = inout->next;
   wrapper->is_owned_ = false;  // We don't own this - it's part of the parent's chain
-  wrapper->is_freed_ = false;
-  
+
   return nextObj;
 }
 

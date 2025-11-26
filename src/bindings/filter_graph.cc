@@ -56,44 +56,31 @@ FilterGraph::FilterGraph(const Napi::CallbackInfo& info)
 }
 
 FilterGraph::~FilterGraph() {
-  // Manual cleanup if not already done
-  if (graph_ && !is_freed_) {
-    avfilter_graph_free(&graph_);
-    graph_ = nullptr;
-  }
-  // Unowned graphs are not freed
+  avfilter_graph_free(&graph_);
 }
 
 Napi::Value FilterGraph::Alloc(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
-  // Free old graph if exists
-  if (graph_ && !is_freed_) {
-    avfilter_graph_free(&graph_);
-  }
-  
+
+  avfilter_graph_free(&graph_);
+
   graph_ = avfilter_graph_alloc();
   unowned_graph_ = nullptr;
-  is_freed_ = false;
-  
+
   if (!graph_) {
     Napi::Error::New(env, "Failed to allocate filter graph").ThrowAsJavaScriptException();
     return env.Undefined();
   }
-  
+
   return env.Undefined();
 }
 
 Napi::Value FilterGraph::Free(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
-  if (graph_ && !is_freed_) {
-    avfilter_graph_free(&graph_);
-    graph_ = nullptr;
-    is_freed_ = true;
-  }
+
+  avfilter_graph_free(&graph_);
   unowned_graph_ = nullptr;
-  
+
   return env.Undefined();
 }
 

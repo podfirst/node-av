@@ -45,41 +45,27 @@ Packet::Packet(const Napi::CallbackInfo& info)
 }
 
 Packet::~Packet() {
-  // Manual cleanup if not already done
-  if (!is_freed_ && packet_) {
-    av_packet_free(&packet_);
-    packet_ = nullptr;
-  }
+  av_packet_free(&packet_);
 }
 
 Napi::Value Packet::Alloc(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
+
   AVPacket* pkt = av_packet_alloc();
   if (!pkt) {
     Napi::Error::New(env, "Failed to allocate packet (ENOMEM)").ThrowAsJavaScriptException();
     return env.Undefined();
   }
-  
-  // Free old packet if exists
-  if (packet_ && !is_freed_) {
-    av_packet_free(&packet_);
-  }
-  
+
+  av_packet_free(&packet_);
+
   packet_ = pkt;
-  is_freed_ = false;
   return env.Undefined();
 }
 
 Napi::Value Packet::Free(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
-  if (packet_ && !is_freed_) {
-    av_packet_free(&packet_);
-    packet_ = nullptr;
-    is_freed_ = true;
-  }
-  
+  av_packet_free(&packet_);
   return env.Undefined();
 }
 
@@ -131,8 +117,7 @@ Napi::Value Packet::Clone(const Napi::CallbackInfo& info) {
   Napi::Object newPacket = constructor.New({});
   Packet* wrapper = Napi::ObjectWrap<Packet>::Unwrap(newPacket);
   wrapper->packet_ = cloned;
-  wrapper->is_freed_ = false;
-  
+
   return newPacket;
 }
 

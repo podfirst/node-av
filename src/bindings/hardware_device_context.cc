@@ -40,12 +40,7 @@ HardwareDeviceContext::HardwareDeviceContext(const Napi::CallbackInfo& info)
 }
 
 HardwareDeviceContext::~HardwareDeviceContext() {
-  // Manual cleanup if not already done
-  if (device_ref_ && !is_freed_) {
-    av_buffer_unref(&device_ref_);
-    device_ref_ = nullptr;
-  }
-  // RAII handles cleanup
+  av_buffer_unref(&device_ref_);
 }
 
 Napi::Value HardwareDeviceContext::Wrap(Napi::Env env, AVBufferRef* device_ref) {
@@ -128,8 +123,9 @@ Napi::Value HardwareDeviceContext::Alloc(const Napi::CallbackInfo& info) {
     Napi::Error::New(env, "Failed to allocate hardware device context").ThrowAsJavaScriptException();
     return env.Undefined();
   }
-  
-  if (device_ref_ && !is_freed_) { av_buffer_unref(&device_ref_); } device_ref_ = new_ref; is_freed_ = false;
+
+  av_buffer_unref(&device_ref_);
+  device_ref_ = new_ref;
   return env.Undefined();
 }
 
@@ -178,20 +174,20 @@ Napi::Value HardwareDeviceContext::Create(const Napi::CallbackInfo& info) {
   }
   
   // Free existing context if any
-  if (device_ref_ && !is_freed_) { av_buffer_unref(&device_ref_); device_ref_ = nullptr; is_freed_ = true; }
+  av_buffer_unref(&device_ref_);
   unowned_ref_ = nullptr;
-  
+
   AVBufferRef* new_ref = nullptr;
   int ret = av_hwdevice_ctx_create(&new_ref, type, device, opts, 0);
-  
+
   if (opts) {
     av_dict_free(&opts);
   }
-  
+
   if (ret >= 0 && new_ref) {
-    if (device_ref_ && !is_freed_) { av_buffer_unref(&device_ref_); } device_ref_ = new_ref; is_freed_ = false;
+    device_ref_ = new_ref;
   }
-  
+
   return Napi::Number::New(env, ret);
 }
 
@@ -211,18 +207,18 @@ Napi::Value HardwareDeviceContext::CreateDerived(const Napi::CallbackInfo& info)
   }
   
   enum AVHWDeviceType type = static_cast<AVHWDeviceType>(info[1].As<Napi::Number>().Int32Value());
-  
+
   // Free existing context if any
-  if (device_ref_ && !is_freed_) { av_buffer_unref(&device_ref_); device_ref_ = nullptr; is_freed_ = true; }
+  av_buffer_unref(&device_ref_);
   unowned_ref_ = nullptr;
-  
+
   AVBufferRef* new_ref = nullptr;
   int ret = av_hwdevice_ctx_create_derived(&new_ref, type, src->Get(), 0);
-  
+
   if (ret >= 0 && new_ref) {
-    if (device_ref_ && !is_freed_) { av_buffer_unref(&device_ref_); } device_ref_ = new_ref; is_freed_ = false;
+    device_ref_ = new_ref;
   }
-  
+
   return Napi::Number::New(env, ret);
 }
 
@@ -298,10 +294,10 @@ Napi::Value HardwareDeviceContext::GetHwframeConstraints(const Napi::CallbackInf
 
 Napi::Value HardwareDeviceContext::Free(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
-  if (device_ref_ && !is_freed_) { av_buffer_unref(&device_ref_); device_ref_ = nullptr; is_freed_ = true; }
+
+  av_buffer_unref(&device_ref_);
   unowned_ref_ = nullptr;
-  
+
   return env.Undefined();
 }
 

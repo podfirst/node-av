@@ -27,17 +27,11 @@ FilterGraphSegment::FilterGraphSegment(const Napi::CallbackInfo& info)
 }
 
 FilterGraphSegment::~FilterGraphSegment() {
-  if (segment_ && !is_freed_) {
-    avfilter_graph_segment_free(&segment_);
-  }
+  avfilter_graph_segment_free(&segment_);
 }
 
 Napi::Value FilterGraphSegment::Free(const Napi::CallbackInfo& info) {
-  if (segment_ && !is_freed_) {
-    avfilter_graph_segment_free(&segment_);
-    segment_ = nullptr;
-    is_freed_ = true;
-  }
+  avfilter_graph_segment_free(&segment_);
   return info.Env().Undefined();
 }
 

@@ -22,11 +22,8 @@ public:
   AVFilterGraphSegment* Get() { return segment_; }
 
   void SetSegment(AVFilterGraphSegment* segment) {
-    if (segment_ && !is_freed_) {
-      avfilter_graph_segment_free(&segment_);
-    }
+    avfilter_graph_segment_free(&segment_);
     segment_ = segment;
-    is_freed_ = false;
   }
 
 private:
@@ -35,7 +32,6 @@ private:
   static Napi::FunctionReference constructor;
 
   AVFilterGraphSegment* segment_ = nullptr;
-  bool is_freed_ = false;
 
   Napi::Value Free(const Napi::CallbackInfo& info);
   Napi::Value CreateFilters(const Napi::CallbackInfo& info);

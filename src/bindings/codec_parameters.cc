@@ -78,42 +78,39 @@ CodecParameters::CodecParameters(const Napi::CallbackInfo& info)
 }
 
 CodecParameters::~CodecParameters() {
-  // Manual cleanup if not already done AND we own the params
-  if (!is_freed_ && params_ && is_owned_) {
+  // Only free if we own the params
+  if (is_owned_) {
     avcodec_parameters_free(&params_);
-    params_ = nullptr;
   }
 }
 
 Napi::Value CodecParameters::Alloc(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
+
   AVCodecParameters* params = avcodec_parameters_alloc();
   if (!params) {
     Napi::Error::New(env, "Failed to allocate codec parameters (ENOMEM)").ThrowAsJavaScriptException();
     return env.Undefined();
   }
-  
-  // Free old params if exists AND we owned them
-  if (params_ && !is_freed_ && is_owned_) {
+
+  // Free old params if we owned them
+  if (is_owned_) {
     avcodec_parameters_free(&params_);
   }
-  
+
   params_ = params;
   is_owned_ = true;  // When we alloc, we own it
-  is_freed_ = false;
   return env.Undefined();
 }
 
 Napi::Value CodecParameters::Free(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
-  if (params_ && !is_freed_ && is_owned_) {
+
+  // Only free if we own the params
+  if (is_owned_) {
     avcodec_parameters_free(&params_);
-    params_ = nullptr;
-    is_freed_ = true;
   }
-  
+
   return env.Undefined();
 }
 

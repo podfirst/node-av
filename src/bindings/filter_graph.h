@@ -25,22 +25,15 @@ public:
   AVFilterGraph* Get() { 
     return graph_ ? graph_ : unowned_graph_; 
   }
-  void SetOwned(AVFilterGraph* graph) { 
-    // Free old graph if exists
-    if (graph_ && !is_freed_) {
-      avfilter_graph_free(&graph_);
-    }
+  void SetOwned(AVFilterGraph* graph) {
+    avfilter_graph_free(&graph_);
     graph_ = graph;
     unowned_graph_ = nullptr;
-    is_freed_ = false;
   }
-  void SetUnowned(AVFilterGraph* graph) { 
-    if (graph_ && !is_freed_) {
-      avfilter_graph_free(&graph_);
-    }
+  void SetUnowned(AVFilterGraph* graph) {
+    avfilter_graph_free(&graph_);
     graph_ = nullptr;
     unowned_graph_ = graph;
-    is_freed_ = true;  // Mark as freed since we don't own it
   }
 
 private:
@@ -53,7 +46,6 @@ private:
 
   AVFilterGraph* graph_ = nullptr;
   AVFilterGraph* unowned_graph_ = nullptr;
-  bool is_freed_ = false;
 
   Napi::Value Alloc(const Napi::CallbackInfo& info);
   Napi::Value Free(const Napi::CallbackInfo& info);

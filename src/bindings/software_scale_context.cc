@@ -33,28 +33,24 @@ SoftwareScaleContext::SoftwareScaleContext(const Napi::CallbackInfo& info)
 }
 
 SoftwareScaleContext::~SoftwareScaleContext() {
-  // Manual cleanup if not already done
-  if (ctx_ && !is_freed_) {
-    sws_freeContext(ctx_);
-    ctx_ = nullptr;
-  }
-  // RAII handles cleanup
+  sws_freeContext(ctx_);
+  ctx_ = nullptr;
 }
 
 Napi::Value SoftwareScaleContext::AllocContext(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
-  // Free existing context if any
-  if (ctx_ && !is_freed_) { sws_freeContext(ctx_); ctx_ = nullptr; is_freed_ = true; };
-  
+
+  sws_freeContext(ctx_);
+
   SwsContext* new_ctx = sws_alloc_context();
   if (!new_ctx) {
     Napi::Error::New(env, "Failed to allocate SwsContext").ThrowAsJavaScriptException();
+    ctx_ = nullptr;
     return env.Undefined();
   }
-  
-  if (ctx_ && !is_freed_) { sws_freeContext(ctx_); } ctx_ = new_ctx; is_freed_ = false;
-  
+
+  ctx_ = new_ctx;
+
   return env.Undefined();
 }
 
@@ -74,24 +70,24 @@ Napi::Value SoftwareScaleContext::GetContext(const Napi::CallbackInfo& info) {
   int dstH = info[4].As<Napi::Number>().Int32Value();
   int dstFormat = info[5].As<Napi::Number>().Int32Value();
   int flags = info[6].As<Napi::Number>().Int32Value();
-  
-  // Free existing context if any
-  if (ctx_ && !is_freed_) { sws_freeContext(ctx_); ctx_ = nullptr; is_freed_ = true; };
-  
+
+  sws_freeContext(ctx_);
+
   // Create new context
   SwsContext* new_ctx = sws_getContext(
     srcW, srcH, static_cast<AVPixelFormat>(srcFormat),
     dstW, dstH, static_cast<AVPixelFormat>(dstFormat),
     flags, nullptr, nullptr, nullptr
   );
-  
+
   if (!new_ctx) {
     Napi::Error::New(env, "Failed to create SwsContext").ThrowAsJavaScriptException();
+    ctx_ = nullptr;
     return env.Undefined();
   }
-  
-  if (ctx_ && !is_freed_) { sws_freeContext(ctx_); } ctx_ = new_ctx; is_freed_ = false;
-  
+
+  ctx_ = new_ctx;
+
   return env.Undefined();
 }
 
@@ -110,9 +106,10 @@ Napi::Value SoftwareScaleContext::InitContext(const Napi::CallbackInfo& info) {
 
 Napi::Value SoftwareScaleContext::FreeContext(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
-  if (ctx_ && !is_freed_) { sws_freeContext(ctx_); ctx_ = nullptr; is_freed_ = true; };
-  
+
+  sws_freeContext(ctx_);
+  ctx_ = nullptr;
+
   return env.Undefined();
 }
 

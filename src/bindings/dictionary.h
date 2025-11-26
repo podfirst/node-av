@@ -18,13 +18,9 @@ public:
   ~Dictionary();
 
   AVDictionary* Get() { return dict_; }
-  void SetOwned(AVDictionary* dict) { 
-    // Free old dictionary if exists
-    if (dict_ && !is_freed_) {
-      av_dict_free(&dict_);
-    }
+  void SetOwned(AVDictionary* dict) {
+    av_dict_free(&dict_);
     dict_ = dict;
-    is_freed_ = false;
   }
   
   // For operations that need direct pointer access (like av_dict_set)
@@ -38,7 +34,6 @@ private:
   static Napi::FunctionReference constructor;
 
   AVDictionary* dict_ = nullptr;
-  bool is_freed_ = false;
 
   Napi::Value Alloc(const Napi::CallbackInfo& info);
   Napi::Value Free(const Napi::CallbackInfo& info);

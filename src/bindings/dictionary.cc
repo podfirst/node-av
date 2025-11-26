@@ -32,37 +32,22 @@ Dictionary::Dictionary(const Napi::CallbackInfo& info)
 }
 
 Dictionary::~Dictionary() {
-  // Manual cleanup if not already done
-  if (!is_freed_ && dict_) {
-    av_dict_free(&dict_);
-    dict_ = nullptr;
-  }
+  av_dict_free(&dict_);
 }
 
 Napi::Value Dictionary::Alloc(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
-  if (dict_) {
-    return env.Undefined();
-  }
-  
+
   // FFmpeg doesn't have explicit av_dict_alloc, it's implicit in av_dict_set
-  // Just reset to ensure clean state
-  dict_ = nullptr;
-  is_freed_ = false;
-  
+  // Free any existing dictionary first
+  av_dict_free(&dict_);
+
   return env.Undefined();
 }
 
 Napi::Value Dictionary::Free(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
-  if (dict_ && !is_freed_) {
-    av_dict_free(&dict_);
-    dict_ = nullptr;
-    is_freed_ = true;
-  }
-  
+  av_dict_free(&dict_);
   return env.Undefined();
 }
 
@@ -87,11 +72,8 @@ Napi::Value Dictionary::Copy(const Napi::CallbackInfo& info) {
   
   // Copy from this dictionary to destination
   // av_dict_copy merges the dictionaries, it doesn't replace
-  // So we DON'T free the destination dictionary first
-  
   int ret = av_dict_copy(&dst->dict_, dict_, flags);
-  dst->is_freed_ = false;
-  
+
   return Napi::Number::New(env, ret);
 }
 
@@ -109,8 +91,7 @@ Napi::Value Dictionary::Set(const Napi::CallbackInfo& info) {
   
   // av_dict_set will allocate the dictionary if it's NULL
   int ret = av_dict_set(&dict_, key.c_str(), value.c_str(), flags);
-  is_freed_ = false;  // We have a valid dictionary now
-  
+
   return Napi::Number::New(env, ret);
 }
 
@@ -181,15 +162,11 @@ Napi::Value Dictionary::ParseString(const Napi::CallbackInfo& info) {
   std::string pairsSep = info[2].As<Napi::String>().Utf8Value();
   int flags = info[3].As<Napi::Number>().Int32Value();
   
-  // av_dict_parse_string needs direct pointer access
   // Free old dictionary if exists
-  if (dict_ && !is_freed_) {
-    av_dict_free(&dict_);
-  }
-  
+  av_dict_free(&dict_);
+
   int ret = av_dict_parse_string(&dict_, str.c_str(), keyValSep.c_str(), pairsSep.c_str(), flags);
-  is_freed_ = false;  // We have a valid dictionary now
-  
+
   return Napi::Number::New(env, ret);
 }
 

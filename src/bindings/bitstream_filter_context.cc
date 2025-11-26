@@ -41,9 +41,7 @@ BitStreamFilterContext::BitStreamFilterContext(const Napi::CallbackInfo& info)
 }
 
 BitStreamFilterContext::~BitStreamFilterContext() {
-  if (context_ && !is_freed_) {
-    av_bsf_free(&context_);
-  }
+  av_bsf_free(&context_);
 }
 
 Napi::Value BitStreamFilterContext::Alloc(const Napi::CallbackInfo& info) {
@@ -69,8 +67,7 @@ Napi::Value BitStreamFilterContext::Alloc(const Napi::CallbackInfo& info) {
   if (ret < 0) {
     return Napi::Number::New(env, ret);
   }
-  
-  is_freed_ = false;
+
   return Napi::Number::New(env, 0);
 }
 
@@ -98,14 +95,8 @@ Napi::Value BitStreamFilterContext::Init(const Napi::CallbackInfo& info) {
 
 Napi::Value BitStreamFilterContext::Free(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
-  if (context_ && !is_freed_) {
-    av_bsf_free(&context_);
-    context_ = nullptr;
-    is_freed_ = true;
-    is_initialized_ = false;
-  }
-  
+  av_bsf_free(&context_);
+  is_initialized_ = false;
   return env.Undefined();
 }
 

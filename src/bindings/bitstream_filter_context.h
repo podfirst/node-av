@@ -28,7 +28,6 @@ private:
 
   AVBSFContext* context_ = nullptr;
   bool is_initialized_ = false;
-  bool is_freed_ = false;
 
   Napi::Value Alloc(const Napi::CallbackInfo& info);
   Napi::Value Init(const Napi::CallbackInfo& info);

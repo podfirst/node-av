@@ -25,7 +25,6 @@ private:
   static Napi::FunctionReference constructor;
 
   AVPacket* packet_ = nullptr;
-  bool is_freed_ = false;
 
   Napi::Value Alloc(const Napi::CallbackInfo& info);
   Napi::Value Free(const Napi::CallbackInfo& info);

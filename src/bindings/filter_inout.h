@@ -22,27 +22,24 @@ public:
   AVFilterInOut* Get() { return inout_; }
   void SetOwned(AVFilterInOut* inout) {
     // Free old inout if exists and we own it
-    if (inout_ && !is_freed_ && is_owned_) {
+    if (is_owned_) {
       avfilter_inout_free(&inout_);
     }
     inout_ = inout;
-    is_freed_ = false;
     is_owned_ = true;  // SetOwned means we take ownership
   }
 
   void SetUnowned(AVFilterInOut* inout) {
     // Free old inout if exists and we own it
-    if (inout_ && !is_freed_ && is_owned_) {
+    if (is_owned_) {
       avfilter_inout_free(&inout_);
     }
     inout_ = inout;
-    is_freed_ = false;
     is_owned_ = false;  // SetUnowned means we don't own it
   }
 
   // Mark as consumed by FFmpeg (e.g., by avfilter_graph_parse)
   void MarkAsConsumed() {
-    is_freed_ = true;
     is_owned_ = false;
     inout_ = nullptr;
   }
@@ -53,7 +50,6 @@ private:
   static Napi::FunctionReference constructor;
 
   AVFilterInOut* inout_ = nullptr;
-  bool is_freed_ = false;
   bool is_owned_ = true;
 
   Napi::Value Alloc(const Napi::CallbackInfo& info);

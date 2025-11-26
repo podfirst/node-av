@@ -42,12 +42,7 @@ HardwareFramesContext::HardwareFramesContext(const Napi::CallbackInfo& info)
 }
 
 HardwareFramesContext::~HardwareFramesContext() {
-  // Manual cleanup if not already done
-  if (frames_ref_ && !is_freed_) {
-    av_buffer_unref(&frames_ref_);
-    frames_ref_ = nullptr;
-  }
-  // RAII handles cleanup
+  av_buffer_unref(&frames_ref_);
 }
 
 Napi::Value HardwareFramesContext::Wrap(Napi::Env env, AVBufferRef* frames_ref) {
@@ -86,8 +81,9 @@ Napi::Value HardwareFramesContext::Alloc(const Napi::CallbackInfo& info) {
     Napi::Error::New(env, "Failed to allocate hardware frames context").ThrowAsJavaScriptException();
     return env.Undefined();
   }
-  
-  if (frames_ref_ && !is_freed_) { av_buffer_unref(&frames_ref_); } frames_ref_ = new_ref; is_freed_ = false;
+
+  av_buffer_unref(&frames_ref_);
+  frames_ref_ = new_ref;
   return env.Undefined();
 }
 
@@ -231,25 +227,25 @@ Napi::Value HardwareFramesContext::CreateDerived(const Napi::CallbackInfo& info)
   }
   
   // Free existing context if any
-  if (frames_ref_ && !is_freed_) { av_buffer_unref(&frames_ref_); frames_ref_ = nullptr; is_freed_ = true; }
+  av_buffer_unref(&frames_ref_);
   unowned_ref_ = nullptr;
-  
+
   AVBufferRef* new_ref = nullptr;
   int ret = av_hwframe_ctx_create_derived(&new_ref, format, derivedDevice->Get(), src->Get(), flags);
-  
+
   if (ret >= 0 && new_ref) {
-    if (frames_ref_ && !is_freed_) { av_buffer_unref(&frames_ref_); } frames_ref_ = new_ref; is_freed_ = false;
+    frames_ref_ = new_ref;
   }
-  
+
   return Napi::Number::New(env, ret);
 }
 
 Napi::Value HardwareFramesContext::Free(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
-  if (frames_ref_ && !is_freed_) { av_buffer_unref(&frames_ref_); frames_ref_ = nullptr; is_freed_ = true; }
+
+  av_buffer_unref(&frames_ref_);
   unowned_ref_ = nullptr;
-  
+
   return env.Undefined();
 }
 

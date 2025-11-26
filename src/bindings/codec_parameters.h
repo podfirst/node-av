@@ -20,13 +20,12 @@ public:
   const AVCodecParameters* Get() const { return params_; }
   
   void SetParameters(AVCodecParameters* params, bool owned) {
-    // Free old parameters if exists AND we owned them
-    if (params_ && !is_freed_ && is_owned_) {
+    // Free old parameters if we owned them
+    if (is_owned_) {
       avcodec_parameters_free(&params_);
     }
     params_ = params;
     is_owned_ = owned;
-    is_freed_ = false;
   }
   
 
@@ -37,7 +36,6 @@ private:
   static Napi::FunctionReference constructor;
 
   AVCodecParameters* params_ = nullptr;
-  bool is_freed_ = false;
   bool is_owned_ = true;
 
   Napi::Value Alloc(const Napi::CallbackInfo& info);

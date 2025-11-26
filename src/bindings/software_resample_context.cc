@@ -43,28 +43,22 @@ SoftwareResampleContext::SoftwareResampleContext(const Napi::CallbackInfo& info)
 }
 
 SoftwareResampleContext::~SoftwareResampleContext() {
-  // Manual cleanup if not already done
-  if (ctx_ && !is_freed_) {
-    swr_free(&ctx_);
-    ctx_ = nullptr;
-  }
-  // RAII handles cleanup
+  swr_free(&ctx_);
 }
 
 Napi::Value SoftwareResampleContext::Alloc(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
-  // Free existing context if any
-  if (ctx_ && !is_freed_) { swr_free(&ctx_); ctx_ = nullptr; is_freed_ = true; };
-  
+
+  swr_free(&ctx_);
+
   SwrContext* new_ctx = swr_alloc();
   if (!new_ctx) {
     Napi::Error::New(env, "Failed to allocate SwrContext").ThrowAsJavaScriptException();
     return env.Undefined();
   }
-  
-  if (ctx_ && !is_freed_) { swr_free(&ctx_); } ctx_ = new_ctx; is_freed_ = false;
-  
+
+  ctx_ = new_ctx;
+
   return env.Undefined();
 }
 
@@ -125,20 +119,19 @@ Napi::Value SoftwareResampleContext::AllocSetOpts2(const Napi::CallbackInfo& inf
   int inSampleFmt = info[4].As<Napi::Number>().Int32Value();
   int inSampleRate = info[5].As<Napi::Number>().Int32Value();
   
-  // Free existing context if any
-  if (ctx_ && !is_freed_) { swr_free(&ctx_); ctx_ = nullptr; is_freed_ = true; };
-  
+  swr_free(&ctx_);
+
   // Allocate and set options
   SwrContext* new_ctx = nullptr;
   int ret = swr_alloc_set_opts2(&new_ctx,
     &outChLayout, static_cast<AVSampleFormat>(outSampleFmt), outSampleRate,
     &inChLayout, static_cast<AVSampleFormat>(inSampleFmt), inSampleRate,
     0, nullptr);
-  
+
   if (ret >= 0 && new_ctx) {
-    if (ctx_ && !is_freed_) { swr_free(&ctx_); } ctx_ = new_ctx; is_freed_ = false;
+    ctx_ = new_ctx;
   }
-  
+
   return Napi::Number::New(env, ret);
 }
 
@@ -157,9 +150,9 @@ Napi::Value SoftwareResampleContext::Init(const Napi::CallbackInfo& info) {
 
 Napi::Value SoftwareResampleContext::Free(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
-  if (ctx_ && !is_freed_) { swr_free(&ctx_); ctx_ = nullptr; is_freed_ = true; };
-  
+
+  swr_free(&ctx_);
+
   return env.Undefined();
 }
 

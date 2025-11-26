@@ -75,41 +75,27 @@ Frame::Frame(const Napi::CallbackInfo& info)
 }
 
 Frame::~Frame() {
-  // Manual cleanup if not already done
-  if (!is_freed_ && frame_) {
-    av_frame_free(&frame_);
-    frame_ = nullptr;
-  }
+  av_frame_free(&frame_);
 }
 
 Napi::Value Frame::Alloc(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
+
   AVFrame* frame = av_frame_alloc();
   if (!frame) {
     Napi::Error::New(env, "Failed to allocate frame (ENOMEM)").ThrowAsJavaScriptException();
     return env.Undefined();
   }
-  
-  // Free old frame if exists
-  if (frame_ && !is_freed_) {
-    av_frame_free(&frame_);
-  }
-  
+
+  av_frame_free(&frame_);
+
   frame_ = frame;
-  is_freed_ = false;
   return env.Undefined();
 }
 
 Napi::Value Frame::Free(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
-  if (frame_ && !is_freed_) {
-    av_frame_free(&frame_);
-    frame_ = nullptr;
-    is_freed_ = true;
-  }
-  
+  av_frame_free(&frame_);
   return env.Undefined();
 }
 
@@ -161,8 +147,7 @@ Napi::Value Frame::Clone(const Napi::CallbackInfo& info) {
   Napi::Object newFrame = constructor.New({});
   Frame* wrapper = Napi::ObjectWrap<Frame>::Unwrap(newFrame);
   wrapper->frame_ = cloned;
-  wrapper->is_freed_ = false;
-  
+
   return newFrame;
 }
 

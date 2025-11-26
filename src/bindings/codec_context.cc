@@ -98,12 +98,7 @@ CodecContext::CodecContext(const Napi::CallbackInfo& info)
 }
 
 CodecContext::~CodecContext() {
-  // Manual cleanup if not already done
-  if (!is_freed_ && context_) {
-    // avcodec_free_context handles both closing and freeing
-    avcodec_free_context(&context_);
-    context_ = nullptr;
-  }
+  avcodec_free_context(&context_);
 }
 
 Napi::Value CodecContext::AllocContext3(const Napi::CallbackInfo& info) {
@@ -130,22 +125,7 @@ Napi::Value CodecContext::AllocContext3(const Napi::CallbackInfo& info) {
 
 Napi::Value CodecContext::FreeContext(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  
-  if (is_freed_) {
-    return env.Undefined();
-  }
-  
-  AVCodecContext* ctx = context_;
-  context_ = nullptr;
-  
-  if (!ctx) {
-    return env.Undefined();
-  }
-  
-  // avcodec_free_context handles both closing and freeing
-  avcodec_free_context(&ctx);
-  is_freed_ = true;
-  
+  avcodec_free_context(&context_);
   return env.Undefined();
 }
 
