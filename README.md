@@ -5,7 +5,7 @@
 # NodeAV
 
 [![npm version](https://img.shields.io/npm/v/node-av.svg)](https://www.npmjs.com/package/node-av)
-[![npm downloads](https://img.shields.io/npm/dm/node-av.svg)](https://www.npmjs.com/package/node-av)
+[![npm downloads](https://img.shields.io/npm/dt/node-av.svg)](https://www.npmjs.com/package/node-av)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue.svg)](https://www.typescriptlang.org/)
 [![FFmpeg](https://img.shields.io/badge/FFmpeg-8-green.svg)](https://ffmpeg.org)
