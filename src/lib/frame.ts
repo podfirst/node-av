@@ -991,9 +991,10 @@ export class Frame implements Disposable, NativeWrapper<NativeFrame> {
   }
 
   /**
-   * Copy frame properties without copying data.
+   * Copy non-layout frame properties without copying data.
    *
-   * Copies metadata, timestamps, format info, etc. but not the actual data.
+   * Copies metadata like timestamp, duration, etc., but not the actual data.
+   * Layout-defining properties, such as width, height, channel count, format, etc., are not copied.
    * Useful for preparing output frames with same properties.
    *
    * Direct mapping to av_frame_copy_props().
@@ -1009,19 +1010,19 @@ export class Frame implements Disposable, NativeWrapper<NativeFrame> {
    *
    * const ret = dstFrame.copyProps(srcFrame);
    * FFmpegError.throwIfError(ret, 'copyProps');
-   * // dstFrame now has same properties as srcFrame
+   * // dstFrame now has same non-layout properties as srcFrame
    * ```
    *
-   * @see {@link copy} To copy both properties and data
+   * @see {@link copy} To copy data
    */
   copyProps(src: Frame): number {
     return this.native.copyProps(src.getNative());
   }
 
   /**
-   * Copy frame data and properties.
+   * Copy frame data.
    *
-   * Copies both data and metadata from source frame.
+   * Copies only data (but not metadata) from source frame.
    * Destination must have allocated buffers of correct size.
    *
    * Direct mapping to av_frame_copy().
@@ -1045,7 +1046,7 @@ export class Frame implements Disposable, NativeWrapper<NativeFrame> {
    * FFmpegError.throwIfError(ret, 'copy');
    * ```
    *
-   * @see {@link copyProps} To copy only properties
+   * @see {@link copyProps} To copy non-format metadata
    * @see {@link clone} To create new frame with copy
    */
   copy(src: Frame): number {
