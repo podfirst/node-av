@@ -1,4 +1,12 @@
-import { AV_BUFFERSRC_FLAG_PUSH, AVERROR_EAGAIN, AVERROR_EOF, AVFILTER_FLAG_HWDEVICE, AVMEDIA_TYPE_VIDEO, EOF } from '../constants/constants.js';
+import {
+  AV_BUFFERSRC_FLAG_KEEP_REF,
+  AV_BUFFERSRC_FLAG_PUSH,
+  AVERROR_EAGAIN,
+  AVERROR_EOF,
+  AVFILTER_FLAG_HWDEVICE,
+  AVMEDIA_TYPE_VIDEO,
+  EOF,
+} from '../constants/constants.js';
 import { FFmpegError } from '../lib/error.js';
 import { FilterGraph } from '../lib/filter-graph.js';
 import { FilterInOut } from '../lib/filter-inout.js';
@@ -7,7 +15,7 @@ import { Frame } from '../lib/frame.js';
 import { Rational } from '../lib/rational.js';
 import { avGetSampleFmtName, avInvQ, avRescaleQ } from '../lib/utilities.js';
 
-import type { AVSampleFormat, EOFSignal } from '../constants/index.js';
+import type { AVBufferSrcFlag, AVSampleFormat, EOFSignal } from '../constants/index.js';
 import type { FilterContext } from '../lib/filter-context.js';
 import type { IRational } from '../lib/types.js';
 import type { FilterComplexOptions } from './types.js';
@@ -374,7 +382,8 @@ export class FilterComplexAPI implements Disposable {
     this.rescaleFrameTimestamps(frame, inputState.calculatedTimeBase);
 
     // Send frame to buffersrc
-    const ret = await inputState.buffersrc.buffersrcAddFrame(frame, AV_BUFFERSRC_FLAG_PUSH);
+    // KEEP_REF preserves the input frame's hw_frames_ctx for reuse across multiple filters
+    const ret = await inputState.buffersrc.buffersrcAddFrame(frame, (AV_BUFFERSRC_FLAG_PUSH | AV_BUFFERSRC_FLAG_KEEP_REF) as AVBufferSrcFlag);
     FFmpegError.throwIfError(ret, `Failed to send frame to input ${inLabel}`);
   }
 
@@ -445,7 +454,8 @@ export class FilterComplexAPI implements Disposable {
     this.rescaleFrameTimestamps(frame, inputState.calculatedTimeBase);
 
     // Send frame to buffersrc
-    const ret = inputState.buffersrc.buffersrcAddFrameSync(frame, AV_BUFFERSRC_FLAG_PUSH);
+    // KEEP_REF preserves the input frame's hw_frames_ctx for reuse across multiple filters
+    const ret = inputState.buffersrc.buffersrcAddFrameSync(frame, (AV_BUFFERSRC_FLAG_PUSH | AV_BUFFERSRC_FLAG_KEEP_REF) as AVBufferSrcFlag);
     FFmpegError.throwIfError(ret, `Failed to send frame to input ${inLabel}`);
   }
 
@@ -1320,7 +1330,8 @@ export class FilterComplexAPI implements Disposable {
         this.rescaleFrameTimestamps(frame, inputState.calculatedTimeBase);
 
         // Send to buffersrc
-        const ret = await inputState.buffersrc.buffersrcAddFrame(frame, AV_BUFFERSRC_FLAG_PUSH);
+        // KEEP_REF preserves the input frame's hw_frames_ctx for reuse across multiple filters
+        const ret = await inputState.buffersrc.buffersrcAddFrame(frame, (AV_BUFFERSRC_FLAG_PUSH | AV_BUFFERSRC_FLAG_KEEP_REF) as AVBufferSrcFlag);
         FFmpegError.throwIfError(ret, `Failed to send queued frame to ${label}`);
 
         // Free the frame
@@ -1402,7 +1413,8 @@ export class FilterComplexAPI implements Disposable {
         this.rescaleFrameTimestamps(frame, inputState.calculatedTimeBase);
 
         // Send to buffersrc
-        const ret = inputState.buffersrc.buffersrcAddFrameSync(frame, AV_BUFFERSRC_FLAG_PUSH);
+        // KEEP_REF preserves the input frame's hw_frames_ctx for reuse across multiple filters
+        const ret = inputState.buffersrc.buffersrcAddFrameSync(frame, (AV_BUFFERSRC_FLAG_PUSH | AV_BUFFERSRC_FLAG_KEEP_REF) as AVBufferSrcFlag);
         FFmpegError.throwIfError(ret, `Failed to send queued frame to ${label}`);
 
         // Free the frame

@@ -1,5 +1,13 @@
 /* eslint-disable @stylistic/indent-binary-ops */
-import { AV_BUFFERSRC_FLAG_PUSH, AVERROR_EAGAIN, AVERROR_EOF, AVERROR_FILTER_NOT_FOUND, AVFILTER_FLAG_HWDEVICE, EOF } from '../constants/constants.js';
+import {
+  AV_BUFFERSRC_FLAG_KEEP_REF,
+  AV_BUFFERSRC_FLAG_PUSH,
+  AVERROR_EAGAIN,
+  AVERROR_EOF,
+  AVERROR_FILTER_NOT_FOUND,
+  AVFILTER_FLAG_HWDEVICE,
+  EOF,
+} from '../constants/constants.js';
 import { FFmpegError } from '../lib/error.js';
 import { FilterGraph } from '../lib/filter-graph.js';
 import { FilterInOut } from '../lib/filter-inout.js';
@@ -11,7 +19,7 @@ import { FRAME_THREAD_QUEUE_SIZE } from './constants.js';
 import { AsyncQueue } from './utilities/async-queue.js';
 import { Scheduler } from './utilities/scheduler.js';
 
-import type { AVColorRange, AVColorSpace, AVFilterCmdFlag, AVPixelFormat, AVSampleFormat, EOFSignal } from '../constants/index.js';
+import type { AVBufferSrcFlag, AVColorRange, AVColorSpace, AVFilterCmdFlag, AVPixelFormat, AVSampleFormat, EOFSignal } from '../constants/index.js';
 import type { FilterContext } from '../lib/filter-context.js';
 import type { ChannelLayout, IDimension, IRational } from '../lib/types.js';
 import type { Encoder } from './encoder.js';
@@ -590,7 +598,8 @@ export class FilterAPI implements Disposable {
     }
 
     // Send frame to filter with PUSH flag for immediate processing
-    const addRet = await this.buffersrcCtx.buffersrcAddFrame(frame, AV_BUFFERSRC_FLAG_PUSH);
+    // KEEP_REF preserves the input frame's hw_frames_ctx for reuse across multiple filters
+    const addRet = await this.buffersrcCtx.buffersrcAddFrame(frame, (AV_BUFFERSRC_FLAG_PUSH | AV_BUFFERSRC_FLAG_KEEP_REF) as AVBufferSrcFlag);
     FFmpegError.throwIfError(addRet, 'Failed to add frame to filter');
   }
 
@@ -671,7 +680,8 @@ export class FilterAPI implements Disposable {
     }
 
     // Send frame to filter with PUSH flag for immediate processing
-    const addRet = this.buffersrcCtx.buffersrcAddFrameSync(frame, AV_BUFFERSRC_FLAG_PUSH);
+    // KEEP_REF preserves the input frame's hw_frames_ctx for reuse across multiple filters
+    const addRet = this.buffersrcCtx.buffersrcAddFrameSync(frame, (AV_BUFFERSRC_FLAG_PUSH | AV_BUFFERSRC_FLAG_KEEP_REF) as AVBufferSrcFlag);
     FFmpegError.throwIfError(addRet, 'Failed to add frame to filter');
   }
 
