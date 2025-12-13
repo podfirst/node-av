@@ -117,7 +117,7 @@ jobs:
 
       - name: Restore FFmpeg cache
         id: cache-ffmpeg
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             C:\ffmpeg-cache-${{ matrix.os.arch }}
@@ -216,7 +216,7 @@ jobs:
           fi
       - name: Save FFmpeg cache
         if: steps.cache-ffmpeg.outputs.cache-hit != 'true' && steps.build-ffmpeg.outcome == 'success'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: |
             C:\ffmpeg-cache-${{ matrix.os.arch }}
@@ -571,7 +571,7 @@ jobs:
 
       - name: Restore FFmpeg cache
         id: cache-ffmpeg
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             /opt/ffbuild/prefix
@@ -671,7 +671,7 @@ jobs:
 
       - name: Save FFmpeg cache
         if: steps.cache-ffmpeg.outputs.cache-hit != 'true' && steps.build-ffmpeg.outcome == 'success'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: |
             /opt/ffbuild/prefix
@@ -834,7 +834,7 @@ jobs:
 
       - name: Restore FFmpeg cache
         id: cache-ffmpeg
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             /opt/ffbuild/prefix
@@ -892,7 +892,7 @@ jobs:
 
       - name: Save FFmpeg cache
         if: steps.cache-ffmpeg.outputs.cache-hit != 'true' && steps.build-ffmpeg.outcome == 'success'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: |
             /opt/ffbuild/prefix
