@@ -45,7 +45,8 @@ export const AVFLAG_NONE = 0 as AVSeekFlag &
   AVCodecFlag &
   SWSFlag &
   AVFrameFlag &
-  AVFifoFlag;
+  AVFifoFlag &
+  AVCodecProp;
 // libavcodec/avcodec.h
 export type AVCodecConfig = number & { readonly [__ffmpeg_brand]: 'AVCodecConfig' };
 
