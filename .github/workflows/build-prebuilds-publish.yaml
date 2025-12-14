@@ -13,6 +13,7 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     permissions:
+      id-token: write
       contents: write
       packages: write
     steps:
