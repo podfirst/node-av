@@ -2,18 +2,9 @@
   "name": "@seydx/node-av-PLATFORM",
   "version": "0.0.1",
   "description": "node-av (PLATFORM binary)",
-  "author": "seydx (https://github.com/seydx/av)",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "git://github.com/seydx/av.git"
-  },
+  "author": "seydx (https://github.com/seydx/node-av)",
   "type": "module",
-  "files": [
-    "node-av.node.zip",
-    "node-av.node",
-    "install.js"
-  ],
+  "files": ["node-av.node.zip", "node-av.node", "install.js"],
   "main": "node-av.node",
   "scripts": {
     "postinstall": "node install.js"
@@ -21,13 +12,19 @@
   "dependencies": {
     "unzipper": "^0.12.3"
   },
+  "os": ["OS_VALUE"],
+  "cpu": ["CPU_VALUE"],
   "engines": {
     "node": "^18.17.0 || ^20.3.0 || >=21.0.0"
   },
-  "os": [
-    "OS_VALUE"
-  ],
-  "cpu": [
-    "CPU_VALUE"
-  ]
+  "bugs": {
+    "url": "https://github.com/seydx/node-av/issues"
+  },
+  "homepage": "https://github.com/seydx/node-av#readme",
+  "keywords": ["node", "ffmpeg", "av", "libav", "bindings", "whisper", "binary", "windows", "linux", "darwin", "x64", "arm64", "static"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/seydx/node-av.git"
+  }
 }

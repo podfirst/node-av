@@ -51,7 +51,6 @@ ffmpeg_examples
 /build-darwin.sh
 /CLAUDE.md
 /prebuilds
-/packages
 /*runner.txt
 /prebuildify
 /prebuilds-artifacts
