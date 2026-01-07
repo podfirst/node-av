@@ -1,4 +1,9 @@
 #include <napi.h>
+
+extern "C" {
+#include <libavdevice/avdevice.h>
+}
+
 #include "packet.h"
 #include "frame.h"
 #include "codec.h"
@@ -34,6 +39,9 @@
 namespace ffmpeg {
 
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
+  // PodFirst: Register device input/output formats (avfoundation, dshow, v4l2, etc.)
+  avdevice_register_all();
+
   // Core Types
   Packet::Init(env, exports);
   Frame::Init(env, exports);
