@@ -11,6 +11,7 @@ jobs:
   package-and-publish:
     name: "Package and Publish"
     needs: build
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -57,14 +58,25 @@ jobs:
           echo "Combined prebuilds structure:"
           ls -laR prebuilds/
 
-          # Verify we have all expected platforms
+          # Verify we have required platforms (MinGW is optional)
           echo -e "\nVerifying platform coverage:"
-          for platform in darwin-x64 darwin-arm64 linux-x64 linux-arm64 win32-x64-mingw win32-arm64-mingw win32-x64-msvc win32-arm64-msvc; do
+          REQUIRED_PLATFORMS="darwin-x64 darwin-arm64 linux-x64 linux-arm64 win32-x64-msvc win32-arm64-msvc"
+          OPTIONAL_PLATFORMS="win32-x64-mingw win32-arm64-mingw"
+
+          for platform in $REQUIRED_PLATFORMS; do
             if [ -d "prebuilds/$platform" ]; then
-              echo "✓ $platform"
+              echo "✓ $platform (required)"
             else
-              echo "✗ $platform missing"
+              echo "✗ $platform missing (required)"
               exit 1
+            fi
+          done
+
+          for platform in $OPTIONAL_PLATFORMS; do
+            if [ -d "prebuilds/$platform" ]; then
+              echo "✓ $platform (optional)"
+            else
+              echo "○ $platform skipped (optional)"
             fi
           done
 
