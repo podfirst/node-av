@@ -162,6 +162,7 @@
                 "user32.lib",
                 "gdi32.lib",
                 "advapi32.lib",
+                "vfw32.lib",
             ],
             "conditions": [
                 [
