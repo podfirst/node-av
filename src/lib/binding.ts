@@ -380,6 +380,18 @@ function loadBinding(): NativeBinding {
   }
 
   if (!loadLocal) {
+    // PodFirst: Try loading from binary folder (downloaded from GitHub releases)
+    // This is the preferred method when using the fork via git reference
+    const binaryNodePath = resolve(__dirname, '..', '..', 'binary', 'node-av.node');
+    if (existsSync(binaryNodePath)) {
+      try {
+        return require(binaryNodePath);
+      } catch (err) {
+        errors.push(new Error(`Binary folder loading failed: ${err}`));
+      }
+    }
+
+    // Fallback: Try npm packages (for backwards compatibility)
     // For Windows, detect MinGW vs MSVC environment
     if (platform === 'win32') {
       const useMingW = type() !== 'Windows_NT';

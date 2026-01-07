@@ -167,14 +167,14 @@ jobs:
           ### 📦 Updated Packages
 
           The following platform packages have been updated to ${{ github.ref_name }}:
-          - `@seydx/node-av-darwin-arm64@${{ github.ref_name }}`
-          - `@seydx/node-av-darwin-x64@${{ github.ref_name }}`
-          - `@seydx/node-av-linux-arm64@${{ github.ref_name }}`
-          - `@seydx/node-av-linux-x64@${{ github.ref_name }}`
-          - `@seydx/node-av-win32-arm64-mingw@${{ github.ref_name }}`
-          - `@seydx/node-av-win32-x64-mingw@${{ github.ref_name }}`
-          - `@seydx/node-av-win32-arm64-msvc@${{ github.ref_name }}`
-          - `@seydx/node-av-win32-x64-msvc@${{ github.ref_name }}`
+          - `@podfirst/node-av-darwin-arm64@${{ github.ref_name }}`
+          - `@podfirst/node-av-darwin-x64@${{ github.ref_name }}`
+          - `@podfirst/node-av-linux-arm64@${{ github.ref_name }}`
+          - `@podfirst/node-av-linux-x64@${{ github.ref_name }}`
+          - `@podfirst/node-av-win32-arm64-mingw@${{ github.ref_name }}`
+          - `@podfirst/node-av-win32-x64-mingw@${{ github.ref_name }}`
+          - `@podfirst/node-av-win32-arm64-msvc@${{ github.ref_name }}`
+          - `@podfirst/node-av-win32-x64-msvc@${{ github.ref_name }}`
           EOF
 
           # Extract the specific version section from CHANGELOG.md

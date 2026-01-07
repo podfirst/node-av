@@ -1,0 +1,15 @@
+diff --git a/builder/variants/defaults-gpl.sh b/builder/variants/defaults-gpl.sh
+index 833204d754..6f797cd511 100755
+--- a/builder/variants/defaults-gpl.sh
++++ b/builder/variants/defaults-gpl.sh
+@@ -7,4 +7,8 @@ LICENSE_FILE="COPYING.GPLv3"
+ 
+ [[ $TARGET == linux* ]] && FF_CONFIGURE+=" --disable-libxcb --disable-xlib --enable-lto=auto" || true
+ # [[ $TARGET == win* ]] && FF_CONFIGURE+=" --enable-lto=auto" || true
+-[[ $TARGET == mac* ]] && FF_CONFIGURE+=" --enable-lto=thin" || true
+\ No newline at end of file
++[[ $TARGET == mac* ]] && FF_CONFIGURE+=" --enable-lto=thin" || true
++# PodFirst: Enable input devices for desktop capture (webcam, microphone, screen)
++[[ $TARGET == mac* ]] && FF_CONFIGURE+=" --enable-indev=avfoundation" || true
++[[ $TARGET == win* ]] && FF_CONFIGURE+=" --enable-indev=dshow" || true
++[[ $TARGET == linux* ]] && FF_CONFIGURE+=" --enable-indev=v4l2 --enable-indev=alsa" || true

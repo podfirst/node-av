@@ -35,7 +35,7 @@ platforms.forEach((platform) => {
 
   // Create package.json
   const packageJson = { ...template };
-  packageJson.name = `@seydx/node-av-${platform.name}`;
+  packageJson.name = `@podfirst/node-av-${platform.name}`;
   packageJson.version = mainPackage.version;
   packageJson.description = `node-av (${platform.name} binary)`;
   packageJson.os = [platform.os];
@@ -44,9 +44,9 @@ platforms.forEach((platform) => {
   writeFileSync(join(packageDir, 'package.json'), JSON.stringify(packageJson, null, 2) + '\n');
 
   // Create README
-  const readme = `# @seydx/node-av-${platform.name}
+  const readme = `# @podfirst/node-av-${platform.name}
 
-Platform-specific binary for [node-av](https://github.com/seydx/node-av).
+Platform-specific binary for [node-av](https://github.com/podfirst/node-av).
 
 **This package is automatically installed as an optional dependency. You should not install it directly.**
 

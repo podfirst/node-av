@@ -56,7 +56,7 @@
     "lint": "eslint .",
     "lint:fix": "eslint --fix .",
     "patch:ffmpeg": "node scripts/patch-ffmpeg.js",
-    "postinstall": "node dist/ffmpeg/install.js",
+    "postinstall": "node dist/lib/install-binary.js && node dist/ffmpeg/install.js",
     "predocs": "typedoc && cpy README.md docs/ --rename=index.md",
     "release:patch": "npm run build:tsc && node scripts/prepare-release.js patch",
     "release:minor": "npm run build:tsc && node scripts/prepare-release.js minor",
@@ -69,16 +69,7 @@
     "unzipper": "^0.12.3",
     "werift": "^0.22.2"
   },
-  "optionalDependencies": {
-    "@seydx/node-av-darwin-arm64": "^5.0.3",
-    "@seydx/node-av-darwin-x64": "^5.0.3",
-    "@seydx/node-av-linux-arm64": "^5.0.3",
-    "@seydx/node-av-linux-x64": "^5.0.3",
-    "@seydx/node-av-win32-arm64-mingw": "^5.0.3",
-    "@seydx/node-av-win32-arm64-msvc": "^5.0.3",
-    "@seydx/node-av-win32-x64-mingw": "^5.0.3",
-    "@seydx/node-av-win32-x64-msvc": "^5.0.3"
-  },
+  "optionalDependencies": {},
   "devDependencies": {
     "@stylistic/eslint-plugin": "^5.6.1",
     "@types/node": "^25.0.1",
@@ -112,9 +103,9 @@
     "ip": "npm:neoip@2.1.0"
   },
   "bugs": {
-    "url": "https://github.com/seydx/node-av/issues"
+    "url": "https://github.com/podfirst/node-av/issues"
   },
-  "homepage": "https://github.com/seydx/node-av#readme",
+  "homepage": "https://github.com/podfirst/node-av#readme",
   "keywords": [
     "node",
     "ffmpeg",
@@ -133,6 +124,6 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/seydx/node-av.git"
+    "url": "git+https://github.com/podfirst/node-av.git"
   }
 }
