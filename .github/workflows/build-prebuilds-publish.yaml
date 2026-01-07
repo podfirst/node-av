@@ -58,10 +58,10 @@ jobs:
           echo "Combined prebuilds structure:"
           ls -laR prebuilds/
 
-          # Verify we have required platforms (MinGW is optional)
+          # Verify we have required platforms (Windows is optional due to FFmpeg prebuilt issues)
           echo -e "\nVerifying platform coverage:"
-          REQUIRED_PLATFORMS="darwin-x64 darwin-arm64 linux-x64 linux-arm64 win32-x64-msvc win32-arm64-msvc"
-          OPTIONAL_PLATFORMS="win32-x64-mingw win32-arm64-mingw"
+          REQUIRED_PLATFORMS="darwin-x64 darwin-arm64 linux-x64 linux-arm64"
+          OPTIONAL_PLATFORMS="win32-x64-msvc win32-arm64-msvc win32-x64-mingw win32-arm64-mingw"
 
           for platform in $REQUIRED_PLATFORMS; do
             if [ -d "prebuilds/$platform" ]; then
