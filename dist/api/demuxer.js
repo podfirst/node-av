@@ -1,0 +1,1921 @@
+var __addDisposableResource = (this && this.__addDisposableResource) || function (env, value, async) {
+    if (value !== null && value !== void 0) {
+        if (typeof value !== "object" && typeof value !== "function") throw new TypeError("Object expected.");
+        var dispose, inner;
+        if (async) {
+            if (!Symbol.asyncDispose) throw new TypeError("Symbol.asyncDispose is not defined.");
+            dispose = value[Symbol.asyncDispose];
+        }
+        if (dispose === void 0) {
+            if (!Symbol.dispose) throw new TypeError("Symbol.dispose is not defined.");
+            dispose = value[Symbol.dispose];
+            if (async) inner = dispose;
+        }
+        if (typeof dispose !== "function") throw new TypeError("Object not disposable.");
+        if (inner) dispose = function() { try { inner.call(this); } catch (e) { return Promise.reject(e); } };
+        env.stack.push({ value: value, dispose: dispose, async: async });
+    }
+    else if (async) {
+        env.stack.push({ async: true });
+    }
+    return value;
+};
+var __disposeResources = (this && this.__disposeResources) || (function (SuppressedError) {
+    return function (env) {
+        function fail(e) {
+            env.error = env.hasError ? new SuppressedError(e, env.error, "An error was suppressed during disposal.") : e;
+            env.hasError = true;
+        }
+        var r, s = 0;
+        function next() {
+            while (r = env.stack.pop()) {
+                try {
+                    if (!r.async && s === 1) return s = 0, env.stack.push(r), Promise.resolve().then(next);
+                    if (r.dispose) {
+                        var result = r.dispose.call(r.value);
+                        if (r.async) return s |= 2, Promise.resolve(result).then(next, function(e) { fail(e); return next(); });
+                    }
+                    else s |= 1;
+                }
+                catch (e) {
+                    fail(e);
+                }
+            }
+            if (s === 1) return env.hasError ? Promise.reject(env.error) : Promise.resolve();
+            if (env.hasError) throw env.error;
+        }
+        return next();
+    };
+})(typeof SuppressedError === "function" ? SuppressedError : function (error, suppressed, message) {
+    var e = new Error(message);
+    return e.name = "SuppressedError", e.error = error, e.suppressed = suppressed, e;
+});
+import { createSocket } from 'dgram';
+import { closeSync, openSync, readSync } from 'fs';
+import { open } from 'fs/promises';
+import { resolve } from 'path';
+import { RtpPacket } from 'werift';
+import { AV_NOPTS_VALUE, AV_PIX_FMT_NONE, AV_ROUND_NEAR_INF, AV_ROUND_PASS_MINMAX, AV_TIME_BASE, AV_TIME_BASE_Q, AVFLAG_NONE, AVFMT_FLAG_CUSTOM_IO, AVFMT_FLAG_NONBLOCK, AVFMT_TS_DISCONT, AVMEDIA_TYPE_AUDIO, AVMEDIA_TYPE_VIDEO, AVSEEK_CUR, AVSEEK_END, AVSEEK_SET, } from '../constants/constants.js';
+import { Dictionary } from '../lib/dictionary.js';
+import { FFmpegError } from '../lib/error.js';
+import { FormatContext } from '../lib/format-context.js';
+import { InputFormat } from '../lib/input-format.js';
+import { IOContext } from '../lib/io-context.js';
+import { Packet } from '../lib/packet.js';
+import { Rational } from '../lib/rational.js';
+import { avGetPixFmtName, avGetSampleFmtName, avRescaleQ, avRescaleQRnd, dtsPredict as nativeDtsPredict } from '../lib/utilities.js';
+import { DELTA_THRESHOLD, DTS_ERROR_THRESHOLD, IO_BUFFER_SIZE, MAX_INPUT_QUEUE_SIZE } from './constants.js';
+import { IOStream } from './io-stream.js';
+import { StreamingUtils } from './utilities/streaming.js';
+/**
+ * High-level demuxer for reading and demuxing media files.
+ *
+ * Provides simplified access to media streams, packets, and metadata.
+ * Handles file opening, format detection, and stream information extraction.
+ * Supports files, URLs, buffers, and raw data input with automatic cleanup.
+ * Essential component for media processing pipelines and transcoding.
+ *
+ * @example
+ * ```typescript
+ * import { Demuxer } from 'node-av/api';
+ *
+ * // Open media file
+ * await using input = await Demuxer.open('video.mp4');
+ * console.log(`Format: ${input.formatName}`);
+ * console.log(`Duration: ${input.duration}s`);
+ *
+ * // Process packets
+ * for await (const packet of input.packets()) {
+ *   console.log(`Packet from stream ${packet.streamIndex}`);
+ *   packet.free();
+ * }
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // From buffer
+ * const buffer = await fs.readFile('video.mp4');
+ * await using input = await Demuxer.open(buffer);
+ *
+ * // Access streams
+ * const videoStream = input.video();
+ * const audioStream = input.audio();
+ * ```
+ *
+ * @see {@link Muxer} For writing media files
+ * @see {@link Decoder} For decoding packets to frames
+ * @see {@link FormatContext} For low-level API
+ */
+export class Demuxer {
+    formatContext;
+    _streams = [];
+    ioContext;
+    isClosed = false;
+    options;
+    // Timestamp processing state (per-stream)
+    streamStates = new Map();
+    // Timestamp discontinuity tracking (global)
+    tsOffsetDiscont = 0n;
+    lastTs = AV_NOPTS_VALUE;
+    // Demux manager for handling multiple parallel packet generators
+    activeGenerators = 0;
+    demuxThread = null;
+    packetQueues = new Map(); // streamIndex or 'all' -> queue
+    queueResolvers = new Map(); // Promise resolvers for waiting consumers
+    demuxThreadActive = false;
+    demuxEof = false;
+    /**
+     * @param formatContext - Opened format context
+     *
+     * @param options - Media input options
+     *
+     * @param ioContext - Optional IO context for custom I/O (e.g., from Buffer)
+     *
+     * @internal
+     */
+    constructor(formatContext, options, ioContext) {
+        this.formatContext = formatContext;
+        this.ioContext = ioContext;
+        this._streams = formatContext.streams ?? [];
+        this.options = options;
+    }
+    /**
+     * Probe media format without fully opening the file.
+     *
+     * Detects format by analyzing file headers and content.
+     * Useful for format validation before processing.
+     *
+     * Direct mapping to av_probe_input_format().
+     *
+     * @param input - File path or buffer to probe
+     *
+     * @returns Format information or null if unrecognized
+     *
+     * @example
+     * ```typescript
+     * const info = await Demuxer.probeFormat('video.mp4');
+     * if (info) {
+     *   console.log(`Format: ${info.format}`);
+     *   console.log(`Confidence: ${info.confidence}%`);
+     * }
+     * ```
+     *
+     * @example
+     * ```typescript
+     * // Probe from buffer
+     * const buffer = await fs.readFile('video.webm');
+     * const info = await Demuxer.probeFormat(buffer);
+     * console.log(`MIME type: ${info?.mimeType}`);
+     * ```
+     *
+     * @see {@link InputFormat.probe} For low-level probing
+     */
+    static async probeFormat(input) {
+        try {
+            if (Buffer.isBuffer(input)) {
+                // Probe from buffer
+                const format = InputFormat.probe(input);
+                if (!format) {
+                    return null;
+                }
+                return {
+                    format: format.name ?? 'unknown',
+                    longName: format.longName ?? undefined,
+                    extensions: format.extensions ?? undefined,
+                    mimeType: format.mimeType ?? undefined,
+                    confidence: 100, // Direct probe always has high confidence
+                };
+            }
+            else {
+                // For files, read first part and probe
+                let fileHandle;
+                try {
+                    fileHandle = await open(input, 'r');
+                    // Read first 64KB for probing
+                    const buffer = Buffer.alloc(65536);
+                    const { bytesRead } = await fileHandle.read(buffer, 0, 65536, 0);
+                    const probeBuffer = buffer.subarray(0, bytesRead);
+                    const format = InputFormat.probe(probeBuffer, input);
+                    if (!format) {
+                        return null;
+                    }
+                    return {
+                        format: format.name ?? 'unknown',
+                        longName: format.longName ?? undefined,
+                        extensions: format.extensions ?? undefined,
+                        mimeType: format.mimeType ?? undefined,
+                        confidence: 90, // File-based probe with filename hint
+                    };
+                }
+                catch {
+                    // If file reading fails, return null
+                    return null;
+                }
+                finally {
+                    await fileHandle?.close();
+                }
+            }
+        }
+        catch {
+            return null;
+        }
+    }
+    /**
+     * Probe media format without fully opening the file synchronously.
+     * Synchronous version of probeFormat.
+     *
+     * Detects format by analyzing file headers and content.
+     * Useful for format validation before processing.
+     *
+     * Direct mapping to av_probe_input_format().
+     *
+     * @param input - File path or buffer to probe
+     *
+     * @returns Format information or null if unrecognized
+     *
+     * @example
+     * ```typescript
+     * const info = Demuxer.probeFormatSync('video.mp4');
+     * if (info) {
+     *   console.log(`Format: ${info.format}`);
+     *   console.log(`Confidence: ${info.confidence}%`);
+     * }
+     * ```
+     *
+     * @example
+     * ```typescript
+     * // Probe from buffer
+     * const buffer = fs.readFileSync('video.webm');
+     * const info = Demuxer.probeFormatSync(buffer);
+     * console.log(`MIME type: ${info?.mimeType}`);
+     * ```
+     *
+     * @see {@link probeFormat} For async version
+     */
+    static probeFormatSync(input) {
+        try {
+            if (Buffer.isBuffer(input)) {
+                // Probe from buffer
+                const format = InputFormat.probe(input);
+                if (!format) {
+                    return null;
+                }
+                return {
+                    format: format.name ?? 'unknown',
+                    longName: format.longName ?? undefined,
+                    extensions: format.extensions ?? undefined,
+                    mimeType: format.mimeType ?? undefined,
+                    confidence: 100, // Direct probe always has high confidence
+                };
+            }
+            else {
+                // For files, read first part and probe
+                let fd;
+                try {
+                    fd = openSync(input, 'r');
+                    // Read first 64KB for probing
+                    const buffer = Buffer.alloc(65536);
+                    const bytesRead = readSync(fd, buffer, 0, 65536, 0);
+                    const probeBuffer = buffer.subarray(0, bytesRead);
+                    const format = InputFormat.probe(probeBuffer, input);
+                    if (!format) {
+                        return null;
+                    }
+                    return {
+                        format: format.name ?? 'unknown',
+                        longName: format.longName ?? undefined,
+                        extensions: format.extensions ?? undefined,
+                        mimeType: format.mimeType ?? undefined,
+                        confidence: 90, // File-based probe with filename hint
+                    };
+                }
+                catch {
+                    // If file reading fails, return null
+                    return null;
+                }
+                finally {
+                    if (fd !== undefined)
+                        closeSync(fd);
+                }
+            }
+        }
+        catch {
+            return null;
+        }
+    }
+    static async open(input, options = {}) {
+        // Check if input is raw data
+        if (typeof input === 'object' && 'type' in input && ('width' in input || 'sampleRate' in input)) {
+            // Build options for raw data
+            const rawOptions = {
+                bufferSize: options.bufferSize,
+                format: options.format ?? (input.type === 'video' ? 'rawvideo' : 's16le'),
+                options: {
+                    ...options.options,
+                },
+            };
+            if (input.type === 'video') {
+                rawOptions.options = {
+                    ...rawOptions.options,
+                    video_size: `${input.width}x${input.height}`,
+                    pixel_format: avGetPixFmtName(input.pixelFormat) ?? 'yuv420p',
+                    framerate: new Rational(input.frameRate.num, input.frameRate.den).toString(),
+                };
+            }
+            else {
+                rawOptions.options = {
+                    ...rawOptions.options,
+                    sample_rate: input.sampleRate,
+                    channels: input.channels,
+                    sample_fmt: avGetSampleFmtName(input.sampleFormat) ?? 's16le',
+                };
+            }
+            input = input.input;
+            options = rawOptions;
+        }
+        // Original implementation for non-raw data
+        const formatContext = new FormatContext();
+        let ioContext;
+        let optionsDict = null;
+        let inputFormat = null;
+        try {
+            // Create options dictionary if options are provided
+            if (options.options) {
+                optionsDict = Dictionary.fromObject(options.options);
+            }
+            // Find input format if specified
+            if (options.format) {
+                inputFormat = InputFormat.findInputFormat(options.format);
+                if (!inputFormat) {
+                    throw new Error(`Input format '${options.format}' not found`);
+                }
+            }
+            if (typeof input === 'string') {
+                // File path or URL - resolve relative paths to absolute
+                // Check if it's a URL (starts with protocol://) or a file path
+                const isUrl = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(input);
+                const resolvedInput = isUrl ? input : resolve(input);
+                const ret = await formatContext.openInput(resolvedInput, inputFormat, optionsDict);
+                FFmpegError.throwIfError(ret, 'Failed to open input');
+                formatContext.setFlags(AVFMT_FLAG_NONBLOCK);
+            }
+            else if (Buffer.isBuffer(input)) {
+                // Validate buffer is not empty
+                if (input.length === 0) {
+                    throw new Error('Cannot open media from empty buffer');
+                }
+                // From buffer - allocate context first for custom I/O
+                formatContext.allocContext();
+                ioContext = IOStream.create(input, { bufferSize: options.bufferSize });
+                formatContext.pb = ioContext;
+                const ret = await formatContext.openInput('', inputFormat, optionsDict);
+                FFmpegError.throwIfError(ret, 'Failed to open input from buffer');
+            }
+            else if (typeof input === 'object' && 'read' in input) {
+                // Custom I/O with callbacks - format is required
+                if (!options.format) {
+                    throw new Error('Format must be specified for custom I/O');
+                }
+                // Allocate context first for custom I/O
+                formatContext.allocContext();
+                // Setup custom I/O with callbacks
+                ioContext = new IOContext();
+                ioContext.allocContextWithCallbacks(options.bufferSize ?? IO_BUFFER_SIZE, 0, input.read, null, input.seek);
+                formatContext.pb = ioContext;
+                formatContext.setFlags(AVFMT_FLAG_CUSTOM_IO);
+                const ret = await formatContext.openInput('', inputFormat, optionsDict);
+                FFmpegError.throwIfError(ret, 'Failed to open input from custom I/O');
+            }
+            else {
+                throw new TypeError('Invalid input type. Expected file path, URL, Buffer, or IOInputCallbacks');
+            }
+            // Find stream information
+            if (!options.skipStreamInfo) {
+                const ret = await formatContext.findStreamInfo(null);
+                FFmpegError.throwIfError(ret, 'Failed to find stream info');
+                // Try to parse extradata for video streams with missing dimensions
+                for (const stream of formatContext.streams ?? []) {
+                    if (stream.codecpar.codecType === AVMEDIA_TYPE_VIDEO) {
+                        const dimensionsMissing = stream.codecpar.width === 0 || stream.codecpar.height === 0;
+                        const invalidFormat = stream.codecpar.format === AV_PIX_FMT_NONE;
+                        const invalidRate = stream.codecpar.frameRate.num === 0 || stream.codecpar.frameRate.den === 0;
+                        const needsParsing = dimensionsMissing || invalidFormat || invalidRate;
+                        if (needsParsing && stream.codecpar.extradataSize > 0) {
+                            stream.codecpar.parseExtradata();
+                        }
+                    }
+                }
+            }
+            // Determine buffer size
+            let bufferSize = options.bufferSize ?? IO_BUFFER_SIZE;
+            if (!ioContext && formatContext.iformat && formatContext.pb) {
+                // Check if this is a streaming input (like RTSP, HTTP, etc.)
+                const isStreaming = formatContext.pb.seekable === 0;
+                if (isStreaming) {
+                    bufferSize *= 2; // double buffer size for streaming inputs
+                }
+            }
+            // Apply defaults to options
+            const fullOptions = {
+                bufferSize,
+                format: options.format ?? '',
+                skipStreamInfo: options.skipStreamInfo ?? false,
+                startWithKeyframe: options.startWithKeyframe ?? false,
+                dtsDeltaThreshold: options.dtsDeltaThreshold ?? DELTA_THRESHOLD,
+                dtsErrorThreshold: options.dtsErrorThreshold ?? DTS_ERROR_THRESHOLD,
+                copyTs: options.copyTs ?? false,
+                options: options.options ?? {},
+            };
+            return new Demuxer(formatContext, fullOptions, ioContext);
+        }
+        catch (error) {
+            // Clean up only on error
+            if (ioContext) {
+                // Clear the pb reference first
+                formatContext.pb = null;
+                // Free the IOContext (for both custom I/O and buffer-based I/O)
+                ioContext.freeContext();
+            }
+            // Clean up FormatContext
+            await formatContext.closeInput();
+            throw error;
+        }
+        finally {
+            // Clean up options dictionary
+            if (optionsDict) {
+                optionsDict.free();
+            }
+        }
+    }
+    static openSync(input, options = {}) {
+        // Check if input is raw data
+        if (typeof input === 'object' && 'type' in input && ('width' in input || 'sampleRate' in input)) {
+            // Build options for raw data
+            const rawOptions = {
+                bufferSize: options.bufferSize,
+                format: options.format ?? (input.type === 'video' ? 'rawvideo' : 's16le'),
+                options: {
+                    ...options.options,
+                },
+            };
+            if (input.type === 'video') {
+                rawOptions.options = {
+                    ...rawOptions.options,
+                    video_size: `${input.width}x${input.height}`,
+                    pixel_format: avGetPixFmtName(input.pixelFormat) ?? 'yuv420p',
+                    framerate: new Rational(input.frameRate.num, input.frameRate.den).toString(),
+                };
+            }
+            else {
+                rawOptions.options = {
+                    ...rawOptions.options,
+                    sample_rate: input.sampleRate,
+                    channels: input.channels,
+                    sample_fmt: avGetSampleFmtName(input.sampleFormat) ?? 's16le',
+                };
+            }
+            input = input.input;
+            options = rawOptions;
+        }
+        // Original implementation for non-raw data
+        const formatContext = new FormatContext();
+        let ioContext;
+        let optionsDict = null;
+        let inputFormat = null;
+        try {
+            // Create options dictionary if options are provided
+            if (options.options) {
+                optionsDict = Dictionary.fromObject(options.options);
+            }
+            // Find input format if specified
+            if (options.format) {
+                inputFormat = InputFormat.findInputFormat(options.format);
+                if (!inputFormat) {
+                    throw new Error(`Input format '${options.format}' not found`);
+                }
+            }
+            if (typeof input === 'string') {
+                // File path or URL - resolve relative paths to absolute
+                // Check if it's a URL (starts with protocol://) or a file path
+                const isUrl = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(input);
+                const resolvedInput = isUrl ? input : resolve(input);
+                const ret = formatContext.openInputSync(resolvedInput, inputFormat, optionsDict);
+                FFmpegError.throwIfError(ret, 'Failed to open input');
+                formatContext.setFlags(AVFMT_FLAG_NONBLOCK);
+            }
+            else if (Buffer.isBuffer(input)) {
+                // Validate buffer is not empty
+                if (input.length === 0) {
+                    throw new Error('Cannot open media from empty buffer');
+                }
+                // From buffer - allocate context first for custom I/O
+                formatContext.allocContext();
+                ioContext = IOStream.create(input, { bufferSize: options.bufferSize });
+                formatContext.pb = ioContext;
+                const ret = formatContext.openInputSync('', inputFormat, optionsDict);
+                FFmpegError.throwIfError(ret, 'Failed to open input from buffer');
+            }
+            else if (typeof input === 'object' && 'read' in input) {
+                // Custom I/O with callbacks - format is required
+                if (!options.format) {
+                    throw new Error('Format must be specified for custom I/O');
+                }
+                // Allocate context first for custom I/O
+                formatContext.allocContext();
+                // Setup custom I/O with callbacks
+                ioContext = new IOContext();
+                ioContext.allocContextWithCallbacks(options.bufferSize ?? IO_BUFFER_SIZE, 0, input.read, null, input.seek);
+                formatContext.pb = ioContext;
+                formatContext.setFlags(AVFMT_FLAG_CUSTOM_IO);
+                const ret = formatContext.openInputSync('', inputFormat, optionsDict);
+                FFmpegError.throwIfError(ret, 'Failed to open input from custom I/O');
+            }
+            else {
+                throw new TypeError('Invalid input type. Expected file path, URL, Buffer, or IOInputCallbacks');
+            }
+            // Find stream information
+            if (!options.skipStreamInfo) {
+                const ret = formatContext.findStreamInfoSync(null);
+                FFmpegError.throwIfError(ret, 'Failed to find stream info');
+            }
+            // Determine buffer size
+            let bufferSize = options.bufferSize ?? IO_BUFFER_SIZE;
+            if (!ioContext && formatContext.iformat && formatContext.pb) {
+                // Check if this is a streaming input (like RTSP, HTTP, etc.)
+                const isStreaming = formatContext.pb.seekable === 0;
+                if (isStreaming) {
+                    bufferSize *= 2; // double buffer size for streaming inputs
+                }
+            }
+            // Apply defaults to options
+            const fullOptions = {
+                bufferSize,
+                format: options.format ?? '',
+                skipStreamInfo: options.skipStreamInfo ?? false,
+                startWithKeyframe: options.startWithKeyframe ?? false,
+                dtsDeltaThreshold: options.dtsDeltaThreshold ?? DELTA_THRESHOLD,
+                dtsErrorThreshold: options.dtsErrorThreshold ?? DTS_ERROR_THRESHOLD,
+                copyTs: options.copyTs ?? false,
+                options: options.options ?? {},
+            };
+            return new Demuxer(formatContext, fullOptions, ioContext);
+        }
+        catch (error) {
+            // Clean up only on error
+            if (ioContext) {
+                // Clear the pb reference first
+                formatContext.pb = null;
+                // Free the IOContext (for both custom I/O and buffer-based I/O)
+                ioContext.freeContext();
+            }
+            // Clean up FormatContext
+            formatContext.closeInputSync();
+            throw error;
+        }
+        finally {
+            // Clean up options dictionary
+            if (optionsDict) {
+                optionsDict.free();
+            }
+        }
+    }
+    /**
+     * Open RTP/SRTP input stream via localhost UDP.
+     *
+     * Creates a Demuxer from SDP string received via UDP socket.
+     * Opens UDP socket and configures FFmpeg to receive and parse RTP packets.
+     *
+     * @param sdpContent - SDP content string describing the RTP stream
+     *
+     * @throws {Error} If SDP parsing or socket setup fails
+     *
+     * @throws {FFmpegError} If FFmpeg operations fail
+     *
+     * @returns Promise with Demuxer, sendPacket function and cleanup
+     *
+     * @example
+     * ```typescript
+     * import { Demuxer, StreamingUtils } from 'node-av/api';
+     * import { AV_CODEC_ID_OPUS } from 'node-av/constants';
+     *
+     * // Generate SDP for SRTP encrypted Opus
+     * const sdp = StreamingUtils.createRTPInputSDP([{
+     *   port: 5004,
+     *   codecId: AV_CODEC_ID_OPUS,
+     *   payloadType: 111,
+     *   clockRate: 16000,
+     *   channels: 1,
+     *   srtp: { key: srtpKey, salt: srtpSalt }
+     * }]);
+     *
+     * // Open RTP input
+     * const { input, sendPacket, close } = await Demuxer.openSDP(sdp);
+     *
+     * // Route encrypted RTP packets from network
+     * socket.on('message', (msg) => sendPacket(msg));
+     *
+     * // Decode audio
+     * const decoder = await Decoder.create(input.audio()!);
+     * for await (const packet of input.packets()) {
+     *   const frame = await decoder.decode(packet);
+     *   // Process frame...
+     * }
+     *
+     * // Cleanup
+     * await close();
+     * ```
+     *
+     * @see {@link StreamingUtils.createInputSDP} to generate SDP content.
+     */
+    static async openSDP(sdpContent) {
+        // Extract all ports from SDP (supports multi-stream: video + audio)
+        const ports = StreamingUtils.extractPortsFromSDP(sdpContent);
+        if (ports.length === 0) {
+            throw new Error('Failed to extract any ports from SDP content');
+        }
+        // Convert SDP to buffer for custom I/O
+        const sdpBuffer = Buffer.from(sdpContent);
+        let position = 0;
+        // Create custom I/O callbacks for SDP content
+        const callbacks = {
+            read: (size) => {
+                if (position >= sdpBuffer.length) {
+                    return null; // EOF
+                }
+                const chunk = sdpBuffer.subarray(position, Math.min(position + size, sdpBuffer.length));
+                position += chunk.length;
+                return chunk;
+            },
+            seek: (offset, whence) => {
+                const offsetNum = Number(offset);
+                if (whence === AVSEEK_SET) {
+                    position = offsetNum;
+                }
+                else if (whence === AVSEEK_CUR) {
+                    position += offsetNum;
+                }
+                else if (whence === AVSEEK_END) {
+                    position = sdpBuffer.length + offsetNum;
+                }
+                return position;
+            },
+        };
+        // Create UDP socket for sending packets to FFmpeg
+        const udpSocket = createSocket('udp4');
+        try {
+            // Open Demuxer with SDP format using custom I/O
+            const input = await Demuxer.open(callbacks, {
+                format: 'sdp',
+                skipStreamInfo: true,
+                options: {
+                    protocol_whitelist: 'pipe,udp,rtp,file,crypto',
+                    listen_timeout: -1,
+                },
+            });
+            const sendPacket = (rtpPacket, streamIndex = 0) => {
+                const port = ports[streamIndex];
+                if (!port) {
+                    throw new Error(`No port found for stream index ${streamIndex}. Available streams: ${ports.length}`);
+                }
+                const data = rtpPacket instanceof RtpPacket ? rtpPacket.serialize() : rtpPacket;
+                udpSocket.send(data, port, '127.0.0.1');
+            };
+            const close = async () => {
+                await input.close();
+                udpSocket.close();
+            };
+            const closeSync = () => {
+                input.closeSync();
+                udpSocket.close();
+            };
+            return { input, sendPacket, close, closeSync };
+        }
+        catch (error) {
+            // Cleanup on error
+            udpSocket.close();
+            throw error;
+        }
+    }
+    /**
+     * Open RTP/SRTP input stream via localhost UDP synchronously.
+     * Synchronous version of openSDP.
+     *
+     * Creates a Demuxer from SDP string received via UDP socket.
+     * Opens UDP socket and configures FFmpeg to receive and parse RTP packets.
+     *
+     * @param sdpContent - SDP content string describing the RTP stream
+     *
+     * @throws {Error} If SDP parsing or socket setup fails
+     *
+     * @throws {FFmpegError} If FFmpeg operations fail
+     *
+     * @returns Object with Demuxer, sendPacket function and cleanup
+     *
+     * @example
+     * ```typescript
+     * import { Demuxer, StreamingUtils } from 'node-av/api';
+     * import { AV_CODEC_ID_OPUS } from 'node-av/constants';
+     *
+     * // Generate SDP for SRTP encrypted Opus
+     * const sdp = StreamingUtils.createRTPInputSDP([{
+     *   port: 5004,
+     *   codecId: AV_CODEC_ID_OPUS,
+     *   payloadType: 111,
+     *   clockRate: 16000,
+     *   channels: 1,
+     *   srtp: { key: srtpKey, salt: srtpSalt }
+     * }]);
+     *
+     * // Open RTP input
+     * const { input, sendPacket, closeSync } = Demuxer.openSDPSync(sdp);
+     *
+     * // Route encrypted RTP packets from network
+     * socket.on('message', (msg) => sendPacket(msg));
+     *
+     * // Decode audio
+     * const decoder = await Decoder.create(input.audio()!);
+     * for await (const packet of input.packets()) {
+     *   const frame = await decoder.decode(packet);
+     *   // Process frame...
+     * }
+     *
+     * // Cleanup synchronously
+     * closeSync();
+     * ```
+     *
+     * @see {@link StreamingUtils.createInputSDP} to generate SDP content.
+     * @see {@link openSDP} For async version
+     */
+    static openSDPSync(sdpContent) {
+        // Extract all ports from SDP (supports multi-stream: video + audio)
+        const ports = StreamingUtils.extractPortsFromSDP(sdpContent);
+        if (ports.length === 0) {
+            throw new Error('Failed to extract any ports from SDP content');
+        }
+        // Convert SDP to buffer for custom I/O
+        const sdpBuffer = Buffer.from(sdpContent);
+        let position = 0;
+        // Create custom I/O callbacks for SDP content
+        const callbacks = {
+            read: (size) => {
+                if (position >= sdpBuffer.length) {
+                    return null; // EOF
+                }
+                const chunk = sdpBuffer.subarray(position, Math.min(position + size, sdpBuffer.length));
+                position += chunk.length;
+                return chunk;
+            },
+            seek: (offset, whence) => {
+                const offsetNum = Number(offset);
+                if (whence === AVSEEK_SET) {
+                    position = offsetNum;
+                }
+                else if (whence === AVSEEK_CUR) {
+                    position += offsetNum;
+                }
+                else if (whence === AVSEEK_END) {
+                    position = sdpBuffer.length + offsetNum;
+                }
+                return position;
+            },
+        };
+        // Create UDP socket for sending packets to FFmpeg
+        const udpSocket = createSocket('udp4');
+        try {
+            // Open Demuxer with SDP format using custom I/O
+            const input = Demuxer.openSync(callbacks, {
+                format: 'sdp',
+                skipStreamInfo: true,
+                options: {
+                    protocol_whitelist: 'pipe,udp,rtp,file,crypto',
+                    listen_timeout: -1,
+                },
+            });
+            const sendPacket = (rtpPacket, streamIndex = 0) => {
+                const port = ports[streamIndex];
+                if (!port) {
+                    throw new Error(`No port found for stream index ${streamIndex}. Available streams: ${ports.length}`);
+                }
+                const data = rtpPacket instanceof RtpPacket ? rtpPacket.serialize() : rtpPacket;
+                udpSocket.send(data, port, '127.0.0.1');
+            };
+            const close = async () => {
+                await input.close();
+                udpSocket.close();
+            };
+            const closeSync = () => {
+                input.closeSync();
+                udpSocket.close();
+            };
+            return { input, sendPacket, close, closeSync };
+        }
+        catch (error) {
+            // Cleanup on error
+            udpSocket.close();
+            throw error;
+        }
+    }
+    /**
+     * Check if input is open.
+     *
+     * @example
+     * ```typescript
+     * if (!input.isInputOpen) {
+     *   console.log('Input is not open');
+     * }
+     * ```
+     */
+    get isInputOpen() {
+        return !this.isClosed;
+    }
+    /**
+     * Get all streams in the media.
+     *
+     * @example
+     * ```typescript
+     * for (const stream of input.streams) {
+     *   console.log(`Stream ${stream.index}: ${stream.codecpar.codecType}`);
+     * }
+     * ```
+     */
+    get streams() {
+        return this._streams;
+    }
+    /**
+     * Get media duration in seconds.
+     *
+     * Returns 0 if duration is unknown or not available or input is closed.
+     *
+     * @example
+     * ```typescript
+     * console.log(`Duration: ${input.duration} seconds`);
+     * ```
+     */
+    get duration() {
+        if (this.isClosed) {
+            return 0;
+        }
+        const duration = this.formatContext.duration;
+        if (!duration || duration <= 0) {
+            return 0;
+        }
+        // Convert from AV_TIME_BASE (microseconds) to seconds
+        return Number(duration) / 1000000;
+    }
+    /**
+     * Get media bitrate in kilobits per second.
+     *
+     * Returns 0 if bitrate is unknown or not available or input is closed.
+     *
+     * @example
+     * ```typescript
+     * console.log(`Bitrate: ${input.bitRate} kbps`);
+     * ```
+     */
+    get bitRate() {
+        if (this.isClosed) {
+            return 0;
+        }
+        const bitrate = this.formatContext.bitRate;
+        if (!bitrate || bitrate <= 0) {
+            return 0;
+        }
+        // Convert from bits per second to kilobits per second
+        return Number(bitrate) / 1000;
+    }
+    /**
+     * Get media metadata.
+     *
+     * Returns all metadata tags as key-value pairs.
+     *
+     * @example
+     * ```typescript
+     * const metadata = input.metadata;
+     * console.log(`Title: ${metadata.title}`);
+     * console.log(`Artist: ${metadata.artist}`);
+     * ```
+     */
+    get metadata() {
+        if (this.isClosed) {
+            return {};
+        }
+        return this.formatContext.metadata?.getAll() ?? {};
+    }
+    /**
+     * Get format name.
+     *
+     * Returns 'unknown' if input is closed or format is not available.
+     *
+     * @example
+     * ```typescript
+     * console.log(`Format: ${input.formatName}`); // "mov,mp4,m4a,3gp,3g2,mj2"
+     * ```
+     */
+    get formatName() {
+        if (this.isClosed) {
+            return 'unknown';
+        }
+        return this.formatContext.iformat?.name ?? 'unknown';
+    }
+    /**
+     * Get format long name.
+     *
+     * Returns 'Unknown Format' if input is closed or format is not available.
+     *
+     * @example
+     * ```typescript
+     * console.log(`Format: ${input.formatLongName}`); // "QuickTime / MOV"
+     * ```
+     */
+    get formatLongName() {
+        if (this.isClosed) {
+            return 'Unknown Format';
+        }
+        return this.formatContext.iformat?.longName ?? 'Unknown Format';
+    }
+    /**
+     * Get MIME type of the input format.
+     *
+     * Returns null if input is closed or format is not available.
+     *
+     * @example
+     * ```typescript
+     * console.log(`MIME Type: ${input.mimeType}`); // "video/mp4"
+     * ```
+     */
+    get mimeType() {
+        if (this.isClosed) {
+            return null;
+        }
+        return this.formatContext.iformat?.mimeType ?? null;
+    }
+    /**
+     * Get input stream by index.
+     *
+     * Returns the stream at the specified index.
+     *
+     * @param index - Stream index
+     *
+     * @returns Stream or undefined if index is invalid
+     *
+     * @example
+     * ```typescript
+     * const input = await Demuxer.open('input.mp4');
+     *
+     * // Get the input stream to inspect codec parameters
+     * const stream = input.getStream(1); // Get stream at index 1
+     * if (stream) {
+     *   console.log(`Input codec: ${stream.codecpar.codecId}`);
+     * }
+     * ```
+     *
+     * @see {@link video} For getting video streams
+     * @see {@link audio} For getting audio streams
+     */
+    getStream(index) {
+        const streams = this.formatContext.streams;
+        if (!streams || index < 0 || index >= streams.length) {
+            return undefined;
+        }
+        return streams[index];
+    }
+    /**
+     * Get video stream by index.
+     *
+     * Returns the nth video stream (0-based index).
+     * Returns undefined if stream doesn't exist.
+     *
+     * @param index - Video stream index (default: 0)
+     *
+     * @returns Video stream or undefined
+     *
+     * @example
+     * ```typescript
+     * const videoStream = input.video();
+     * if (videoStream) {
+     *   console.log(`Video: ${videoStream.codecpar.width}x${videoStream.codecpar.height}`);
+     * }
+     * ```
+     *
+     * @example
+     * ```typescript
+     * // Get second video stream
+     * const secondVideo = input.video(1);
+     * ```
+     *
+     * @see {@link audio} For audio streams
+     * @see {@link findBestStream} For automatic selection
+     */
+    video(index = 0) {
+        const streams = this._streams.filter((s) => s.codecpar.codecType === AVMEDIA_TYPE_VIDEO);
+        return streams[index];
+    }
+    /**
+     * Get audio stream by index.
+     *
+     * Returns the nth audio stream (0-based index).
+     * Returns undefined if stream doesn't exist.
+     *
+     * @param index - Audio stream index (default: 0)
+     *
+     * @returns Audio stream or undefined
+     *
+     * @example
+     * ```typescript
+     * const audioStream = input.audio();
+     * if (audioStream) {
+     *   console.log(`Audio: ${audioStream.codecpar.sampleRate}Hz`);
+     * }
+     * ```
+     *
+     * @example
+     * ```typescript
+     * // Get second audio stream
+     * const secondAudio = input.audio(1);
+     * ```
+     *
+     * @see {@link video} For video streams
+     * @see {@link findBestStream} For automatic selection
+     */
+    audio(index = 0) {
+        const streams = this._streams.filter((s) => s.codecpar.codecType === AVMEDIA_TYPE_AUDIO);
+        return streams[index];
+    }
+    /**
+     * Get input format details.
+     *
+     * Returns null if input is closed or format is not available.
+     *
+     * @returns Input format or null
+     *
+     * @example
+     * ```typescript
+     * const inputFormat = input.inputFormat;
+     * if (inputFormat) {
+     *   console.log(`Input Format: ${inputFormat.name}`);
+     * }
+     * ```
+     */
+    inputFormat() {
+        return this.formatContext.iformat;
+    }
+    /**
+     * Find the best stream of a given type.
+     *
+     * Uses FFmpeg's stream selection algorithm.
+     * Considers codec support, default flags, and quality.
+     *
+     * Direct mapping to av_find_best_stream().
+     *
+     * @param type - Media type to find
+     *
+     * @returns Best stream or undefined if not found or input is closed
+     *
+     * @example
+     * ```typescript
+     * import { AVMEDIA_TYPE_VIDEO } from 'node-av/constants';
+     *
+     * const bestVideo = input.findBestStream(AVMEDIA_TYPE_VIDEO);
+     * if (bestVideo) {
+     *   const decoder = await Decoder.create(bestVideo);
+     * }
+     * ```
+     *
+     * @see {@link video} For direct video stream access
+     * @see {@link audio} For direct audio stream access
+     */
+    findBestStream(type) {
+        if (this.isClosed) {
+            return undefined;
+        }
+        const bestStreamIndex = this.formatContext.findBestStream(type);
+        return this._streams.find((s) => s.index === bestStreamIndex);
+    }
+    /**
+     * Read packets from media as async generator.
+     *
+     * Yields demuxed packets for processing.
+     * Automatically handles packet memory management.
+     * Optionally filters packets by stream index.
+     *
+     * **Supports parallel generators**: Multiple `packets()` iterators can run concurrently.
+     * When multiple generators are active, an internal demux thread automatically handles
+     * packet distribution to avoid race conditions.
+     *
+     * Direct mapping to av_read_frame().
+     *
+     * @param index - Optional stream index to filter
+     *
+     * @yields {Packet} Demuxed packets (must be freed by caller)
+     *
+     * @throws {Error} If packet cloning fails
+     *
+     * @example
+     * ```typescript
+     * // Read all packets
+     * for await (const packet of input.packets()) {
+     *   console.log(`Packet: stream=${packet.streamIndex}, pts=${packet.pts}`);
+     *   packet.free();
+     * }
+     * ```
+     *
+     * @example
+     * ```typescript
+     * // Read only video packets
+     * const videoStream = input.video();
+     * for await (const packet of input.packets(videoStream.index)) {
+     *   // Process video packet
+     *   packet.free();
+     * }
+     * ```
+     *
+     * @example
+     * ```typescript
+     * // Parallel processing of video and audio streams
+     * const videoGen = input.packets(videoStream.index);
+     * const audioGen = input.packets(audioStream.index);
+     *
+     * await Promise.all([
+     *   (async () => {
+     *     for await (const packet of videoGen) {
+     *       // Process video
+     *       packet.free();
+     *     }
+     *   })(),
+     *   (async () => {
+     *     for await (const packet of audioGen) {
+     *       // Process audio
+     *       packet.free();
+     *     }
+     *   })()
+     * ]);
+     * ```
+     *
+     * @see {@link Decoder.frames} For decoding packets
+     */
+    async *packets(index) {
+        // Register this generator
+        this.activeGenerators++;
+        const queueKey = index ?? 'all';
+        // Initialize queue for this generator
+        if (!this.packetQueues.has(queueKey)) {
+            this.packetQueues.set(queueKey, []);
+        }
+        // Always start demux thread (handles single and multiple generators)
+        this.startDemuxThread();
+        try {
+            let hasSeenKeyframe = !this.options.startWithKeyframe;
+            // Read from queue (demux thread is handling av_read_frame)
+            const queue = this.packetQueues.get(queueKey);
+            while (!this.isClosed) {
+                // Try to get packet from queue
+                let packet = queue.shift();
+                // If queue is empty, wait for next packet
+                if (!packet) {
+                    // Check for EOF first
+                    if (this.demuxEof) {
+                        break; // End of stream
+                    }
+                    // Create promise and register resolver
+                    const { promise, resolve } = Promise.withResolvers();
+                    this.queueResolvers.set(queueKey, resolve);
+                    // Wait for demux thread to add packet
+                    await promise;
+                    // Check again after wakeup
+                    if (this.demuxEof) {
+                        break;
+                    }
+                    packet = queue.shift();
+                    if (!packet) {
+                        continue;
+                    }
+                }
+                // Apply keyframe filtering if needed
+                if (!hasSeenKeyframe) {
+                    const stream = this._streams[packet.streamIndex];
+                    const isVideoStream = stream?.codecpar.codecType === AVMEDIA_TYPE_VIDEO;
+                    if (isVideoStream && packet.isKeyframe) {
+                        hasSeenKeyframe = true;
+                    }
+                    else if (isVideoStream && !packet.isKeyframe) {
+                        packet.free();
+                        continue;
+                    }
+                }
+                yield packet;
+            }
+        }
+        finally {
+            // Unregister this generator
+            this.activeGenerators--;
+            // Stop demux thread if no more generators
+            if (this.activeGenerators === 0) {
+                await this.stopDemuxThread();
+            }
+            yield null; // Signal EOF
+        }
+    }
+    /**
+     * Read packets from media as generator synchronously.
+     * Synchronous version of packets.
+     *
+     * Yields demuxed packets for processing.
+     * Automatically handles packet memory management.
+     * Optionally filters packets by stream index.
+     *
+     * Direct mapping to av_read_frame().
+     *
+     * @param index - Optional stream index to filter
+     *
+     * @yields {Packet} Demuxed packets (must be freed by caller)
+     *
+     * @throws {Error} If packet cloning fails
+     *
+     * @example
+     * ```typescript
+     * // Read all packets
+     * for (const packet of input.packetsSync()) {
+     *   console.log(`Packet: stream=${packet.streamIndex}, pts=${packet.pts}`);
+     *   packet.free();
+     * }
+     * ```
+     *
+     * @example
+     * ```typescript
+     * // Read only video packets
+     * const videoStream = input.video();
+     * for (const packet of input.packetsSync(videoStream.index)) {
+     *   // Process video packet
+     *   packet.free();
+     * }
+     * ```
+     *
+     * @see {@link packets} For async version
+     */
+    *packetsSync(index) {
+        const env_1 = { stack: [], error: void 0, hasError: false };
+        try {
+            const packet = __addDisposableResource(env_1, new Packet(), false);
+            packet.alloc();
+            let hasSeenKeyframe = !this.options.startWithKeyframe;
+            while (!this.isClosed) {
+                const ret = this.formatContext.readFrameSync(packet);
+                if (ret < 0) {
+                    break;
+                }
+                // Get stream for timestamp processing
+                const stream = this._streams[packet.streamIndex];
+                if (stream) {
+                    // Set packet timebase to stream timebase
+                    // This must be done BEFORE any timestamp processing
+                    packet.timeBase = stream.timeBase;
+                    // Apply timestamp processing
+                    // 1. PTS wrap-around correction
+                    this.ptsWrapAroundCorrection(packet, stream);
+                    // 2. Timestamp discontinuity processing
+                    this.timestampDiscontinuityProcess(packet, stream);
+                    // 3. DTS prediction/update
+                    this.dtsPredict(packet, stream);
+                }
+                if (index === undefined || packet.streamIndex === index) {
+                    // If startWithKeyframe is enabled, skip packets until we see a keyframe
+                    // Only apply to video streams - audio packets should always pass through
+                    if (!hasSeenKeyframe) {
+                        const stream = this._streams[packet.streamIndex];
+                        const isVideoStream = stream?.codecpar.codecType === AVMEDIA_TYPE_VIDEO;
+                        if (isVideoStream && packet.isKeyframe) {
+                            hasSeenKeyframe = true;
+                        }
+                        else if (isVideoStream && !packet.isKeyframe) {
+                            // Skip video P-frames until first keyframe
+                            packet.unref();
+                            continue;
+                        }
+                        // Non-video streams (audio, etc.) always pass through
+                    }
+                    // Clone the packet for the user
+                    // This creates a new Packet object that shares the same data buffer
+                    // through reference counting. The data won't be freed until both
+                    // the original and the clone are unreferenced.
+                    const cloned = packet.clone();
+                    if (!cloned) {
+                        throw new Error('Failed to clone packet (out of memory)');
+                    }
+                    yield cloned;
+                }
+                // Unreference the original packet's data buffer
+                // This allows us to reuse the packet object for the next readFrame()
+                // The data itself is still alive because the clone has a reference
+                packet.unref();
+            }
+            // Signal EOF
+            yield null;
+        }
+        catch (e_1) {
+            env_1.error = e_1;
+            env_1.hasError = true;
+        }
+        finally {
+            __disposeResources(env_1);
+        }
+    }
+    /**
+     * Seek to timestamp in media.
+     *
+     * Seeks to the specified position in seconds.
+     * Can seek in specific stream or globally.
+     *
+     * Direct mapping to av_seek_frame().
+     *
+     * @param timestamp - Target position in seconds
+     *
+     * @param streamIndex - Stream index or -1 for global (default: -1)
+     *
+     * @param flags - Seek flags (default: AVFLAG_NONE)
+     *
+     * @returns 0 on success, negative on error
+     *
+     * @throws {Error} If input is closed
+     *
+     * @example
+     * ```typescript
+     * // Seek to 30 seconds
+     * const ret = await input.seek(30);
+     * FFmpegError.throwIfError(ret, 'seek failed');
+     * ```
+     *
+     * @example
+     * ```typescript
+     * import { AVSEEK_FLAG_BACKWARD } from 'node-av/constants';
+     *
+     * // Seek to keyframe before 60 seconds
+     * await input.seek(60, -1, AVSEEK_FLAG_BACKWARD);
+     * ```
+     *
+     * @see {@link AVSeekFlag} For seek flags
+     */
+    async seek(timestamp, streamIndex = -1, flags = AVFLAG_NONE) {
+        if (this.isClosed) {
+            throw new Error('Cannot seek on closed input');
+        }
+        // Convert seconds to AV_TIME_BASE
+        const ts = BigInt(Math.floor(timestamp * 1000000));
+        return this.formatContext.seekFrame(streamIndex, ts, flags);
+    }
+    /**
+     * Seek to timestamp in media synchronously.
+     * Synchronous version of seek.
+     *
+     * Seeks to the specified position in seconds.
+     * Can seek in specific stream or globally.
+     *
+     * Direct mapping to av_seek_frame().
+     *
+     * @param timestamp - Target position in seconds
+     *
+     * @param streamIndex - Stream index or -1 for global (default: -1)
+     *
+     * @param flags - Seek flags (default: AVFLAG_NONE)
+     *
+     * @returns 0 on success, negative on error
+     *
+     * @throws {Error} If input is closed
+     *
+     * @example
+     * ```typescript
+     * // Seek to 30 seconds
+     * const ret = input.seekSync(30);
+     * FFmpegError.throwIfError(ret, 'seek failed');
+     * ```
+     *
+     * @example
+     * ```typescript
+     * import { AVSEEK_FLAG_BACKWARD } from 'node-av/constants';
+     *
+     * // Seek to keyframe before 60 seconds
+     * input.seekSync(60, -1, AVSEEK_FLAG_BACKWARD);
+     * ```
+     *
+     * @see {@link seek} For async version
+     */
+    seekSync(timestamp, streamIndex = -1, flags = AVFLAG_NONE) {
+        if (this.isClosed) {
+            throw new Error('Cannot seek on closed input');
+        }
+        // Convert seconds to AV_TIME_BASE
+        const ts = BigInt(Math.floor(timestamp * 1000000));
+        return this.formatContext.seekFrameSync(streamIndex, ts, flags);
+    }
+    /**
+     * Start the internal demux thread for handling multiple parallel packet generators.
+     * This thread reads packets from the format context and distributes them to queues.
+     *
+     * @internal
+     */
+    startDemuxThread() {
+        if (this.demuxThreadActive || this.demuxThread) {
+            return; // Already running
+        }
+        this.demuxThreadActive = true;
+        this.demuxThread = (async () => {
+            const env_2 = { stack: [], error: void 0, hasError: false };
+            try {
+                const packet = __addDisposableResource(env_2, new Packet(), false);
+                packet.alloc();
+                while (this.demuxThreadActive && !this.isClosed) {
+                    // Check if all queues are full - if so, wait a bit
+                    let allQueuesFull = true;
+                    for (const queue of this.packetQueues.values()) {
+                        if (queue.length < MAX_INPUT_QUEUE_SIZE) {
+                            allQueuesFull = false;
+                            break;
+                        }
+                    }
+                    if (allQueuesFull) {
+                        await new Promise(setImmediate);
+                        continue;
+                    }
+                    // Read next packet
+                    const ret = await this.formatContext.readFrame(packet);
+                    // IMPORTANT: Check isClosed again after await - the demuxer may have been
+                    // closed while we were waiting for readFrame(). If closed, the native
+                    // AVStreams have been freed and accessing them would cause use-after-free!
+                    if (this.isClosed) {
+                        break;
+                    }
+                    if (ret < 0) {
+                        // End of stream - notify all waiting consumers
+                        this.demuxEof = true;
+                        for (const resolve of this.queueResolvers.values()) {
+                            resolve();
+                        }
+                        this.queueResolvers.clear();
+                        break;
+                    }
+                    // Get stream for timestamp processing
+                    const stream = this._streams[packet.streamIndex];
+                    if (stream) {
+                        packet.timeBase = stream.timeBase;
+                        this.ptsWrapAroundCorrection(packet, stream);
+                        this.timestampDiscontinuityProcess(packet, stream);
+                        this.dtsPredict(packet, stream);
+                    }
+                    // Find which queues need this packet
+                    const allQueue = this.packetQueues.get('all');
+                    const streamQueue = this.packetQueues.get(packet.streamIndex);
+                    const targetQueues = [];
+                    if (allQueue && allQueue.length < MAX_INPUT_QUEUE_SIZE) {
+                        targetQueues.push({ queue: allQueue, event: 'packet-all' });
+                    }
+                    // Only add stream queue if it's different from 'all' queue
+                    if (streamQueue && streamQueue !== allQueue && streamQueue.length < MAX_INPUT_QUEUE_SIZE) {
+                        targetQueues.push({ queue: streamQueue, event: `packet-${packet.streamIndex}` });
+                    }
+                    if (targetQueues.length === 0) {
+                        // No queue needs this packet, skip it
+                        packet.unref();
+                        continue;
+                    }
+                    // Clone once, then share reference for additional queues
+                    const firstClone = packet.clone();
+                    if (!firstClone) {
+                        throw new Error('Failed to clone packet in demux thread (out of memory)');
+                    }
+                    // Add to first queue and resolve waiting promise
+                    const firstKey = targetQueues[0].event.replace('packet-', '') === 'all' ? 'all' : packet.streamIndex;
+                    targetQueues[0].queue.push(firstClone);
+                    const firstResolver = this.queueResolvers.get(firstKey);
+                    if (firstResolver) {
+                        firstResolver();
+                        this.queueResolvers.delete(firstKey);
+                    }
+                    // Additional queues get clones (shares data buffer via reference counting)
+                    for (let i = 1; i < targetQueues.length; i++) {
+                        const additionalClone = firstClone.clone();
+                        if (!additionalClone) {
+                            throw new Error('Failed to clone packet for additional queue (out of memory)');
+                        }
+                        const queueKey = targetQueues[i].event.replace('packet-', '') === 'all' ? 'all' : packet.streamIndex;
+                        targetQueues[i].queue.push(additionalClone);
+                        const resolver = this.queueResolvers.get(queueKey);
+                        if (resolver) {
+                            resolver();
+                            this.queueResolvers.delete(queueKey);
+                        }
+                    }
+                    packet.unref();
+                }
+                this.demuxThreadActive = false;
+            }
+            catch (e_2) {
+                env_2.error = e_2;
+                env_2.hasError = true;
+            }
+            finally {
+                __disposeResources(env_2);
+            }
+        })();
+    }
+    /**
+     * Stop the internal demux thread.
+     *
+     * @internal
+     */
+    async stopDemuxThread() {
+        if (!this.demuxThreadActive) {
+            return;
+        }
+        this.demuxThreadActive = false;
+        if (this.demuxThread) {
+            await this.demuxThread;
+            this.demuxThread = null;
+        }
+        // Clear all queues and resolvers
+        for (const queue of this.packetQueues.values()) {
+            for (const packet of queue) {
+                packet.free();
+            }
+            queue.length = 0;
+        }
+        this.packetQueues.clear();
+        this.queueResolvers.clear();
+        this.demuxEof = false;
+    }
+    /**
+     * Get or create stream state for timestamp processing.
+     *
+     * @param streamIndex - Stream index
+     *
+     * @returns Stream state
+     *
+     * @internal
+     */
+    getStreamState(streamIndex) {
+        let state = this.streamStates.get(streamIndex);
+        if (!state) {
+            state = {
+                wrapCorrectionDone: false,
+                sawFirstTs: false,
+                firstDts: AV_NOPTS_VALUE,
+                nextDts: AV_NOPTS_VALUE,
+                dts: AV_NOPTS_VALUE,
+            };
+            this.streamStates.set(streamIndex, state);
+        }
+        return state;
+    }
+    /**
+     * PTS Wrap-Around Correction.
+     *
+     * Based on FFmpeg's ts_fixup().
+     *
+     * Corrects timestamp wrap-around for streams with limited timestamp bits.
+     * DVB streams typically use 31-bit timestamps that wrap around.
+     * Without correction, timestamps become negative causing playback errors.
+     *
+     * Handles:
+     * - Detects wrap-around based on pts_wrap_bits from stream
+     * - Applies correction once per stream
+     * - Corrects both PTS and DTS
+     *
+     * @param packet - Packet to correct
+     *
+     * @param stream - Stream metadata
+     *
+     * @internal
+     */
+    ptsWrapAroundCorrection(packet, stream) {
+        const state = this.getStreamState(packet.streamIndex);
+        // Already corrected or no wrap bits configured
+        if (state.wrapCorrectionDone || stream.ptsWrapBits >= 64) {
+            return;
+        }
+        const startTime = this.formatContext.startTime;
+        if (startTime === AV_NOPTS_VALUE) {
+            return;
+        }
+        const ptsWrapBits = stream.ptsWrapBits;
+        // Rescale start_time to packet's timebase
+        // Note: packet.timeBase was set to stream.timeBase in packets() generator
+        const stime = avRescaleQ(startTime, AV_TIME_BASE_Q, packet.timeBase);
+        const stime2 = stime + (1n << BigInt(ptsWrapBits));
+        state.wrapCorrectionDone = true;
+        const wrapThreshold = stime + (1n << BigInt(ptsWrapBits - 1));
+        // Check DTS for wrap-around
+        if (stime2 > stime && packet.dts !== AV_NOPTS_VALUE && packet.dts > wrapThreshold) {
+            packet.dts -= 1n << BigInt(ptsWrapBits);
+            state.wrapCorrectionDone = false; // May wrap again
+        }
+        // Check PTS for wrap-around
+        if (stime2 > stime && packet.pts !== AV_NOPTS_VALUE && packet.pts > wrapThreshold) {
+            packet.pts -= 1n << BigInt(ptsWrapBits);
+            state.wrapCorrectionDone = false; // May wrap again
+        }
+    }
+    /**
+     * DTS Prediction and Update.
+     *
+     * Based on FFmpeg's ist_dts_update().
+     *
+     * Predicts next expected DTS for frame ordering validation and discontinuity detection.
+     * Uses codec-specific logic:
+     * - Audio: Based on sample_rate and frame_size
+     * - Video: Based on framerate or duration
+     *
+     * Handles:
+     * - First timestamp initialization
+     * - Codec-specific duration calculation
+     * - DTS sequence tracking
+     *
+     * @param packet - Packet to process
+     *
+     * @param stream - Stream metadata
+     *
+     * @internal
+     */
+    dtsPredict(packet, stream) {
+        const state = this.getStreamState(packet.streamIndex);
+        // Call native implementation with native objects
+        const newState = nativeDtsPredict(packet, stream, {
+            sawFirstTs: state.sawFirstTs,
+            dts: state.dts,
+            nextDts: state.nextDts,
+            firstDts: state.firstDts,
+        });
+        // Update state with results
+        state.sawFirstTs = newState.sawFirstTs;
+        state.dts = newState.dts;
+        state.nextDts = newState.nextDts;
+        state.firstDts = newState.firstDts;
+    }
+    /**
+     * Timestamp Discontinuity Detection.
+     *
+     * Based on FFmpeg's ts_discontinuity_detect().
+     *
+     * Detects and corrects timestamp discontinuities in streams.
+     * Handles two cases:
+     * - Discontinuous formats (MPEG-TS): Apply offset correction
+     * - Continuous formats (MP4): Mark timestamps as invalid
+     *
+     * Handles:
+     * - Format-specific discontinuity handling (AVFMT_TS_DISCONT flag)
+     * - PTS wrap-around detection for streams with limited timestamp bits
+     * - Intra-stream discontinuity detection
+     * - Inter-stream discontinuity detection
+     * - Offset accumulation and application
+     * - copyTs mode with selective correction
+     *
+     * @param packet - Packet to check for discontinuities
+     *
+     * @param stream - Stream metadata
+     *
+     * @internal
+     */
+    timestampDiscontinuityDetect(packet, stream) {
+        const state = this.getStreamState(packet.streamIndex);
+        const inputFormat = this.formatContext.iformat;
+        // Check if format declares timestamp discontinuities
+        const fmtIsDiscont = !!(inputFormat && inputFormat.flags & AVFMT_TS_DISCONT);
+        // Disable correction when copyTs is enabled
+        let disableDiscontinuityCorrection = this.options.copyTs;
+        // Rescale packet DTS to AV_TIME_BASE for comparison
+        const pktDts = avRescaleQRnd(packet.dts, packet.timeBase, AV_TIME_BASE_Q, (AV_ROUND_NEAR_INF | AV_ROUND_PASS_MINMAX));
+        // PTS wrap-around detection
+        // Only applies when copyTs is enabled and stream has limited timestamp bits
+        if (this.options.copyTs && state.nextDts !== AV_NOPTS_VALUE && fmtIsDiscont && stream.ptsWrapBits < 60) {
+            // Calculate wrapped DTS by adding 2^pts_wrap_bits to packet DTS
+            const wrapDts = avRescaleQRnd(packet.dts + (1n << BigInt(stream.ptsWrapBits)), packet.timeBase, AV_TIME_BASE_Q, (AV_ROUND_NEAR_INF | AV_ROUND_PASS_MINMAX));
+            // If wrapped DTS is closer to predicted nextDts, enable correction
+            const wrapDelta = wrapDts > state.nextDts ? wrapDts - state.nextDts : state.nextDts - wrapDts;
+            const normalDelta = pktDts > state.nextDts ? pktDts - state.nextDts : state.nextDts - pktDts;
+            if (wrapDelta < normalDelta / 10n) {
+                disableDiscontinuityCorrection = false;
+            }
+        }
+        // Intra-stream discontinuity detection
+        if (state.nextDts !== AV_NOPTS_VALUE && !disableDiscontinuityCorrection) {
+            const delta = pktDts - state.nextDts;
+            if (fmtIsDiscont) {
+                // Discontinuous format (e.g., MPEG-TS) - apply offset correction
+                const threshold = BigInt(this.options.dtsDeltaThreshold) * BigInt(AV_TIME_BASE);
+                if (delta > threshold || delta < -threshold || pktDts + BigInt(AV_TIME_BASE) / 10n < state.dts) {
+                    this.tsOffsetDiscont -= delta;
+                    // Apply correction to packet
+                    const deltaInPktTb = avRescaleQ(delta, AV_TIME_BASE_Q, packet.timeBase);
+                    packet.dts -= deltaInPktTb;
+                    if (packet.pts !== AV_NOPTS_VALUE) {
+                        packet.pts -= deltaInPktTb;
+                    }
+                }
+            }
+            else {
+                // Continuous format (e.g., MP4) - mark invalid timestamps
+                const threshold = BigInt(this.options.dtsErrorThreshold) * BigInt(AV_TIME_BASE);
+                // Check DTS
+                if (delta > threshold || delta < -threshold) {
+                    packet.dts = AV_NOPTS_VALUE;
+                }
+                // Check PTS
+                if (packet.pts !== AV_NOPTS_VALUE) {
+                    const pktPts = avRescaleQ(packet.pts, packet.timeBase, AV_TIME_BASE_Q);
+                    const ptsDelta = pktPts - state.nextDts;
+                    if (ptsDelta > threshold || ptsDelta < -threshold) {
+                        packet.pts = AV_NOPTS_VALUE;
+                    }
+                }
+            }
+        }
+        else if (state.nextDts === AV_NOPTS_VALUE && !this.options.copyTs && fmtIsDiscont && this.lastTs !== AV_NOPTS_VALUE) {
+            // Inter-stream discontinuity detection
+            const delta = pktDts - this.lastTs;
+            const threshold = BigInt(this.options.dtsDeltaThreshold) * BigInt(AV_TIME_BASE);
+            if (delta > threshold || delta < -threshold) {
+                this.tsOffsetDiscont -= delta;
+                // Apply correction to packet
+                const deltaInPktTb = avRescaleQ(delta, AV_TIME_BASE_Q, packet.timeBase);
+                packet.dts -= deltaInPktTb;
+                if (packet.pts !== AV_NOPTS_VALUE) {
+                    packet.pts -= deltaInPktTb;
+                }
+            }
+        }
+        // Update last timestamp
+        this.lastTs = avRescaleQ(packet.dts, packet.timeBase, AV_TIME_BASE_Q);
+    }
+    /**
+     * Timestamp Discontinuity Processing - main entry point.
+     *
+     * Based on FFmpeg's ts_discontinuity_process().
+     *
+     * Applies accumulated discontinuity offset and detects new discontinuities.
+     * Must be called for every packet before other timestamp processing.
+     *
+     * Handles:
+     * - Applying previously-detected offset to all streams
+     * - Detecting new discontinuities for audio/video streams
+     *
+     * @param packet - Packet to process
+     *
+     * @param stream - Stream metadata
+     *
+     * @internal
+     */
+    timestampDiscontinuityProcess(packet, stream) {
+        // Apply previously-detected discontinuity offset
+        // This applies to ALL streams, not just audio/video
+        const offset = avRescaleQ(this.tsOffsetDiscont, AV_TIME_BASE_Q, packet.timeBase);
+        if (packet.dts !== AV_NOPTS_VALUE) {
+            packet.dts += offset;
+        }
+        if (packet.pts !== AV_NOPTS_VALUE) {
+            packet.pts += offset;
+        }
+        // Detect new timestamp discontinuities for audio/video
+        const par = stream.codecpar;
+        if ((par.codecType === AVMEDIA_TYPE_VIDEO || par.codecType === AVMEDIA_TYPE_AUDIO) && packet.dts !== AV_NOPTS_VALUE) {
+            this.timestampDiscontinuityDetect(packet, stream);
+        }
+    }
+    /**
+     * Close demuxer and free resources.
+     *
+     * Releases format context and I/O context.
+     * Safe to call multiple times.
+     * Automatically called by Symbol.asyncDispose.
+     *
+     * Direct mapping to avformat_close_input().
+     *
+     * @example
+     * ```typescript
+     * const input = await Demuxer.open('video.mp4');
+     * try {
+     *   // Use input
+     * } finally {
+     *   await input.close();
+     * }
+     * ```
+     *
+     * @see {@link Symbol.asyncDispose} For automatic cleanup
+     */
+    async close() {
+        if (this.isClosed) {
+            return;
+        }
+        this.isClosed = true;
+        // Clear pb reference FIRST to prevent use-after-free
+        if (this.ioContext) {
+            this.formatContext.pb = null;
+        }
+        // IMPORTANT: Close FormatContext BEFORE stopping demux thread
+        // This interrupts any blocking read() calls in the demux loop
+        await this.formatContext.closeInput();
+        // Safely stop the demux thread
+        await this.stopDemuxThread();
+        // NOW we can safely free the IOContext
+        if (this.ioContext) {
+            this.ioContext.freeContext();
+            this.ioContext = undefined;
+        }
+    }
+    /**
+     * Close demuxer and free resources synchronously.
+     * Synchronous version of close.
+     *
+     * Releases format context and I/O context.
+     * Safe to call multiple times.
+     * Automatically called by Symbol.dispose.
+     *
+     * Direct mapping to avformat_close_input().
+     *
+     * @example
+     * ```typescript
+     * const input = Demuxer.openSync('video.mp4');
+     * try {
+     *   // Use input
+     * } finally {
+     *   input.closeSync();
+     * }
+     * ```
+     *
+     * @see {@link close} For async version
+     */
+    closeSync() {
+        if (this.isClosed) {
+            return;
+        }
+        this.isClosed = true;
+        // IMPORTANT: Clear pb reference FIRST to prevent use-after-free
+        if (this.ioContext) {
+            this.formatContext.pb = null;
+        }
+        // Close FormatContext
+        this.formatContext.closeInputSync();
+        this.demuxThreadActive = false;
+        for (const queue of this.packetQueues.values()) {
+            for (const packet of queue) {
+                packet.free();
+            }
+            queue.length = 0;
+        }
+        this.packetQueues.clear();
+        this.queueResolvers.clear();
+        this.demuxEof = false;
+        // NOW we can safely free the IOContext
+        if (this.ioContext) {
+            this.ioContext.freeContext();
+            this.ioContext = undefined;
+        }
+    }
+    /**
+     * Get underlying format context.
+     *
+     * Returns the internal format context for advanced operations.
+     *
+     * @returns Format context
+     *
+     * @internal
+     */
+    getFormatContext() {
+        return this.formatContext;
+    }
+    /**
+     * Dispose of demuxer.
+     *
+     * Implements AsyncDisposable interface for automatic cleanup.
+     * Equivalent to calling close().
+     *
+     * @example
+     * ```typescript
+     * {
+     *   await using input = await Demuxer.open('video.mp4');
+     *   // Process media...
+     * } // Automatically closed
+     * ```
+     *
+     * @see {@link close} For manual cleanup
+     */
+    async [Symbol.asyncDispose]() {
+        await this.close();
+    }
+    /**
+     * Dispose of demuxer synchronously.
+     *
+     * Implements Disposable interface for automatic cleanup.
+     * Equivalent to calling closeSync().
+     *
+     * @example
+     * ```typescript
+     * {
+     *   using input = Demuxer.openSync('video.mp4');
+     *   // Process media...
+     * } // Automatically closed
+     * ```
+     *
+     * @see {@link closeSync} For manual cleanup
+     */
+    [Symbol.dispose]() {
+        this.closeSync();
+    }
+}
+//# sourceMappingURL=demuxer.js.map

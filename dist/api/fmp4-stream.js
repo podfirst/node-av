@@ -1,0 +1,580 @@
+import { AV_CODEC_ID_AAC, AV_CODEC_ID_AV1, AV_CODEC_ID_FLAC, AV_CODEC_ID_H264, AV_CODEC_ID_HEVC, AV_CODEC_ID_OPUS, AV_HWDEVICE_TYPE_NONE, AV_SAMPLE_FMT_FLTP, } from '../constants/constants.js';
+import { FF_ENCODER_AAC, FF_ENCODER_LIBX264 } from '../constants/encoders.js';
+import { Codec } from '../lib/codec.js';
+import { avGetCodecString } from '../lib/utilities.js';
+import { Decoder } from './decoder.js';
+import { Demuxer } from './demuxer.js';
+import { Encoder } from './encoder.js';
+import { FilterPreset } from './filter-presets.js';
+import { FilterAPI } from './filter.js';
+import { HardwareContext } from './hardware.js';
+import { Muxer } from './muxer.js';
+import { pipeline } from './pipeline.js';
+/**
+ * Target codec strings for fMP4 streaming.
+ */
+export const FMP4_CODECS = {
+    H264: 'avc1.640029',
+    H265: 'hvc1.1.6.L153.B0',
+    AV1: 'av01.0.00M.08',
+    AAC: 'mp4a.40.2',
+    FLAC: 'flac',
+    OPUS: 'opus',
+};
+/**
+ * High-level fMP4 streaming with automatic codec detection and transcoding.
+ *
+ * Provides fragmented MP4 streaming for clients.
+ * Automatically transcodes video to H.264 and audio to AAC if not supported by client.
+ * Client sends supported codecs, server transcodes accordingly.
+ * Essential component for building adaptive streaming servers.
+ *
+ * @example
+ * ```typescript
+ * import { FMP4Stream } from 'node-av/api';
+ *
+ * // Client sends supported codecs
+ * const supportedCodecs = 'avc1.640029,hvc1.1.6.L153.B0,mp4a.40.2,flac';
+ *
+ * // Create stream with codec negotiation
+ * const stream = FMP4Stream.create('rtsp://camera.local/stream', {
+ *   supportedCodecs,
+ *   onData: (data) => ws.send(data.data)
+ * });
+ *
+ * // Start streaming (auto-transcodes if needed)
+ * await stream.start();
+ *
+ * // Stop when done
+ * await stream.stop();
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // Stream with hardware acceleration
+ * const stream = FMP4Stream.create('input.mp4', {
+ *   supportedCodecs: 'avc1.640029,mp4a.40.2',
+ *   hardware: 'auto',
+ *   fragDuration: 1,
+ *   onData: (data) => sendToClient(data.data)
+ * });
+ *
+ * await stream.start();
+ * await stream.stop();
+ * ```
+ */
+export class FMP4Stream {
+    options;
+    inputUrl;
+    inputOptions;
+    input;
+    output;
+    hardwareContext;
+    videoDecoder;
+    videoFilter;
+    videoEncoder;
+    audioDecoder;
+    audioFilter;
+    audioEncoder;
+    pipeline;
+    supportedCodecs;
+    incompleteBoxBuffer = null;
+    /**
+     * @param inputUrl - Media input URL
+     *
+     * @param options - Stream configuration options
+     *
+     * Use {@link create} factory method
+     *
+     * @internal
+     */
+    constructor(inputUrl, options) {
+        this.inputUrl = inputUrl;
+        this.inputOptions = {
+            ...options.inputOptions,
+            options: {
+                flags: 'low_delay',
+                fflags: 'nobuffer',
+                // analyzeduration: 0,
+                // probesize: 32,
+                timeout: 10000000,
+                rtsp_transport: inputUrl.toLowerCase().startsWith('rtsp') ? 'tcp' : undefined,
+                ...options.inputOptions?.options,
+            },
+        };
+        this.options = {
+            onData: options.onData ?? (() => { }),
+            onClose: options.onClose ?? (() => { }),
+            supportedCodecs: options.supportedCodecs ?? '',
+            fragDuration: options.fragDuration ?? 1,
+            hardware: options.hardware ?? { deviceType: AV_HWDEVICE_TYPE_NONE },
+            inputOptions: options.inputOptions,
+            video: {
+                fps: options.video?.fps,
+                width: options.video?.width,
+                height: options.video?.height,
+                encoderOptions: options.video?.encoderOptions ?? {},
+            },
+            audio: {
+                encoderOptions: options.audio?.encoderOptions ?? {},
+            },
+            bufferSize: options.bufferSize ?? 2 * 1024 * 1024,
+            boxMode: options.boxMode ?? false,
+            movFlags: options.movFlags ?? '+frag_keyframe+separate_moof+default_base_moof+empty_moov',
+        };
+        // Parse supported codecs
+        this.supportedCodecs = new Set(this.options.supportedCodecs
+            .split(',')
+            .map((c) => c.trim())
+            .filter(Boolean));
+    }
+    /**
+     * Create a fMP4 stream from a media source.
+     *
+     * Configures the stream with input URL and options. The input is not opened
+     * until start() is called, allowing the stream to be reused after stop().
+     *
+     * @param inputUrl - Media source URL (RTSP, file path, HTTP, etc.)
+     *
+     * @param options - Stream configuration options with supported codecs
+     *
+     * @returns Configured fMP4 stream instance
+     *
+     * @example
+     * ```typescript
+     * // Stream from file with codec negotiation
+     * const stream = FMP4Stream.create('video.mp4', {
+     *   supportedCodecs: 'avc1.640029,mp4a.40.2',
+     *   onData: (data) => ws.send(data.data)
+     * });
+     * ```
+     *
+     * @example
+     * ```typescript
+     * // Stream from RTSP with auto hardware acceleration
+     * const stream = FMP4Stream.create('rtsp://camera.local/stream', {
+     *   supportedCodecs: 'avc1.640029,hvc1.1.6.L153.B0,mp4a.40.2',
+     *   hardware: 'auto',
+     *   fragDuration: 0.5
+     * });
+     * ```
+     */
+    static create(inputUrl, options = {}) {
+        return new FMP4Stream(inputUrl, options);
+    }
+    /**
+     * Get the demuxer instance.
+     *
+     * Used for accessing the underlying demuxer.
+     * Only available after start() is called.
+     *
+     * @returns Demuxer instance or undefined if not started
+     *
+     * @example
+     * ```typescript
+     * const stream = FMP4Stream.create('input.mp4', {
+     * const input = stream.getInput();
+     * console.log('Bitrate:', input?.bitRate);
+     * ```
+     */
+    getInput() {
+        return this.input;
+    }
+    /**
+     * Get the codec string that will be used by client.
+     *
+     * Returns the MIME type codec string based on input codecs and transcoding decisions.
+     * Call this after start() is called to know what codec string to use for addSourceBuffer().
+     *
+     * @returns MIME type codec string (e.g., "avc1.640029,mp4a.40.2")
+     *
+     * @throws {Error} If called before start() is called
+     *
+     * @example
+     * ```typescript
+     * const stream = await FMP4Stream.create('input.mp4', {
+     *   supportedCodecs: 'avc1.640029,mp4a.40.2'
+     * });
+     *
+     * await stream.start(); // Must start first
+     * const codecString = stream.getCodecString();
+     * console.log(codecString); // "avc1.640029,mp4a.40.2"
+     * // Use this for: sourceBuffer = mediaSource.addSourceBuffer(`video/mp4; codecs="${codecString}"`);
+     * ```
+     */
+    getCodecString() {
+        if (!this.input) {
+            throw new Error('Input not opened. Call start() first to open the input.');
+        }
+        const videoStream = this.input.video();
+        const audioStream = this.input.audio();
+        const videoCodecId = videoStream?.codecpar.codecId;
+        const audioCodecId = audioStream?.codecpar.codecId;
+        // Determine video codec string
+        let videoCodec = null;
+        if (videoCodecId) {
+            const needsVideoTranscode = !this.isVideoCodecSupported(videoCodecId);
+            if (needsVideoTranscode) {
+                // Transcoding to H.264
+                videoCodec = FMP4_CODECS.H264;
+            }
+            else if (videoCodecId === AV_CODEC_ID_H264) {
+                // H.264 - use RFC 6381 codec string from input
+                const codecString = avGetCodecString(videoStream.codecpar);
+                videoCodec = codecString ?? FMP4_CODECS.H264;
+            }
+            else if (videoCodecId === AV_CODEC_ID_HEVC) {
+                // H.265 - use RFC 6381 codec string from input
+                const codecString = avGetCodecString(videoStream.codecpar);
+                videoCodec = codecString ?? FMP4_CODECS.H265;
+            }
+            else if (videoCodecId === AV_CODEC_ID_AV1) {
+                // AV1 - use RFC 6381 codec string from input
+                const codecString = avGetCodecString(videoStream.codecpar);
+                videoCodec = codecString ?? FMP4_CODECS.AV1;
+            }
+            else {
+                // Fallback to H.264 (should not happen as we transcode unsupported codecs)
+                videoCodec = FMP4_CODECS.H264;
+            }
+        }
+        // Determine audio codec string
+        let audioCodec = null;
+        if (audioCodecId) {
+            const needsAudioTranscode = !this.isAudioCodecSupported(audioCodecId);
+            if (needsAudioTranscode) {
+                // Transcoding to AAC
+                audioCodec = FMP4_CODECS.AAC;
+            }
+            else if (audioCodecId === AV_CODEC_ID_AAC) {
+                // AAC - use fixed codec string
+                audioCodec = FMP4_CODECS.AAC;
+            }
+            else if (audioCodecId === AV_CODEC_ID_FLAC) {
+                // FLAC
+                audioCodec = FMP4_CODECS.FLAC;
+            }
+            else if (audioCodecId === AV_CODEC_ID_OPUS) {
+                // Opus
+                audioCodec = FMP4_CODECS.OPUS;
+            }
+            else {
+                // Fallback to AAC (should not happen as we transcode unsupported codecs)
+                audioCodec = FMP4_CODECS.AAC;
+            }
+        }
+        // Combine video and audio codec strings
+        return [videoCodec, audioCodec].filter(Boolean).join(',');
+    }
+    /**
+     * Start streaming media to fMP4 chunks.
+     *
+     * Begins the media processing pipeline, reading packets from input,
+     * transcoding based on supported codecs, and generating fMP4 chunks.
+     * Video transcodes to H.264 if H.264/H.265 not supported.
+     * Audio transcodes to AAC if AAC/FLAC/Opus not supported.
+     * This method returns immediately after starting the pipeline.
+     *
+     * @returns Promise that resolves when pipeline is started
+     *
+     * @throws {FFmpegError} If setup fails
+     *
+     * @example
+     * ```typescript
+     * const stream = await FMP4Stream.create('input.mp4', {
+     *   supportedCodecs: 'avc1.640029,mp4a.40.2',
+     *   onData: (data) => sendToClient(data.data)
+     * });
+     *
+     * // Start streaming (returns immediately)
+     * await stream.start();
+     *
+     * // Later: stop streaming
+     * await stream.stop();
+     * ```
+     */
+    async start() {
+        if (this.pipeline) {
+            return;
+        }
+        // Open input if not already open
+        this.input ??= await Demuxer.open(this.inputUrl, this.inputOptions);
+        const videoStream = this.input.video();
+        const audioStream = this.input.audio();
+        // Check if video needs transcoding
+        const needsVideoTranscode = videoStream && !this.isVideoCodecSupported(videoStream.codecpar.codecId);
+        if (needsVideoTranscode) {
+            // Check if we need hardware acceleration
+            if (this.options.hardware === 'auto') {
+                this.hardwareContext = HardwareContext.auto();
+            }
+            else if (this.options.hardware.deviceType !== AV_HWDEVICE_TYPE_NONE) {
+                this.hardwareContext = HardwareContext.create(this.options.hardware.deviceType, this.options.hardware.device, this.options.hardware.options);
+            }
+            // Transcode to H.264
+            this.videoDecoder = await Decoder.create(videoStream, {
+                hardware: this.hardwareContext,
+                exitOnError: false,
+            });
+            // Determine if we need filters by comparing with current stream properties
+            const currentWidth = videoStream.codecpar.width;
+            const currentHeight = videoStream.codecpar.height;
+            const currentFps = videoStream.avgFrameRate.num / videoStream.avgFrameRate.den;
+            const needsScale = (this.options.video.width !== undefined && this.options.video.width !== currentWidth) ||
+                (this.options.video.height !== undefined && this.options.video.height !== currentHeight);
+            const needsFps = this.options.video.fps !== undefined && isFinite(currentFps) && this.options.video.fps !== currentFps;
+            // Create filter chain only if needed
+            if (needsScale || needsFps) {
+                const filterChain = FilterPreset.chain(this.hardwareContext);
+                // Add scale filter if dimensions differ
+                if (needsScale) {
+                    const targetWidth = this.options.video.width ?? -1;
+                    const targetHeight = this.options.video.height ?? -1;
+                    filterChain.scale(targetWidth, targetHeight);
+                }
+                // Add fps filter if fps differs
+                if (needsFps) {
+                    filterChain.fps(this.options.video.fps);
+                }
+                this.videoFilter = FilterAPI.create(filterChain.build(), {
+                    hardware: this.hardwareContext,
+                });
+            }
+            const encoderCodec = this.hardwareContext?.getEncoderCodec('h264') ?? Codec.findEncoderByName(FF_ENCODER_LIBX264);
+            let encoderOptions = {};
+            if (encoderCodec.name === FF_ENCODER_LIBX264 || encoderCodec.name === FF_ENCODER_LIBX264) {
+                encoderOptions.preset = 'ultrafast';
+                encoderOptions.tune = 'zerolatency';
+            }
+            encoderOptions = {
+                ...encoderOptions,
+                ...this.options.video.encoderOptions,
+            };
+            this.videoEncoder = await Encoder.create(encoderCodec, {
+                decoder: this.videoDecoder,
+                options: encoderOptions,
+            });
+        }
+        // Check if audio needs transcoding
+        const needsAudioTranscode = audioStream && !this.isAudioCodecSupported(audioStream.codecpar.codecId);
+        if (needsAudioTranscode) {
+            // Transcode to AAC
+            this.audioDecoder = await Decoder.create(audioStream, {
+                exitOnError: false,
+            });
+            const targetSampleRate = 44100;
+            const filterChain = FilterPreset.chain().aformat(AV_SAMPLE_FMT_FLTP, targetSampleRate, 'stereo').build();
+            this.audioFilter = FilterAPI.create(filterChain);
+            this.audioEncoder = await Encoder.create(FF_ENCODER_AAC, {
+                decoder: this.audioDecoder,
+                filter: this.audioFilter,
+                options: this.options.audio.encoderOptions,
+            });
+        }
+        // Setup output with callback
+        const cb = {
+            write: (buffer) => {
+                if (this.options.boxMode) {
+                    // Box mode: buffer until we have complete boxes
+                    this.processBoxMode(buffer);
+                }
+                else {
+                    // Chunk mode: send raw data immediately
+                    this.options.onData(buffer, {
+                        isComplete: false,
+                        boxes: [],
+                    });
+                }
+                return buffer.length;
+            },
+        };
+        this.output = await Muxer.open(cb, {
+            input: this.input,
+            format: 'mp4',
+            bufferSize: this.options.bufferSize,
+            exitOnError: false,
+            options: {
+                movflags: this.options.movFlags,
+                frag_duration: this.options.fragDuration,
+            },
+        });
+        this.runPipeline()
+            .then(() => {
+            // Pipeline completed successfully
+            this.options.onClose?.();
+        })
+            .catch(async (error) => {
+            await this.stop();
+            this.options.onClose?.(error);
+        });
+    }
+    /**
+     * Stop streaming gracefully and clean up all resources.
+     *
+     * Stops the pipeline, closes output, and releases all FFmpeg resources.
+     * Safe to call multiple times. After stopping, you can call start() again
+     * to restart the stream.
+     *
+     * @example
+     * ```typescript
+     * const stream = await FMP4Stream.create('input.mp4', {
+     *   supportedCodecs: 'avc1.640029,mp4a.40.2'
+     * });
+     * await stream.start();
+     *
+     * // Stop after 10 seconds
+     * setTimeout(async () => await stream.stop(), 10000);
+     * ```
+     */
+    async stop() {
+        // Stop pipeline if running and wait for completion
+        if (this.pipeline && !this.pipeline.isStopped()) {
+            this.pipeline.stop();
+            await this.pipeline.completion;
+            this.pipeline = undefined;
+        }
+        // Close all resources
+        await this.input?.close();
+        this.input = undefined;
+        this.videoDecoder?.close();
+        this.videoDecoder = undefined;
+        this.videoFilter?.close();
+        this.videoFilter = undefined;
+        this.videoEncoder?.close();
+        this.videoEncoder = undefined;
+        this.audioDecoder?.close();
+        this.audioDecoder = undefined;
+        this.audioFilter?.close();
+        this.audioFilter = undefined;
+        this.audioEncoder?.close();
+        this.audioEncoder = undefined;
+        this.hardwareContext?.dispose();
+        this.hardwareContext = undefined;
+        await this.output?.close();
+        this.output = undefined;
+    }
+    /**
+     * Run the streaming pipeline until completion or stopped.
+     *
+     * @internal
+     */
+    async runPipeline() {
+        if (!this.input || !this.output) {
+            return;
+        }
+        const hasVideo = this.input?.video() !== undefined;
+        const hasAudio = this.input?.audio() !== undefined;
+        if (hasAudio && hasVideo) {
+            this.pipeline = pipeline(this.input, {
+                video: [this.videoDecoder, this.videoFilter, this.videoEncoder],
+                audio: [this.audioDecoder, this.audioFilter, this.audioEncoder],
+            }, this.output);
+        }
+        else if (hasVideo) {
+            this.pipeline = pipeline(this.input, {
+                video: [this.videoDecoder, this.videoFilter, this.videoEncoder],
+            }, this.output);
+        }
+        else if (hasAudio) {
+            this.pipeline = pipeline(this.input, {
+                audio: [this.audioDecoder, this.audioFilter, this.audioEncoder],
+            }, this.output);
+        }
+        else {
+            throw new Error('No audio or video streams found in input');
+        }
+        await this.pipeline.completion;
+        this.pipeline = undefined;
+    }
+    /**
+     * Check if video codec is supported.
+     *
+     * @param codecId - Codec ID
+     *
+     * @returns True if H.264, H.265, or AV1 is in supported codecs
+     *
+     * @internal
+     */
+    isVideoCodecSupported(codecId) {
+        if (codecId === AV_CODEC_ID_H264 && (this.supportedCodecs.has(FMP4_CODECS.H264) || this.supportedCodecs.has('avc1'))) {
+            return true;
+        }
+        if (codecId === AV_CODEC_ID_HEVC && (this.supportedCodecs.has(FMP4_CODECS.H265) || this.supportedCodecs.has('hvc1') || this.supportedCodecs.has('hev1'))) {
+            return true;
+        }
+        if (codecId === AV_CODEC_ID_AV1 && (this.supportedCodecs.has(FMP4_CODECS.AV1) || this.supportedCodecs.has('av01'))) {
+            return true;
+        }
+        return false;
+    }
+    /**
+     * Check if audio codec is supported.
+     *
+     * @param codecId - Codec ID
+     *
+     * @returns True if AAC, FLAC, or Opus is in supported codecs
+     *
+     * @internal
+     */
+    isAudioCodecSupported(codecId) {
+        if (codecId === AV_CODEC_ID_AAC && this.supportedCodecs.has(FMP4_CODECS.AAC)) {
+            return true;
+        }
+        if (codecId === AV_CODEC_ID_FLAC && this.supportedCodecs.has(FMP4_CODECS.FLAC)) {
+            return true;
+        }
+        if (codecId === AV_CODEC_ID_OPUS && this.supportedCodecs.has(FMP4_CODECS.OPUS)) {
+            return true;
+        }
+        return false;
+    }
+    /**
+     * Process buffer in box mode - buffers until complete boxes are available.
+     *
+     * @param chunk - Incoming data chunk from FFmpeg
+     *
+     * @internal
+     */
+    processBoxMode(chunk) {
+        // If we have an incomplete box from previous chunk, append to it
+        if (this.incompleteBoxBuffer) {
+            chunk = Buffer.concat([this.incompleteBoxBuffer, chunk]);
+            this.incompleteBoxBuffer = null;
+        }
+        let offset = 0;
+        const boxes = [];
+        while (offset + 8 <= chunk.length) {
+            // Read box header
+            const boxSize = chunk.readUInt32BE(offset);
+            const boxType = chunk.toString('ascii', offset + 4, offset + 8);
+            // Check if we have the complete box
+            if (offset + boxSize > chunk.length) {
+                // Box is incomplete - save for next chunk
+                this.incompleteBoxBuffer = chunk.subarray(offset);
+                break;
+            }
+            // We have the complete box - parse it
+            const box = {
+                type: boxType,
+                size: boxSize,
+                data: chunk.subarray(offset + 8, offset + boxSize),
+                offset: offset,
+            };
+            boxes.push(box);
+            // Move to next box
+            offset += boxSize;
+            // Safety check: invalid box size
+            if (boxSize < 8) {
+                break;
+            }
+        }
+        // If we have complete boxes, send them to the callback
+        if (boxes.length > 0) {
+            this.options.onData(chunk.subarray(0, offset), {
+                isComplete: true,
+                boxes,
+            });
+        }
+    }
+}
+//# sourceMappingURL=fmp4-stream.js.map

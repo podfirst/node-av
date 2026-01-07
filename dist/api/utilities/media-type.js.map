@@ -1,0 +1,1 @@
+{"version":3,"file":"media-type.js","sourceRoot":"","sources":["../../../src/api/utilities/media-type.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,QAAQ,EAAE,MAAM,sBAAsB,CAAC;AAIhD;;;;;;;;;;;;;;;GAeG;AACH,MAAM,OAAO,cAAc;IACzB,+CAA+C;IAC/C,gBAAuB,CAAC;IAExB;;;;;;;;;;;;;;;;;;;;;;;;;;;OA2BG;IACH,MAAM,CAAC,SAAS,CAAC,IAAiB;QAChC,OAAO,QAAQ,CAAC,oBAAoB,CAAC,IAAI,CAAC,CAAC;IAC7C,CAAC;CACF"}

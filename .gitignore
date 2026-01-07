@@ -10,7 +10,8 @@ lerna-debug.log*
 
 node_modules
 .DS_Store
-dist
+# PodFirst: dist is committed for git installs to work
+# dist
 dist-ssr
 dist-electron
 dev-dist

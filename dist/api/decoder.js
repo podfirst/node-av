@@ -1,0 +1,1756 @@
+var __addDisposableResource = (this && this.__addDisposableResource) || function (env, value, async) {
+    if (value !== null && value !== void 0) {
+        if (typeof value !== "object" && typeof value !== "function") throw new TypeError("Object expected.");
+        var dispose, inner;
+        if (async) {
+            if (!Symbol.asyncDispose) throw new TypeError("Symbol.asyncDispose is not defined.");
+            dispose = value[Symbol.asyncDispose];
+        }
+        if (dispose === void 0) {
+            if (!Symbol.dispose) throw new TypeError("Symbol.dispose is not defined.");
+            dispose = value[Symbol.dispose];
+            if (async) inner = dispose;
+        }
+        if (typeof dispose !== "function") throw new TypeError("Object not disposable.");
+        if (inner) dispose = function() { try { inner.call(this); } catch (e) { return Promise.reject(e); } };
+        env.stack.push({ value: value, dispose: dispose, async: async });
+    }
+    else if (async) {
+        env.stack.push({ async: true });
+    }
+    return value;
+};
+var __disposeResources = (this && this.__disposeResources) || (function (SuppressedError) {
+    return function (env) {
+        function fail(e) {
+            env.error = env.hasError ? new SuppressedError(e, env.error, "An error was suppressed during disposal.") : e;
+            env.hasError = true;
+        }
+        var r, s = 0;
+        function next() {
+            while (r = env.stack.pop()) {
+                try {
+                    if (!r.async && s === 1) return s = 0, env.stack.push(r), Promise.resolve().then(next);
+                    if (r.dispose) {
+                        var result = r.dispose.call(r.value);
+                        if (r.async) return s |= 2, Promise.resolve(result).then(next, function(e) { fail(e); return next(); });
+                    }
+                    else s |= 1;
+                }
+                catch (e) {
+                    fail(e);
+                }
+            }
+            if (s === 1) return env.hasError ? Promise.reject(env.error) : Promise.resolve();
+            if (env.hasError) throw env.error;
+        }
+        return next();
+    };
+})(typeof SuppressedError === "function" ? SuppressedError : function (error, suppressed, message) {
+    var e = new Error(message);
+    return e.name = "SuppressedError", e.error = error, e.suppressed = suppressed, e;
+});
+import { AV_CODEC_FLAG_COPY_OPAQUE, AV_FRAME_FLAG_CORRUPT, AV_NOPTS_VALUE, AV_ROUND_UP, AVERROR_DECODER_NOT_FOUND, AVERROR_EAGAIN, AVERROR_EOF, AVERROR_INVALIDDATA, AVMEDIA_TYPE_AUDIO, AVMEDIA_TYPE_VIDEO, EOF, INT_MAX, } from '../constants/constants.js';
+import { CodecContext } from '../lib/codec-context.js';
+import { Codec } from '../lib/codec.js';
+import { Dictionary } from '../lib/dictionary.js';
+import { FFmpegError } from '../lib/error.js';
+import { Frame } from '../lib/frame.js';
+import { Packet } from '../lib/packet.js';
+import { Rational } from '../lib/rational.js';
+import { avGcd, avInvQ, avMulQ, avRescaleDelta, avRescaleQ, avRescaleQRnd } from '../lib/utilities.js';
+import { FRAME_THREAD_QUEUE_SIZE, PACKET_THREAD_QUEUE_SIZE } from './constants.js';
+import { AsyncQueue } from './utilities/async-queue.js';
+import { Scheduler } from './utilities/scheduler.js';
+/**
+ * High-level decoder for audio and video streams.
+ *
+ * Provides a simplified interface for decoding media streams from packets to frames.
+ * Handles codec initialization, hardware acceleration setup, and frame management.
+ * Supports both synchronous packet-by-packet decoding and async iteration over frames.
+ * Essential component in media processing pipelines for converting compressed data to raw frames.
+ *
+ * @example
+ * ```typescript
+ * import { Demuxer, Decoder } from 'node-av/api';
+ *
+ * // Open media and create decoder
+ * await using input = await Demuxer.open('video.mp4');
+ * using decoder = await Decoder.create(input.video());
+ *
+ * // Decode frames
+ * for await (const frame of decoder.frames(input.packets())) {
+ *   console.log(`Decoded frame: ${frame.width}x${frame.height}`);
+ *   frame.free();
+ * }
+ * ```
+ *
+ * @example
+ * ```typescript
+ * import { HardwareContext } from 'node-av/api';
+ * import { AV_HWDEVICE_TYPE_CUDA } from 'node-av/constants';
+ *
+ * // Setup hardware acceleration
+ * const hw = HardwareContext.create(AV_HWDEVICE_TYPE_CUDA);
+ * using decoder = await Decoder.create(stream, { hardware: hw });
+ *
+ * // Frames will be decoded on GPU
+ * for await (const frame of decoder.frames(packets)) {
+ *   // frame.hwFramesCtx contains GPU memory reference
+ * }
+ * ```
+ *
+ * @see {@link Encoder} For encoding frames to packets
+ * @see {@link Demuxer} For reading media files
+ * @see {@link HardwareContext} For GPU acceleration
+ */
+export class Decoder {
+    codecContext;
+    codec;
+    frame;
+    stream;
+    initialized = true;
+    isClosed = false;
+    options;
+    // Frame tracking for PTS/duration estimation
+    lastFramePts = AV_NOPTS_VALUE;
+    lastFrameDurationEst = 0n;
+    lastFrameTb;
+    // Audio-specific frame tracking
+    lastFrameSampleRate = 0;
+    lastFilterInRescaleDelta = AV_NOPTS_VALUE;
+    // Worker pattern for push-based processing
+    inputQueue;
+    outputQueue;
+    workerPromise = null;
+    nextComponent = null;
+    pipeToPromise = null;
+    /**
+     * @param codecContext - Configured codec context
+     *
+     * @param codec - Codec being used
+     *
+     * @param stream - Media stream being decoded
+     *
+     * @param options - Decoder options
+     *
+     * Use {@link create} factory method
+     *
+     * @internal
+     */
+    constructor(codecContext, codec, stream, options = {}) {
+        this.codecContext = codecContext;
+        this.codec = codec;
+        this.stream = stream;
+        this.options = options;
+        this.frame = new Frame();
+        this.frame.alloc();
+        this.lastFrameTb = new Rational(0, 1);
+        this.inputQueue = new AsyncQueue(PACKET_THREAD_QUEUE_SIZE);
+        this.outputQueue = new AsyncQueue(FRAME_THREAD_QUEUE_SIZE);
+    }
+    static async create(stream, optionsOrCodec, maybeOptions) {
+        // Parse arguments
+        let options = {};
+        let explicitCodec;
+        if (optionsOrCodec !== undefined) {
+            // Check if first argument is a codec or options
+            if (typeof optionsOrCodec === 'string' || // FFDecoderCodec
+                typeof optionsOrCodec === 'number' || // AVCodecID
+                optionsOrCodec instanceof Codec // Codec instance
+            ) {
+                // First argument is a codec
+                explicitCodec = optionsOrCodec;
+                options = maybeOptions ?? {};
+            }
+            else {
+                // First argument is options
+                options = optionsOrCodec;
+            }
+        }
+        let codec = null;
+        // If explicit codec provided, use it
+        if (explicitCodec !== undefined) {
+            if (typeof explicitCodec === 'object' && 'id' in explicitCodec) {
+                // Already a Codec instance
+                codec = explicitCodec;
+            }
+            else if (typeof explicitCodec === 'string') {
+                // FFDecoderCodec string
+                codec = Codec.findDecoderByName(explicitCodec);
+                if (!codec) {
+                    throw new FFmpegError(AVERROR_DECODER_NOT_FOUND);
+                }
+            }
+            else {
+                // AVCodecID number
+                codec = Codec.findDecoder(explicitCodec);
+                if (!codec) {
+                    throw new FFmpegError(AVERROR_DECODER_NOT_FOUND);
+                }
+            }
+        }
+        else {
+            // No explicit codec - use auto-detection logic
+            // If hardware acceleration requested, try to find hardware decoder first
+            if (options.hardware) {
+                codec = options.hardware.getDecoderCodec(stream.codecpar.codecId);
+                if (!codec) {
+                    // No hardware decoder available, fall back to software
+                    options.hardware = undefined;
+                }
+            }
+            // If no hardware decoder or no hardware requested, use software decoder
+            if (!codec) {
+                codec = Codec.findDecoder(stream.codecpar.codecId);
+                if (!codec) {
+                    throw new FFmpegError(AVERROR_DECODER_NOT_FOUND);
+                }
+            }
+        }
+        // Allocate and configure codec context
+        const codecContext = new CodecContext();
+        codecContext.allocContext3(codec);
+        // Copy codec parameters to context
+        const ret = codecContext.parametersToContext(stream.codecpar);
+        if (ret < 0) {
+            codecContext.freeContext();
+            FFmpegError.throwIfError(ret, 'Failed to copy codec parameters');
+        }
+        // Set packet time base
+        codecContext.pktTimebase = stream.timeBase;
+        // Check if this decoder supports hardware acceleration
+        // Only apply hardware acceleration if the decoder supports it
+        // Silently ignore hardware for software decoders
+        const isHWDecoder = codec.isHardwareAcceleratedDecoder();
+        if (isHWDecoder && options.hardware) {
+            codecContext.hwDeviceCtx = options.hardware.deviceContext;
+            // Set hardware pixel format
+            codecContext.setHardwarePixelFormat(options.hardware.devicePixelFormat);
+            // Set extra_hw_frames if specified
+            if (options.extraHWFrames !== undefined && options.extraHWFrames > 0) {
+                codecContext.extraHWFrames = options.extraHWFrames;
+            }
+        }
+        else {
+            options.hardware = undefined;
+        }
+        options.exitOnError = options.exitOnError ?? true;
+        // Enable COPY_OPAQUE flag to copy packet.opaque to frame.opaque
+        codecContext.setFlags(AV_CODEC_FLAG_COPY_OPAQUE);
+        const opts = options.options ? Dictionary.fromObject(options.options) : undefined;
+        // Open codec
+        const openRet = await codecContext.open2(codec, opts);
+        if (openRet < 0) {
+            codecContext.freeContext();
+            FFmpegError.throwIfError(openRet, 'Failed to open codec');
+        }
+        // Adjust extra_hw_frames for queuing
+        // This is done AFTER open2 because the decoder validates extra_hw_frames during open
+        if (isHWDecoder && options.hardware) {
+            const currentExtraFrames = codecContext.extraHWFrames;
+            if (currentExtraFrames >= 0) {
+                codecContext.extraHWFrames = currentExtraFrames + FRAME_THREAD_QUEUE_SIZE;
+            }
+            else {
+                codecContext.extraHWFrames = 1;
+            }
+        }
+        return new Decoder(codecContext, codec, stream, options);
+    }
+    static createSync(stream, optionsOrCodec, maybeOptions) {
+        // Parse arguments
+        let options = {};
+        let explicitCodec;
+        if (optionsOrCodec !== undefined) {
+            // Check if first argument is a codec or options
+            if (typeof optionsOrCodec === 'string' || // FFDecoderCodec
+                typeof optionsOrCodec === 'number' || // AVCodecID
+                optionsOrCodec instanceof Codec // Codec instance
+            ) {
+                // First argument is a codec
+                explicitCodec = optionsOrCodec;
+                options = maybeOptions ?? {};
+            }
+            else {
+                // First argument is options
+                options = optionsOrCodec;
+            }
+        }
+        let codec = null;
+        // If explicit codec provided, use it
+        if (explicitCodec !== undefined) {
+            if (typeof explicitCodec === 'object' && 'id' in explicitCodec) {
+                // Already a Codec instance
+                codec = explicitCodec;
+            }
+            else if (typeof explicitCodec === 'string') {
+                // FFDecoderCodec string
+                codec = Codec.findDecoderByName(explicitCodec);
+                if (!codec) {
+                    throw new FFmpegError(AVERROR_DECODER_NOT_FOUND);
+                }
+            }
+            else {
+                // AVCodecID number
+                codec = Codec.findDecoder(explicitCodec);
+                if (!codec) {
+                    throw new FFmpegError(AVERROR_DECODER_NOT_FOUND);
+                }
+            }
+        }
+        else {
+            // No explicit codec - use auto-detection logic
+            // If hardware acceleration requested, try to find hardware decoder first
+            if (options.hardware) {
+                codec = options.hardware.getDecoderCodec(stream.codecpar.codecId);
+                if (!codec) {
+                    // No hardware decoder available, fall back to software
+                    options.hardware = undefined;
+                }
+            }
+            // If no hardware decoder or no hardware requested, use software decoder
+            if (!codec) {
+                codec = Codec.findDecoder(stream.codecpar.codecId);
+                if (!codec) {
+                    throw new FFmpegError(AVERROR_DECODER_NOT_FOUND);
+                }
+            }
+        }
+        // Allocate and configure codec context
+        const codecContext = new CodecContext();
+        codecContext.allocContext3(codec);
+        // Copy codec parameters to context
+        const ret = codecContext.parametersToContext(stream.codecpar);
+        if (ret < 0) {
+            codecContext.freeContext();
+            FFmpegError.throwIfError(ret, 'Failed to copy codec parameters');
+        }
+        // Set packet time base
+        codecContext.pktTimebase = stream.timeBase;
+        // Check if this decoder supports hardware acceleration
+        // Only apply hardware acceleration if the decoder supports it
+        // Silently ignore hardware for software decoders
+        const isHWDecoder = codec.isHardwareAcceleratedDecoder();
+        if (isHWDecoder && options.hardware) {
+            codecContext.hwDeviceCtx = options.hardware.deviceContext;
+            // Set hardware pixel format and get_format callback
+            codecContext.setHardwarePixelFormat(options.hardware.devicePixelFormat);
+            // Set extra_hw_frames if specified
+            if (options.extraHWFrames !== undefined && options.extraHWFrames > 0) {
+                codecContext.extraHWFrames = options.extraHWFrames;
+            }
+        }
+        else {
+            options.hardware = undefined;
+        }
+        options.exitOnError = options.exitOnError ?? true;
+        // Enable COPY_OPAQUE flag to copy packet.opaque to frame.opaque
+        // codecContext.setFlags(AV_CODEC_FLAG_COPY_OPAQUE);
+        const opts = options.options ? Dictionary.fromObject(options.options) : undefined;
+        // Open codec synchronously
+        const openRet = codecContext.open2Sync(codec, opts);
+        if (openRet < 0) {
+            codecContext.freeContext();
+            FFmpegError.throwIfError(openRet, 'Failed to open codec');
+        }
+        // Adjust extra_hw_frames for queuing
+        // This is done AFTER open2 because the decoder validates extra_hw_frames during open
+        if (isHWDecoder && options.hardware) {
+            const currentExtraFrames = codecContext.extraHWFrames;
+            if (currentExtraFrames >= 0) {
+                codecContext.extraHWFrames = currentExtraFrames + FRAME_THREAD_QUEUE_SIZE;
+            }
+            else {
+                codecContext.extraHWFrames = 1;
+            }
+        }
+        return new Decoder(codecContext, codec, stream, options);
+    }
+    /**
+     * Check if decoder is open.
+     *
+     * @returns true if decoder is open and ready
+     *
+     * @example
+     * ```typescript
+     * if (decoder.isDecoderOpen) {
+     *   const frame = await decoder.decode(packet);
+     * }
+     * ```
+     */
+    get isDecoderOpen() {
+        return !this.isClosed;
+    }
+    /**
+     * Check if decoder has been initialized.
+     *
+     * Returns true if decoder is initialized (true by default for decoders).
+     * Decoders are pre-initialized from stream parameters.
+     *
+     * @returns true if decoder has been initialized
+     *
+     * @example
+     * ```typescript
+     * if (decoder.isDecoderInitialized) {
+     *   console.log('Decoder is ready to process frames');
+     * }
+     * ```
+     */
+    get isDecoderInitialized() {
+        return this.initialized;
+    }
+    /**
+     * Check if decoder uses hardware acceleration.
+     *
+     * @returns true if hardware-accelerated
+     *
+     * @example
+     * ```typescript
+     * if (decoder.isHardware()) {
+     *   console.log('Using GPU acceleration');
+     * }
+     * ```
+     *
+     * @see {@link HardwareContext} For hardware setup
+     */
+    isHardware() {
+        return !!this.options.hardware && this.codec.isHardwareAcceleratedDecoder();
+    }
+    /**
+     * Check if decoder is ready for processing.
+     *
+     * @returns true if initialized and ready
+     *
+     * @example
+     * ```typescript
+     * if (decoder.isReady()) {
+     *   const frame = await decoder.decode(packet);
+     * }
+     * ```
+     */
+    isReady() {
+        return this.initialized && !this.isClosed;
+    }
+    /**
+     * Send a packet to the decoder.
+     *
+     * Sends a compressed packet to the decoder for decoding.
+     * Does not return decoded frames - use {@link receive} to retrieve frames.
+     * A single packet can produce zero, one, or multiple frames depending on codec buffering.
+     * Automatically manages decoder state and error recovery.
+     *
+     * **Important**: This method only SENDS the packet to the decoder.
+     * You must call {@link receive} separately (potentially multiple times) to get decoded frames.
+     *
+     * Direct mapping to avcodec_send_packet().
+     *
+     * @param packet - Compressed packet to send to decoder
+     *
+     * @throws {FFmpegError} If sending packet fails
+     *
+     * @example
+     * ```typescript
+     * // Send packet and receive frames
+     * await decoder.decode(packet);
+     *
+     * // Receive all available frames
+     * while (true) {
+     *   const frame = await decoder.receive();
+     *   if (!frame) break;
+     *   console.log(`Decoded frame with PTS: ${frame.pts}`);
+     *   frame.free();
+     * }
+     * ```
+     *
+     * @example
+     * ```typescript
+     * for await (const packet of input.packets()) {
+     *   if (packet.streamIndex === decoder.getStream().index) {
+     *     // Send packet
+     *     await decoder.decode(packet);
+     *
+     *     // Receive available frames
+     *     let frame;
+     *     while ((frame = await decoder.receive())) {
+     *       await processFrame(frame);
+     *       frame.free();
+     *     }
+     *   }
+     *   packet.free();
+     * }
+     * ```
+     *
+     * @see {@link receive} For receiving decoded frames
+     * @see {@link decodeAll} For combined send+receive operation
+     * @see {@link frames} For automatic packet iteration
+     * @see {@link flush} For end-of-stream handling
+     * @see {@link decodeSync} For synchronous version
+     */
+    async decode(packet) {
+        if (this.isClosed) {
+            return;
+        }
+        if (packet.streamIndex !== this.stream.index) {
+            return;
+        }
+        // Skip 0-sized packets
+        if (packet.size === 0) {
+            return;
+        }
+        // Send packet to decoder
+        const sendRet = await this.codecContext.sendPacket(packet);
+        // EAGAIN during send_packet is a decoder bug (FFmpeg treats this as AVERROR_BUG)
+        // We read all decoded frames with receive() until done, so decoder should never be full
+        if (sendRet === AVERROR_EAGAIN) {
+            FFmpegError.throwIfError(sendRet, 'Decoder returned EAGAIN on send - this is a decoder bug');
+        }
+        // Handle send errors
+        if (sendRet < 0 && sendRet !== AVERROR_EOF) {
+            if (this.options.exitOnError) {
+                FFmpegError.throwIfError(sendRet, 'Failed to send packet to decoder');
+            }
+            // exitOnError=false: Continue to receive loop to drain any buffered frames
+        }
+    }
+    /**
+     * Send a packet to the decoder synchronously.
+     * Synchronous version of decode.
+     *
+     * Sends a compressed packet to the decoder for decoding.
+     * Does not return decoded frames - use {@link receiveSync} to retrieve frames.
+     * A single packet can produce zero, one, or multiple frames depending on codec buffering.
+     * Automatically manages decoder state and error recovery.
+     *
+     * **Important**: This method only SENDS the packet to the decoder.
+     * You must call {@link receiveSync} separately (potentially multiple times) to get decoded frames.
+     *
+     * Direct mapping to avcodec_send_packet().
+     *
+     * @param packet - Compressed packet to send to decoder
+     *
+     * @throws {FFmpegError} If sending packet fails
+     *
+     * @example
+     * ```typescript
+     * // Send packet and receive frames
+     * await decoder.decode(packet);
+     *
+     * // Receive all available frames
+     * while (true) {
+     *   const frame = await decoder.receive();
+     *   if (!frame) break;
+     *   console.log(`Decoded frame with PTS: ${frame.pts}`);
+     *   frame.free();
+     * }
+     * ```
+     *
+     * @example
+     * ```typescript
+     * for await (const packet of input.packets()) {
+     *   if (packet.streamIndex === decoder.getStream().index) {
+     *     // Send packet
+     *     await decoder.decode(packet);
+     *
+     *     // Receive available frames
+     *     let frame;
+     *     while ((frame = await decoder.receive())) {
+     *       await processFrame(frame);
+     *       frame.free();
+     *     }
+     *   }
+     *   packet.free();
+     * }
+     * ```
+     *
+     * @see {@link receiveSync} For receiving decoded frames
+     * @see {@link decodeAllSync} For combined send+receive operation
+     * @see {@link framesSync} For automatic packet iteration
+     * @see {@link flushSync} For end-of-stream handling
+     * @see {@link decode} For async version
+     */
+    decodeSync(packet) {
+        if (this.isClosed) {
+            return;
+        }
+        if (packet.streamIndex !== this.stream.index) {
+            return;
+        }
+        // Skip 0-sized packets
+        if (packet.size === 0) {
+            return;
+        }
+        // Send packet to decoder
+        const sendRet = this.codecContext.sendPacketSync(packet);
+        // EAGAIN during send_packet is a decoder bug (FFmpeg treats this as AVERROR_BUG)
+        // We read all decoded frames with receive() until done, so decoder should never be full
+        if (sendRet === AVERROR_EAGAIN) {
+            FFmpegError.throwIfError(AVERROR_EAGAIN, 'Decoder returned EAGAIN on send - this is a decoder bug');
+        }
+        // Handle send errors
+        if (sendRet < 0 && sendRet !== AVERROR_EOF) {
+            if (this.options.exitOnError) {
+                FFmpegError.throwIfError(sendRet, 'Failed to send packet to decoder');
+            }
+            // exitOnError=false: Continue to receive loop to drain any buffered frames
+        }
+    }
+    /**
+     * Decode a packet to frames.
+     *
+     * Sends a packet to the decoder and receives all available decoded frames.
+     * Returns array of frames - may be empty if decoder needs more data.
+     * One packet can produce zero, one, or multiple frames depending on codec.
+     * Automatically manages decoder state and error recovery.
+     *
+     * Direct mapping to avcodec_send_packet() and avcodec_receive_frame().
+     *
+     * @param packet - Compressed packet to decode
+     *
+     * @returns Array of decoded frames (empty if more data needed or decoder is closed)
+     *
+     * @throws {FFmpegError} If decoding fails
+     *
+     * @example
+     * ```typescript
+     * const frames = await decoder.decodeAll(packet);
+     * for (const frame of frames) {
+     *   console.log(`Decoded frame with PTS: ${frame.pts}`);
+     *   frame.free();
+     * }
+     * ```
+     *
+     * @example
+     * ```typescript
+     * for await (const packet of input.packets()) {
+     *   const frames = await decoder.decodeAll(packet);
+     *   for (const frame of frames) {
+     *     await processFrame(frame);
+     *     frame.free();
+     *   }
+     *   packet.free();
+     * }
+     * ```
+     *
+     * @see {@link decode} For single packet decoding
+     * @see {@link frames} For automatic packet iteration
+     * @see {@link flush} For end-of-stream handling
+     * @see {@link decodeAllSync} For synchronous version
+     */
+    async decodeAll(packet) {
+        const frames = [];
+        if (packet) {
+            await this.decode(packet);
+        }
+        else {
+            await this.flush();
+        }
+        // Receive all available frames
+        while (true) {
+            const remaining = await this.receive();
+            if (!remaining)
+                break;
+            frames.push(remaining);
+        }
+        return frames;
+    }
+    /**
+     * Decode a packet to frames synchronously.
+     * Synchronous version of decodeAll.
+     *
+     * Sends packet to decoder and receives all available decoded frames.
+     * Returns array of frames - may be empty if decoder needs more data.
+     * One packet can produce zero, one, or multiple frames depending on codec.
+     *
+     * @param packet - Compressed packet to decode
+     *
+     * @returns Array of decoded frames (empty if more data needed or decoder is closed)
+     *
+     * @throws {FFmpegError} If decoding fails
+     *
+     * @example
+     * ```typescript
+     * const frames = decoder.decodeAllSync(packet);
+     * for (const frame of frames) {
+     *   console.log(`Decoded: ${frame.width}x${frame.height}`);
+     *   frame.free();
+     * }
+     *
+     * @example
+     * ```typescript
+     * for (const packet of input.packetsSync()) {
+     *   const frames = await decoder.decodeAllSync(packet);
+     *   for (const frame of frames) {
+     *     processFrame(frame);
+     *     frame.free();
+     *   }
+     *   packet.free();
+     * }
+     * ```
+     *
+     * @see {@link decodeSync} For single packet decoding
+     * @see {@link framesSync} For automatic packet iteration
+     * @see {@link flushSync} For end-of-stream handling
+     * @see {@link decodeAll} For async version
+     */
+    decodeAllSync(packet) {
+        const frames = [];
+        if (packet) {
+            this.decodeSync(packet);
+        }
+        else {
+            this.flushSync();
+        }
+        // Receive all available frames
+        while (true) {
+            const remaining = this.receiveSync();
+            if (!remaining)
+                break;
+            frames.push(remaining);
+        }
+        return frames;
+    }
+    /**
+     * Decode packet stream to frame stream.
+     *
+     * High-level async generator for complete decoding pipeline.
+     * Decoder is only flushed when EOF (null) signal is explicitly received.
+     * Primary interface for stream-based decoding.
+     *
+     * **EOF Handling:**
+     * - Send null to flush decoder and get remaining buffered frames
+     * - Generator yields null after flushing when null is received
+     * - No automatic flushing - decoder stays open until EOF or close()
+     *
+     * @param packets - Async iterable of packets, single packet, or null to flush
+     *
+     * @yields {Frame | null} Decoded frames, followed by null when explicitly flushed
+     *
+     * @throws {Error} If decoder is closed
+     *
+     * @throws {FFmpegError} If decoding fails
+     *
+     * @example
+     * ```typescript
+     * // Stream of packets with automatic EOF propagation
+     * await using input = await Demuxer.open('video.mp4');
+     * using decoder = await Decoder.create(input.video());
+     *
+     * for await (const frame of decoder.frames(input.packets())) {
+     *   if (frame === null) {
+     *     console.log('Decoding complete');
+     *     break;
+     *   }
+     *   console.log(`Frame: ${frame.width}x${frame.height}`);
+     *   frame.free();
+     * }
+     * ```
+     *
+     * @example
+     * ```typescript
+     * // Single packet (no automatic flush)
+     * for await (const frame of decoder.frames(singlePacket)) {
+     *   await encoder.encode(frame);
+     *   frame.free();
+     * }
+     * // Decoder still has buffered frames - send null to flush
+     * for await (const frame of decoder.frames(null)) {
+     *   if (frame === null) break;
+     *   await encoder.encode(frame);
+     *   frame.free();
+     * }
+     * ```
+     *
+     * @example
+     * ```typescript
+     * // Explicit flush with EOF
+     * for await (const frame of decoder.frames(null)) {
+     *   if (frame === null) {
+     *     console.log('All buffered frames flushed');
+     *     break;
+     *   }
+     *   console.log('Buffered frame:', frame.pts);
+     *   frame.free();
+     * }
+     * ```
+     *
+     * @see {@link decode} For single packet decoding
+     * @see {@link Demuxer.packets} For packet source
+     * @see {@link framesSync} For sync version
+     */
+    async *frames(packets) {
+        const self = this;
+        const processPacket = async function* (packet) {
+            await self.decode(packet);
+            while (true) {
+                const frame = await self.receive();
+                if (!frame)
+                    break;
+                yield frame;
+            }
+        }.bind(this);
+        const finalize = async function* () {
+            for await (const remaining of self.flushFrames()) {
+                yield remaining;
+            }
+            yield null;
+        }.bind(this);
+        if (packets === null) {
+            yield* finalize();
+            return;
+        }
+        if (packets instanceof Packet) {
+            yield* processPacket(packets);
+            return;
+        }
+        for await (const packet_1 of packets) {
+            const env_1 = { stack: [], error: void 0, hasError: false };
+            try {
+                const packet = __addDisposableResource(env_1, packet_1, false);
+                if (packet === null) {
+                    yield* finalize();
+                    return;
+                }
+                yield* processPacket(packet);
+            }
+            catch (e_1) {
+                env_1.error = e_1;
+                env_1.hasError = true;
+            }
+            finally {
+                __disposeResources(env_1);
+            }
+        }
+    }
+    /**
+     * Decode packet stream to frame stream synchronously.
+     * Synchronous version of frames.
+     *
+     * High-level async generator for complete decoding pipeline.
+     * Decoder is only flushed when EOF (null) signal is explicitly received.
+     * Primary interface for stream-based decoding.
+     *
+     * **EOF Handling:**
+     * - Send null to flush decoder and get remaining buffered frames
+     * - Generator yields null after flushing when null is received
+     * - No automatic flushing - decoder stays open until EOF or close()
+     *
+     * @param packets - Iterable of packets, single packet, or null to flush
+     *
+     * @yields {Frame | null} Decoded frames, followed by null when explicitly flushed
+     *
+     * @throws {Error} If decoder is closed
+     *
+     * @throws {FFmpegError} If decoding fails
+     *
+     * @example
+     * ```typescript
+     * // Stream of packets with automatic EOF propagation
+     * await using input = await Demuxer.open('video.mp4');
+     * using decoder = await Decoder.create(input.video());
+     *
+     * for (const frame of decoder.framesSync(input.packetsSync())) {
+     *   if (frame === null) {
+     *     console.log('Decoding complete');
+     *     break;
+     *   }
+     *   console.log(`Frame: ${frame.width}x${frame.height}`);
+     *   frame.free();
+     * }
+     * ```
+     *
+     * @example
+     * ```typescript
+     * // Single packet (no automatic flush)
+     * for (const frame of decoder.framesSync(singlePacket)) {
+     *   encoder.encodeSync(frame);
+     *   frame.free();
+     * }
+     * // Decoder still has buffered frames - send null to flush
+     * for (const frame of decoder.framesSync(null)) {
+     *   if (frame === null) break;
+     *   encoder.encodeSync(frame);
+     *   frame.free();
+     * }
+     * ```
+     *
+     * @example
+     * ```typescript
+     * // Explicit flush with EOF
+     * for (const frame of decoder.framesSync(null)) {
+     *   if (frame === null) {
+     *     console.log('All buffered frames flushed');
+     *     break;
+     *   }
+     *   console.log('Buffered frame:', frame.pts);
+     *   frame.free();
+     * }
+     * ```
+     */
+    *framesSync(packets) {
+        const self = this;
+        const processPacket = function* (packet) {
+            self.decodeSync(packet);
+            while (true) {
+                const frame = self.receiveSync();
+                if (!frame)
+                    break;
+                yield frame;
+            }
+        }.bind(this);
+        const finalize = function* () {
+            for (const remaining of self.flushFramesSync()) {
+                yield remaining;
+            }
+            yield null;
+        }.bind(this);
+        if (packets === null) {
+            yield* finalize();
+            return;
+        }
+        if (packets instanceof Packet) {
+            yield* processPacket(packets);
+            return;
+        }
+        for (const packet_2 of packets) {
+            const env_2 = { stack: [], error: void 0, hasError: false };
+            try {
+                const packet = __addDisposableResource(env_2, packet_2, false);
+                if (packet === null) {
+                    yield* finalize();
+                    return;
+                }
+                yield* processPacket(packet);
+            }
+            catch (e_2) {
+                env_2.error = e_2;
+                env_2.hasError = true;
+            }
+            finally {
+                __disposeResources(env_2);
+            }
+        }
+    }
+    /**
+     * Flush decoder and signal end-of-stream.
+     *
+     * Sends null packet to decoder to signal end-of-stream.
+     * Does nothing if decoder is closed.
+     * Must use receive() or flushFrames() to get remaining buffered frames.
+     *
+     * Direct mapping to avcodec_send_packet(NULL).
+     *
+     * @throws {FFmpegError} If flush fails
+     *
+     * @example
+     * ```typescript
+     * // Signal end of stream
+     * await decoder.flush();
+     *
+     * // Then get remaining frames
+     * let frame;
+     * while ((frame = await decoder.receive()) !== null) {
+     *   console.log('Got buffered frame');
+     *   frame.free();
+     * }
+     * ```
+     *
+     * @see {@link flushFrames} For convenient async iteration
+     * @see {@link receive} For getting buffered frames
+     * @see {@link flushSync} For synchronous version
+     */
+    async flush() {
+        if (this.isClosed) {
+            return;
+        }
+        // Send flush packet (null)
+        const ret = await this.codecContext.sendPacket(null);
+        if (ret < 0 && ret !== AVERROR_EOF) {
+            if (ret !== AVERROR_EAGAIN) {
+                FFmpegError.throwIfError(ret, 'Failed to flush decoder');
+            }
+        }
+    }
+    /**
+     * Flush decoder and signal end-of-stream synchronously.
+     * Synchronous version of flush.
+     *
+     * Send null packet to signal end of input stream.
+     * Decoder may still have buffered frames.
+     * Call receiveSync() repeatedly to get remaining frames.
+     *
+     * @throws {FFmpegError} If flush fails
+     *
+     * @example
+     * ```typescript
+     * decoder.flushSync();
+     * // Get remaining frames
+     * let frame;
+     * while ((frame = decoder.receiveSync()) !== null) {
+     *   console.log('Buffered frame');
+     * }
+     * ```
+     *
+     * @see {@link flushFramesSync} For convenient sync iteration
+     * @see {@link receiveSync} For getting buffered frames
+     * @see {@link flush} For async version
+     */
+    flushSync() {
+        if (this.isClosed) {
+            return;
+        }
+        // Send flush packet (null)
+        const ret = this.codecContext.sendPacketSync(null);
+        if (ret < 0 && ret !== AVERROR_EOF) {
+            if (ret !== AVERROR_EAGAIN) {
+                FFmpegError.throwIfError(ret, 'Failed to flush decoder');
+            }
+        }
+    }
+    /**
+     * Flush all buffered frames as async generator.
+     *
+     * Convenient async iteration over remaining frames.
+     * Automatically sends flush signal and retrieves buffered frames.
+     * Useful for end-of-stream processing.
+     *
+     * @yields {Frame} Buffered frames
+     *
+     * @example
+     * ```typescript
+     * // Flush at end of decoding
+     * for await (const frame of decoder.flushFrames()) {
+     *   console.log('Processing buffered frame');
+     *   await encoder.encode(frame);
+     *   frame.free();
+     * }
+     * ```
+     *
+     * @see {@link decode} For sending packets and receiving frames
+     * @see {@link flush} For signaling end-of-stream
+     * @see {@link flushFramesSync} For synchronous version
+     */
+    async *flushFrames() {
+        // Send flush signal
+        await this.flush();
+        while (true) {
+            const remaining = await this.receive();
+            if (!remaining)
+                break;
+            yield remaining;
+        }
+    }
+    /**
+     * Flush all buffered frames as generator synchronously.
+     * Synchronous version of flushFrames.
+     *
+     * Convenient sync iteration over remaining frames.
+     * Automatically sends flush signal and retrieves buffered frames.
+     * Useful for end-of-stream processing.
+     *
+     * @yields {Frame} Buffered frames
+     *
+     * @example
+     * ```typescript
+     * // Flush at end of decoding
+     * for (const frame of decoder.flushFramesSync()) {
+     *   console.log('Processing buffered frame');
+     *   encoder.encodeSync(frame);
+     *   frame.free();
+     * }
+     * ```
+     *
+     * @see {@link decodeSync} For sending packets and receiving frames
+     * @see {@link flushSync} For signaling end-of-stream
+     * @see {@link flushFrames} For async version
+     */
+    *flushFramesSync() {
+        // Send flush signal
+        this.flushSync();
+        while (true) {
+            const remaining = this.receiveSync();
+            if (!remaining)
+                break;
+            yield remaining;
+        }
+    }
+    /**
+     * Receive frame from decoder.
+     *
+     * Gets decoded frames from the codec's internal buffer.
+     * Handles frame cloning and error checking.
+     * Hardware frames include hw_frames_ctx reference.
+     * Call repeatedly to drain all buffered frames.
+     *
+     * **Return Values:**
+     * - `Frame` - Successfully decoded frame
+     * - `null` - No frame available (AVERROR_EAGAIN), send more packets
+     * - `undefined` - End of stream reached (AVERROR_EOF), decoder flushed
+     *
+     * Direct mapping to avcodec_receive_frame().
+     *
+     * @returns Decoded frame, null (need more data), or undefined (end of stream)
+     *
+     * @throws {FFmpegError} If receive fails with error other than AVERROR_EAGAIN or AVERROR_EOF
+     *
+     * @throws {Error} If frame cloning fails (out of memory)
+     *
+     * @example
+     * ```typescript
+     * const frame = await decoder.receive();
+     * if (frame === EOF) {
+     *   console.log('Decoder flushed, no more frames');
+     * } else if (frame) {
+     *   console.log('Got decoded frame');
+     *   frame.free();
+     * } else {
+     *   console.log('Need more packets');
+     * }
+     * ```
+     *
+     * @example
+     * ```typescript
+     * // Drain all buffered frames (stop on null or EOF)
+     * let frame;
+     * while ((frame = await decoder.receive()) && frame !== EOF) {
+     *   console.log(`Frame PTS: ${frame.pts}`);
+     *   frame.free();
+     * }
+     * ```
+     *
+     * @see {@link decode} For sending packets
+     * @see {@link flush} For signaling end-of-stream
+     * @see {@link receiveSync} For synchronous version
+     * @see {@link EOF} For end-of-stream signal
+     */
+    async receive() {
+        if (this.isClosed) {
+            return EOF;
+        }
+        // Clear previous frame data
+        this.frame.unref();
+        const ret = await this.codecContext.receiveFrame(this.frame);
+        if (ret === 0) {
+            // Set frame time_base to decoder's packet timebase
+            this.frame.timeBase = this.codecContext.pktTimebase;
+            // Check for corrupt frame
+            if (this.frame.decodeErrorFlags || this.frame.hasFlags(AV_FRAME_FLAG_CORRUPT)) {
+                if (this.options.exitOnError) {
+                    throw new FFmpegError(AVERROR_INVALIDDATA);
+                }
+                // exitOnError=false: skip corrupt frame
+                return null;
+            }
+            // Handles PTS assignment, duration estimation, and frame tracking
+            if (this.codecContext.codecType === AVMEDIA_TYPE_VIDEO) {
+                this.processVideoFrame(this.frame);
+            }
+            // Handles timestamp extrapolation, sample rate changes, and duration calculation
+            if (this.codecContext.codecType === AVMEDIA_TYPE_AUDIO) {
+                this.processAudioFrame(this.frame);
+            }
+            // Got a frame, clone it for the user
+            const cloned = this.frame.clone();
+            if (!cloned) {
+                throw new Error('Failed to clone frame (out of memory)');
+            }
+            return cloned;
+        }
+        else if (ret === AVERROR_EAGAIN) {
+            // Need more data
+            return null;
+        }
+        else if (ret === AVERROR_EOF) {
+            // End of stream
+            return EOF;
+        }
+        else {
+            // Error during receive
+            if (this.options.exitOnError) {
+                FFmpegError.throwIfError(ret, 'Failed to receive frame');
+            }
+            // exitOnError=false: return null, caller can retry if desired
+            return null;
+        }
+    }
+    /**
+     * Receive frame from decoder synchronously.
+     * Synchronous version of receive.
+     *
+     * Gets decoded frames from the codec's internal buffer.
+     * Handles frame cloning and error checking.
+     * Hardware frames include hw_frames_ctx reference.
+     * Call repeatedly to drain all buffered frames.
+     *
+     * **Return Values:**
+     * - `Frame` - Successfully decoded frame
+     * - `null` - No frame available (AVERROR_EAGAIN), send more packets
+     * - `undefined` - End of stream reached (AVERROR_EOF), decoder flushed
+     *
+     * Direct mapping to avcodec_receive_frame().
+     *
+     * @returns Decoded frame, null (need more data), or undefined (end of stream)
+     *
+     * @throws {FFmpegError} If receive fails with error other than AVERROR_EAGAIN or AVERROR_EOF
+     *
+     * @throws {Error} If frame cloning fails (out of memory)
+     *
+     * @example
+     * ```typescript
+     * const frame = decoder.receiveSync();
+     * if (frame === EOF) {
+     *   console.log('Decoder flushed, no more frames');
+     * } else if (frame) {
+     *   console.log('Got decoded frame');
+     *   frame.free();
+     * } else {
+     *   console.log('Need more packets');
+     * }
+     * ```
+     *
+     * @example
+     * ```typescript
+     * // Drain all buffered frames (stop on null or EOF)
+     * let frame;
+     * while ((frame = decoder.receiveSync()) && frame !== EOF) {
+     *   console.log(`Frame PTS: ${frame.pts}`);
+     *   frame.free();
+     * }
+     * ```
+     *
+     * @see {@link decodeSync} For sending packets
+     * @see {@link flushSync} For signaling end-of-stream
+     * @see {@link receive} For async version
+     * @see {@link EOF} For end-of-stream signal
+     */
+    receiveSync() {
+        if (this.isClosed) {
+            return EOF;
+        }
+        // Clear previous frame data
+        this.frame.unref();
+        const ret = this.codecContext.receiveFrameSync(this.frame);
+        if (ret === 0) {
+            // Set frame time_base to decoder's packet timebase
+            this.frame.timeBase = this.codecContext.pktTimebase;
+            // Check for corrupt frame
+            if (this.frame.decodeErrorFlags || this.frame.hasFlags(AV_FRAME_FLAG_CORRUPT)) {
+                if (this.options.exitOnError) {
+                    throw new FFmpegError(AVERROR_INVALIDDATA);
+                }
+                // exitOnError=false: skip corrupt frame
+                return null;
+            }
+            // Process video frame
+            // Handles PTS assignment, duration estimation, and frame tracking
+            if (this.codecContext.codecType === AVMEDIA_TYPE_VIDEO) {
+                this.processVideoFrame(this.frame);
+            }
+            // Process audio frame
+            // Handles timestamp extrapolation, sample rate changes, and duration calculation
+            if (this.codecContext.codecType === AVMEDIA_TYPE_AUDIO) {
+                this.processAudioFrame(this.frame);
+            }
+            // Got a frame, clone it for the user
+            const cloned = this.frame.clone();
+            if (!cloned) {
+                throw new Error('Failed to clone frame (out of memory)');
+            }
+            return cloned;
+        }
+        else if (ret === AVERROR_EAGAIN) {
+            // Need more data
+            return null;
+        }
+        else if (ret === AVERROR_EOF) {
+            // End of stream
+            return EOF;
+        }
+        else {
+            // Error during receive
+            if (this.options.exitOnError) {
+                FFmpegError.throwIfError(ret, 'Failed to receive frame');
+            }
+            // exitOnError=false: return null, caller can retry if desired
+            return null;
+        }
+    }
+    pipeTo(target) {
+        const t = target;
+        // Store reference to next component for flush propagation
+        this.nextComponent = t;
+        // Start worker if not already running
+        this.workerPromise ??= this.runWorker();
+        // Start pipe task: decoder.outputQueue -> target.inputQueue (via target.send)
+        this.pipeToPromise = (async () => {
+            while (true) {
+                const frame = await this.receiveFromQueue();
+                if (!frame)
+                    break;
+                await t.sendToQueue(frame);
+            }
+        })();
+        // Return scheduler for chaining (target is now the last component)
+        return new Scheduler(this, t);
+    }
+    /**
+     * Close decoder and free resources.
+     *
+     * Releases codec context and internal frame buffer.
+     * Safe to call multiple times.
+     * Automatically called by Symbol.dispose.
+     *
+     * @example
+     * ```typescript
+     * const decoder = await Decoder.create(stream);
+     * try {
+     *   // Use decoder
+     * } finally {
+     *   decoder.close();
+     * }
+     * ```
+     *
+     * @see {@link Symbol.dispose} For automatic cleanup
+     */
+    close() {
+        if (this.isClosed) {
+            return;
+        }
+        this.isClosed = true;
+        this.inputQueue?.close();
+        this.outputQueue?.close();
+        this.frame.free();
+        this.codecContext.freeContext();
+        this.initialized = false;
+    }
+    /**
+     * Get stream object.
+     *
+     * Returns the underlying stream being decoded.
+     * Provides access to stream metadata and parameters.
+     *
+     * @returns Stream object
+     *
+     * @internal
+     *
+     * @see {@link Stream} For stream details
+     */
+    getStream() {
+        return this.stream;
+    }
+    /**
+     * Get decoder codec.
+     *
+     * Returns the codec used by this decoder.
+     * Useful for checking codec capabilities and properties.
+     *
+     * @returns Codec instance
+     *
+     * @internal
+     *
+     * @see {@link Codec} For codec details
+     */
+    getCodec() {
+        return this.codec;
+    }
+    /**
+     * Get underlying codec context.
+     *
+     * Returns the codec context for advanced operations.
+     * Useful for accessing low-level codec properties and settings.
+     * Returns null if decoder is closed.
+     *
+     * @returns Codec context or null if closed
+     *
+     * @internal
+     *
+     * @see {@link CodecContext} For context details
+     */
+    getCodecContext() {
+        return !this.isClosed && this.initialized ? this.codecContext : null;
+    }
+    /**
+     * Worker loop for push-based processing.
+     *
+     * @internal
+     */
+    async runWorker() {
+        try {
+            // Outer loop - receive packets
+            while (!this.inputQueue.isClosed) {
+                const env_3 = { stack: [], error: void 0, hasError: false };
+                try {
+                    const packet = __addDisposableResource(env_3, await this.inputQueue.receive(), false);
+                    if (!packet)
+                        break;
+                    // Skip packets for other streams
+                    if (packet.streamIndex !== this.stream.index) {
+                        continue;
+                    }
+                    if (packet.size === 0) {
+                        continue;
+                    }
+                    await this.decode(packet);
+                    // Receive ALL available frames immediately
+                    // This ensures frames are yielded ASAP without latency
+                    while (!this.outputQueue.isClosed) {
+                        const frame = await this.receive();
+                        if (!frame)
+                            break; // EAGAIN or EOF
+                        await this.outputQueue.send(frame);
+                    }
+                }
+                catch (e_3) {
+                    env_3.error = e_3;
+                    env_3.hasError = true;
+                }
+                finally {
+                    __disposeResources(env_3);
+                }
+            }
+            // Flush decoder at end
+            await this.flush();
+            while (!this.outputQueue.isClosed) {
+                const frame = await this.receive();
+                if (!frame)
+                    break;
+                await this.outputQueue.send(frame);
+            }
+        }
+        catch (error) {
+            // Propagate error to both queues so upstream and downstream know
+            const err = error instanceof Error ? error : new Error(String(error));
+            this.inputQueue?.closeWithError(err);
+            this.outputQueue?.closeWithError(err);
+        }
+        finally {
+            // Close output queue when done (if not already closed with error)
+            this.outputQueue?.close();
+        }
+    }
+    /**
+     * Send packet to input queue or flush the pipeline.
+     *
+     * When packet is provided, queues it for processing.
+     * When null is provided, triggers flush sequence:
+     * - Closes input queue
+     * - Waits for worker completion
+     * - Flushes decoder and sends remaining frames to output queue
+     * - Closes output queue
+     * - Waits for pipeTo task completion
+     * - Propagates flush to next component (if any)
+     *
+     * Used by scheduler system for pipeline control.
+     *
+     * @param packet - Packet to send, or null to flush
+     *
+     * @internal
+     */
+    async sendToQueue(packet) {
+        if (packet) {
+            await this.inputQueue.send(packet);
+        }
+        else {
+            // Close input queue to signal end of stream to worker
+            this.inputQueue.close();
+            // Wait for worker to finish processing all packets (if exists)
+            if (this.workerPromise) {
+                await this.workerPromise;
+            }
+            // Flush decoder at end
+            await this.flush();
+            // Send all flushed frames to output queue
+            while (true) {
+                const frame = await this.receive();
+                if (!frame)
+                    break;
+                await this.outputQueue.send(frame);
+            }
+            // Close output queue to signal end of stream to pipeTo() task
+            this.outputQueue.close();
+            // Wait for pipeTo() task to finish processing all frames (if exists)
+            if (this.pipeToPromise) {
+                await this.pipeToPromise;
+            }
+            // Then propagate flush to next component
+            if (this.nextComponent) {
+                await this.nextComponent.sendToQueue(null);
+            }
+        }
+    }
+    /**
+     * Receive frame from output queue.
+     *
+     * @returns Frame from output queue or null if closed
+     *
+     * @internal
+     */
+    async receiveFromQueue() {
+        return await this.outputQueue.receive();
+    }
+    /**
+     * Estimate video frame duration.
+     *
+     * Implements FFmpeg CLI's video_duration_estimate() logic.
+     * Uses multiple heuristics to determine frame duration when not explicitly available:
+     * 1. Frame duration from container (if reliable)
+     * 2. Duration from codec framerate
+     * 3. PTS difference between frames
+     * 4. Stream framerate
+     * 5. Last frame's estimated duration
+     *
+     * @param frame - Frame to estimate duration for
+     *
+     * @returns Estimated duration in frame's timebase units
+     *
+     * @internal
+     */
+    estimateVideoDuration(frame) {
+        // Difference between this and last frame's timestamps
+        const tsDiff = frame.pts !== AV_NOPTS_VALUE && this.lastFramePts !== AV_NOPTS_VALUE ? frame.pts - this.lastFramePts : -1n;
+        // Frame duration is unreliable (typically guessed by lavf) when it is equal
+        // to 1 and the actual duration of the last frame is more than 2x larger
+        const durationUnreliable = frame.duration === 1n && tsDiff > 2n * frame.duration;
+        // Prefer frame duration for containers with timestamps
+        if (frame.duration > 0n && !durationUnreliable) {
+            return frame.duration;
+        }
+        // Calculate codec duration from framerate
+        let codecDuration = 0n;
+        const framerate = this.codecContext.framerate;
+        if (framerate && framerate.den > 0 && framerate.num > 0) {
+            const fields = (frame.repeatPict ?? 0) + 2;
+            const fieldRate = avMulQ(framerate, { num: 2, den: 1 });
+            codecDuration = avRescaleQ(fields, avInvQ(fieldRate), frame.timeBase);
+        }
+        // When timestamps are available, repeat last frame's actual duration
+        if (tsDiff > 0n) {
+            return tsDiff;
+        }
+        // Try frame/codec duration
+        if (frame.duration > 0n) {
+            return frame.duration;
+        }
+        if (codecDuration > 0n) {
+            return codecDuration;
+        }
+        // Try stream framerate
+        const streamFramerate = this.stream.avgFrameRate ?? this.stream.rFrameRate;
+        if (streamFramerate && streamFramerate.num > 0 && streamFramerate.den > 0) {
+            const d = avRescaleQ(1, avInvQ(streamFramerate), frame.timeBase);
+            if (d > 0n) {
+                return d;
+            }
+        }
+        // Last resort is last frame's estimated duration, and 1
+        return this.lastFrameDurationEst > 0n ? this.lastFrameDurationEst : 1n;
+    }
+    /**
+     * Process video frame after decoding.
+     *
+     * Implements FFmpeg CLI's video_frame_process() logic.
+     * Handles:
+     * - Hardware frame transfer to software format
+     * - PTS assignment from best_effort_timestamp
+     * - PTS extrapolation when missing
+     * - Duration estimation
+     * - Frame tracking for next frame
+     *
+     * @param frame - Decoded frame to process
+     *
+     * @internal
+     */
+    processVideoFrame(frame) {
+        // Hardware acceleration retrieve
+        // If hwaccel_output_format is set and frame is in hardware format, transfer to software format
+        if (this.options.hwaccelOutputFormat !== undefined && frame.isHwFrame()) {
+            const swFrame = new Frame();
+            swFrame.alloc();
+            swFrame.format = this.options.hwaccelOutputFormat;
+            // Transfer data from hardware to software frame
+            const ret = frame.hwframeTransferDataSync(swFrame, 0);
+            if (ret < 0) {
+                swFrame.free();
+                if (this.options.exitOnError) {
+                    FFmpegError.throwIfError(ret, 'Failed to transfer hardware frame data');
+                }
+                return;
+            }
+            // Copy properties from hw frame to sw frame
+            swFrame.copyProps(frame);
+            // Replace frame with software version (unref old, move ref)
+            frame.unref();
+            const refRet = frame.ref(swFrame);
+            swFrame.free();
+            if (refRet < 0) {
+                if (this.options.exitOnError) {
+                    FFmpegError.throwIfError(refRet, 'Failed to reference software frame');
+                }
+                return;
+            }
+        }
+        // Set PTS from best_effort_timestamp
+        frame.pts = frame.bestEffortTimestamp;
+        // DECODER_FLAG_FRAMERATE_FORCED: Ignores all timestamps and generates constant framerate
+        if (this.options.forcedFramerate) {
+            frame.pts = AV_NOPTS_VALUE;
+            frame.duration = 1n;
+            const invFramerate = avInvQ(this.options.forcedFramerate);
+            frame.timeBase = new Rational(invFramerate.num, invFramerate.den);
+        }
+        // No timestamp available - extrapolate from previous frame duration
+        if (frame.pts === AV_NOPTS_VALUE) {
+            frame.pts = this.lastFramePts === AV_NOPTS_VALUE ? 0n : this.lastFramePts + this.lastFrameDurationEst;
+        }
+        // Update timestamp history
+        this.lastFrameDurationEst = this.estimateVideoDuration(frame);
+        this.lastFramePts = frame.pts;
+        this.lastFrameTb = new Rational(frame.timeBase.num, frame.timeBase.den);
+        // SAR override
+        if (this.options.sarOverride) {
+            frame.sampleAspectRatio = new Rational(this.options.sarOverride.num, this.options.sarOverride.den);
+        }
+        // Apply cropping
+        if (this.options.applyCropping) {
+            const ret = frame.applyCropping(1); // AV_FRAME_CROP_UNALIGNED = 1
+            if (ret < 0) {
+                if (this.options.exitOnError) {
+                    FFmpegError.throwIfError(ret, 'Error applying decoder cropping');
+                }
+            }
+        }
+    }
+    /**
+     * Audio samplerate update - handles sample rate changes.
+     *
+     * Based on FFmpeg's audio_samplerate_update().
+     *
+     * On sample rate change, chooses a new internal timebase that can represent
+     * timestamps from all sample rates seen so far. Uses GCD to find minimal
+     * common timebase, with fallback to LCM of common sample rates (28224000).
+     *
+     * Handles:
+     * - Sample rate change detection
+     * - Timebase calculation via GCD
+     * - Overflow detection and fallback
+     * - Frame timebase optimization
+     * - Rescaling existing timestamps
+     *
+     * @param frame - Audio frame to process
+     *
+     * @returns Timebase to use for this frame
+     *
+     * @internal
+     */
+    audioSamplerateUpdate(frame) {
+        const prev = this.lastFrameTb.den;
+        const sr = frame.sampleRate;
+        // No change - return existing timebase
+        if (frame.sampleRate === this.lastFrameSampleRate) {
+            return this.lastFrameTb;
+        }
+        // Calculate GCD to find minimal common timebase
+        const gcd = avGcd(prev, sr);
+        let tbNew;
+        // Check for overflow
+        if (Number(prev) / Number(gcd) >= INT_MAX / sr) {
+            // LCM of 192000, 44100 - represents all common sample rates
+            tbNew = { num: 1, den: 28224000 };
+        }
+        else {
+            // Normal case
+            tbNew = { num: 1, den: (Number(prev) / Number(gcd)) * sr };
+        }
+        // Keep frame's timebase if strictly better
+        // "Strictly better" means: num=1, den > tbNew.den, and tbNew.den divides den evenly
+        if (frame.timeBase.num === 1 && frame.timeBase.den > tbNew.den && frame.timeBase.den % tbNew.den === 0) {
+            tbNew = { num: frame.timeBase.num, den: frame.timeBase.den };
+        }
+        // Rescale existing timestamps to new timebase
+        if (this.lastFramePts !== AV_NOPTS_VALUE) {
+            this.lastFramePts = avRescaleQ(this.lastFramePts, this.lastFrameTb, tbNew);
+        }
+        this.lastFrameDurationEst = avRescaleQ(this.lastFrameDurationEst, this.lastFrameTb, tbNew);
+        this.lastFrameTb = new Rational(tbNew.num, tbNew.den);
+        this.lastFrameSampleRate = frame.sampleRate;
+        return this.lastFrameTb;
+    }
+    /**
+     * Audio timestamp processing - handles audio frame timestamps.
+     *
+     * Based on FFmpeg's audio_ts_process().
+     *
+     * Processes audio frame timestamps with:
+     * - Sample rate change handling via audioSamplerateUpdate()
+     * - PTS extrapolation when missing (pts_pred)
+     * - Gap detection (resets av_rescale_delta state)
+     * - Smooth timestamp conversion via av_rescale_delta
+     * - Duration calculation from nb_samples
+     * - Conversion to filtering timebase {1, sample_rate}
+     *
+     * Handles:
+     * - Dynamic sample rate changes
+     * - Missing timestamps (AV_NOPTS_VALUE)
+     * - Timestamp gaps/discontinuities
+     * - Sample-accurate timestamp generation
+     * - Frame duration calculation
+     *
+     * @param frame - Decoded audio frame to process
+     *
+     * @internal
+     */
+    processAudioFrame(frame) {
+        // Filtering timebase is always {1, sample_rate} for audio
+        const tbFilter = { num: 1, den: frame.sampleRate };
+        // Handle sample rate change - updates internal timebase
+        const tb = this.audioSamplerateUpdate(frame);
+        // Predict next PTS based on last frame + duration
+        const ptsPred = this.lastFramePts === AV_NOPTS_VALUE ? 0n : this.lastFramePts + this.lastFrameDurationEst;
+        // No timestamp - use predicted value
+        if (frame.pts === AV_NOPTS_VALUE) {
+            frame.pts = ptsPred;
+            frame.timeBase = new Rational(tb.num, tb.den);
+        }
+        else if (this.lastFramePts !== AV_NOPTS_VALUE) {
+            // Detect timestamp gap - compare with predicted timestamp
+            const ptsPredInFrameTb = avRescaleQRnd(ptsPred, tb, frame.timeBase, AV_ROUND_UP);
+            if (frame.pts > ptsPredInFrameTb) {
+                // Gap detected - reset rescale_delta state for smooth conversion
+                this.lastFilterInRescaleDelta = AV_NOPTS_VALUE;
+            }
+        }
+        // Smooth timestamp conversion with av_rescale_delta
+        // This maintains fractional sample accuracy across timebase conversions
+        // avRescaleDelta modifies lastRef in place (simulates C's &last_filter_in_rescale_delta)
+        const lastRef = { value: this.lastFilterInRescaleDelta };
+        frame.pts = avRescaleDelta(frame.timeBase, frame.pts, tb, frame.nbSamples, lastRef, tb);
+        this.lastFilterInRescaleDelta = lastRef.value;
+        // Update frame tracking
+        this.lastFramePts = frame.pts;
+        this.lastFrameDurationEst = avRescaleQ(BigInt(frame.nbSamples), tbFilter, tb);
+        // Convert to filtering timebase
+        frame.pts = avRescaleQ(frame.pts, tb, tbFilter);
+        frame.duration = BigInt(frame.nbSamples);
+        frame.timeBase = new Rational(tbFilter.num, tbFilter.den);
+    }
+    /**
+     * Dispose of decoder.
+     *
+     * Implements Disposable interface for automatic cleanup.
+     * Equivalent to calling close().
+     *
+     * @example
+     * ```typescript
+     * {
+     *   using decoder = await Decoder.create(stream);
+     *   // Decode frames...
+     * } // Automatically closed
+     * ```
+     *
+     * @see {@link close} For manual cleanup
+     */
+    [Symbol.dispose]() {
+        this.close();
+    }
+}
+//# sourceMappingURL=decoder.js.map

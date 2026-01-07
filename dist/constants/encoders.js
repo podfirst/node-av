@@ -1,0 +1,306 @@
+/**
+ * Auto-generated FFmpeg encoder constants
+ * Generated from FFmpeg source code (allcodecs.c)
+ * DO NOT EDIT MANUALLY
+ */
+// Brand symbol for type safety
+const __codec_brand = Symbol('__codec_brand');
+// ============================================================================
+// VIDEO ENCODERS (134 software, 44 hardware)
+// ============================================================================
+// Software video encoders
+export const FF_ENCODER_A64MULTI = 'a64multi';
+export const FF_ENCODER_A64MULTI5 = 'a64multi5';
+export const FF_ENCODER_ALIAS_PIX = 'alias_pix';
+export const FF_ENCODER_AMV = 'amv';
+export const FF_ENCODER_ANULL = 'anull';
+export const FF_ENCODER_APNG = 'apng';
+export const FF_ENCODER_ASV1 = 'asv1';
+export const FF_ENCODER_ASV2 = 'asv2';
+export const FF_ENCODER_AV1_VULKAN = 'av1_vulkan';
+export const FF_ENCODER_AVRP = 'avrp';
+export const FF_ENCODER_AVUI = 'avui';
+export const FF_ENCODER_BITPACKED = 'bitpacked';
+export const FF_ENCODER_BMP = 'bmp';
+export const FF_ENCODER_CFHD = 'cfhd';
+export const FF_ENCODER_CINEPAK = 'cinepak';
+export const FF_ENCODER_CLJR = 'cljr';
+export const FF_ENCODER_DNXHD = 'dnxhd';
+export const FF_ENCODER_DPX = 'dpx';
+export const FF_ENCODER_DVVIDEO = 'dvvideo';
+export const FF_ENCODER_DXV = 'dxv';
+export const FF_ENCODER_EXR = 'exr';
+export const FF_ENCODER_FFV1 = 'ffv1';
+export const FF_ENCODER_FFV1_VULKAN = 'ffv1_vulkan';
+export const FF_ENCODER_FFVHUFF = 'ffvhuff';
+export const FF_ENCODER_FITS = 'fits';
+export const FF_ENCODER_FLASHSV = 'flashsv';
+export const FF_ENCODER_FLASHSV2 = 'flashsv2';
+export const FF_ENCODER_FLV = 'flv';
+export const FF_ENCODER_GIF = 'gif';
+export const FF_ENCODER_H261 = 'h261';
+export const FF_ENCODER_H263 = 'h263';
+export const FF_ENCODER_H263P = 'h263p';
+export const FF_ENCODER_H264_OH = 'h264_oh';
+export const FF_ENCODER_H264_VULKAN = 'h264_vulkan';
+export const FF_ENCODER_HAP = 'hap';
+export const FF_ENCODER_HDR = 'hdr';
+export const FF_ENCODER_HEVC_OH = 'hevc_oh';
+export const FF_ENCODER_HEVC_VULKAN = 'hevc_vulkan';
+export const FF_ENCODER_HUFFYUV = 'huffyuv';
+export const FF_ENCODER_JPEG2000 = 'jpeg2000';
+export const FF_ENCODER_JPEGLS = 'jpegls';
+export const FF_ENCODER_LIBAOM_AV1 = 'libaom_av1';
+export const FF_ENCODER_LIBCODEC2 = 'libcodec2';
+export const FF_ENCODER_LIBGSM = 'libgsm';
+export const FF_ENCODER_LIBGSM_MS = 'libgsm_ms';
+export const FF_ENCODER_LIBILBC = 'libilbc';
+export const FF_ENCODER_LIBJXL = 'libjxl';
+export const FF_ENCODER_LIBJXL_ANIM = 'libjxl_anim';
+export const FF_ENCODER_LIBKVAZAAR = 'libkvazaar';
+export const FF_ENCODER_LIBLC3 = 'liblc3';
+export const FF_ENCODER_LIBOAPV = 'liboapv';
+export const FF_ENCODER_LIBOPENCORE_AMRNB = 'libopencore_amrnb';
+export const FF_ENCODER_LIBOPENH264 = 'libopenh264';
+export const FF_ENCODER_LIBOPENJPEG = 'libopenjpeg';
+export const FF_ENCODER_LIBRAV1E = 'librav1e';
+export const FF_ENCODER_LIBSHINE = 'libshine';
+export const FF_ENCODER_LIBSVTAV1 = 'libsvtav1';
+export const FF_ENCODER_LIBTHEORA = 'libtheora';
+export const FF_ENCODER_LIBTWOLAME = 'libtwolame';
+export const FF_ENCODER_LIBVO_AMRWBENC = 'libvo_amrwbenc';
+export const FF_ENCODER_LIBVPX_VP8 = 'libvpx_vp8';
+export const FF_ENCODER_LIBVPX_VP9 = 'libvpx_vp9';
+export const FF_ENCODER_LIBVVENC = 'libvvenc';
+export const FF_ENCODER_LIBWEBP = 'libwebp';
+export const FF_ENCODER_LIBWEBP_ANIM = 'libwebp_anim';
+export const FF_ENCODER_LIBX262 = 'libx262';
+export const FF_ENCODER_LIBX264 = 'libx264';
+export const FF_ENCODER_LIBX264RGB = 'libx264rgb';
+export const FF_ENCODER_LIBX265 = 'libx265';
+export const FF_ENCODER_LIBXAVS = 'libxavs';
+export const FF_ENCODER_LIBXAVS2 = 'libxavs2';
+export const FF_ENCODER_LIBXEVE = 'libxeve';
+export const FF_ENCODER_LIBXVID = 'libxvid';
+export const FF_ENCODER_LJPEG = 'ljpeg';
+export const FF_ENCODER_MAGICYUV = 'magicyuv';
+export const FF_ENCODER_MJPEG = 'mjpeg';
+export const FF_ENCODER_MOVTEXT = 'movtext';
+export const FF_ENCODER_MPEG1VIDEO = 'mpeg1video';
+export const FF_ENCODER_MPEG2VIDEO = 'mpeg2video';
+export const FF_ENCODER_MPEG4 = 'mpeg4';
+export const FF_ENCODER_MSMPEG4V2 = 'msmpeg4v2';
+export const FF_ENCODER_MSMPEG4V3 = 'msmpeg4v3';
+export const FF_ENCODER_MSRLE = 'msrle';
+export const FF_ENCODER_MSVIDEO1 = 'msvideo1';
+export const FF_ENCODER_PAM = 'pam';
+export const FF_ENCODER_PBM = 'pbm';
+export const FF_ENCODER_PCX = 'pcx';
+export const FF_ENCODER_PFM = 'pfm';
+export const FF_ENCODER_PGM = 'pgm';
+export const FF_ENCODER_PGMYUV = 'pgmyuv';
+export const FF_ENCODER_PHM = 'phm';
+export const FF_ENCODER_PNG = 'png';
+export const FF_ENCODER_PPM = 'ppm';
+export const FF_ENCODER_PRORES = 'prores';
+export const FF_ENCODER_PRORES_AW = 'prores_aw';
+export const FF_ENCODER_PRORES_KS = 'prores_ks';
+export const FF_ENCODER_QOI = 'qoi';
+export const FF_ENCODER_QTRLE = 'qtrle';
+export const FF_ENCODER_R10K = 'r10k';
+export const FF_ENCODER_R210 = 'r210';
+export const FF_ENCODER_RA_144 = 'ra_144';
+export const FF_ENCODER_RAWVIDEO = 'rawvideo';
+export const FF_ENCODER_ROQ = 'roq';
+export const FF_ENCODER_ROQ_DPCM = 'roq_dpcm';
+export const FF_ENCODER_RPZA = 'rpza';
+export const FF_ENCODER_RV10 = 'rv10';
+export const FF_ENCODER_RV20 = 'rv20';
+export const FF_ENCODER_SGI = 'sgi';
+export const FF_ENCODER_SMC = 'smc';
+export const FF_ENCODER_SNOW = 'snow';
+export const FF_ENCODER_SPEEDHQ = 'speedhq';
+export const FF_ENCODER_SUNRAST = 'sunrast';
+export const FF_ENCODER_SVQ1 = 'svq1';
+export const FF_ENCODER_TARGA = 'targa';
+export const FF_ENCODER_TIFF = 'tiff';
+export const FF_ENCODER_UTVIDEO = 'utvideo';
+export const FF_ENCODER_V210 = 'v210';
+export const FF_ENCODER_V308 = 'v308';
+export const FF_ENCODER_V408 = 'v408';
+export const FF_ENCODER_V410 = 'v410';
+export const FF_ENCODER_VBN = 'vbn';
+export const FF_ENCODER_VC2 = 'vc2';
+export const FF_ENCODER_VNULL = 'vnull';
+export const FF_ENCODER_WBMP = 'wbmp';
+export const FF_ENCODER_WMV1 = 'wmv1';
+export const FF_ENCODER_WMV2 = 'wmv2';
+export const FF_ENCODER_WRAPPED_AVFRAME = 'wrapped_avframe';
+export const FF_ENCODER_XBM = 'xbm';
+export const FF_ENCODER_XFACE = 'xface';
+export const FF_ENCODER_XWD = 'xwd';
+export const FF_ENCODER_Y41P = 'y41p';
+export const FF_ENCODER_YUV4 = 'yuv4';
+export const FF_ENCODER_ZLIB = 'zlib';
+export const FF_ENCODER_ZMBV = 'zmbv';
+// Hardware video encoders
+// AMD AMF
+export const FF_ENCODER_AV1_AMF = 'av1_amf';
+export const FF_ENCODER_H264_AMF = 'h264_amf';
+export const FF_ENCODER_HEVC_AMF = 'hevc_amf';
+// Android MediaCodec
+export const FF_ENCODER_AV1_MEDIACODEC = 'av1_mediacodec';
+export const FF_ENCODER_H264_MEDIACODEC = 'h264_mediacodec';
+export const FF_ENCODER_HEVC_MEDIACODEC = 'hevc_mediacodec';
+export const FF_ENCODER_MPEG4_MEDIACODEC = 'mpeg4_mediacodec';
+export const FF_ENCODER_VP8_MEDIACODEC = 'vp8_mediacodec';
+export const FF_ENCODER_VP9_MEDIACODEC = 'vp9_mediacodec';
+// Media Foundation
+export const FF_ENCODER_AV1_MF = 'av1_mf';
+export const FF_ENCODER_H264_MF = 'h264_mf';
+export const FF_ENCODER_HEVC_MF = 'hevc_mf';
+// NVIDIA NVENC
+export const FF_ENCODER_AV1_NVENC = 'av1_nvenc';
+export const FF_ENCODER_H264_NVENC = 'h264_nvenc';
+export const FF_ENCODER_HEVC_NVENC = 'hevc_nvenc';
+// Intel Quick Sync
+export const FF_ENCODER_AV1_QSV = 'av1_qsv';
+export const FF_ENCODER_H264_QSV = 'h264_qsv';
+export const FF_ENCODER_HEVC_QSV = 'hevc_qsv';
+export const FF_ENCODER_MJPEG_QSV = 'mjpeg_qsv';
+export const FF_ENCODER_MPEG2_QSV = 'mpeg2_qsv';
+export const FF_ENCODER_VP9_QSV = 'vp9_qsv';
+// VA-API
+export const FF_ENCODER_AV1_VAAPI = 'av1_vaapi';
+export const FF_ENCODER_H264_VAAPI = 'h264_vaapi';
+export const FF_ENCODER_HEVC_VAAPI = 'hevc_vaapi';
+export const FF_ENCODER_MJPEG_VAAPI = 'mjpeg_vaapi';
+export const FF_ENCODER_MPEG2_VAAPI = 'mpeg2_vaapi';
+export const FF_ENCODER_VP8_VAAPI = 'vp8_vaapi';
+export const FF_ENCODER_VP9_VAAPI = 'vp9_vaapi';
+// V4L2 M2M
+export const FF_ENCODER_H263_V4L2M2M = 'h263_v4l2m2m';
+export const FF_ENCODER_H264_V4L2M2M = 'h264_v4l2m2m';
+export const FF_ENCODER_HEVC_V4L2M2M = 'hevc_v4l2m2m';
+export const FF_ENCODER_MPEG4_V4L2M2M = 'mpeg4_v4l2m2m';
+export const FF_ENCODER_VP8_V4L2M2M = 'vp8_v4l2m2m';
+// Direct3D 12
+export const FF_ENCODER_H264_D3D12VA = 'h264_d3d12va';
+export const FF_ENCODER_HEVC_D3D12VA = 'hevc_d3d12va';
+// OpenMAX
+export const FF_ENCODER_H264_OMX = 'h264_omx';
+export const FF_ENCODER_MPEG4_OMX = 'mpeg4_omx';
+// Rockchip MPP
+export const FF_ENCODER_H264_RKMPP = 'h264_rkmpp';
+export const FF_ENCODER_HEVC_RKMPP = 'hevc_rkmpp';
+export const FF_ENCODER_MJPEG_RKMPP = 'mjpeg_rkmpp';
+// VideoToolbox (macOS)
+export const FF_ENCODER_H264_VIDEOTOOLBOX = 'h264_videotoolbox';
+export const FF_ENCODER_HEVC_VIDEOTOOLBOX = 'hevc_videotoolbox';
+export const FF_ENCODER_MJPEG_VIDEOTOOLBOX = 'mjpeg_videotoolbox';
+export const FF_ENCODER_PRORES_VIDEOTOOLBOX = 'prores_videotoolbox';
+// ============================================================================
+// AUDIO ENCODERS (78 software, 8 hardware)
+// ============================================================================
+// Software audio encoders
+export const FF_ENCODER_AAC = 'aac';
+export const FF_ENCODER_AC3 = 'ac3';
+export const FF_ENCODER_AC3_FIXED = 'ac3_fixed';
+export const FF_ENCODER_ADPCM_ADX = 'adpcm_adx';
+export const FF_ENCODER_ADPCM_ARGO = 'adpcm_argo';
+export const FF_ENCODER_ADPCM_G722 = 'adpcm_g722';
+export const FF_ENCODER_ADPCM_G726 = 'adpcm_g726';
+export const FF_ENCODER_ADPCM_G726LE = 'adpcm_g726le';
+export const FF_ENCODER_ADPCM_IMA_ALP = 'adpcm_ima_alp';
+export const FF_ENCODER_ADPCM_IMA_AMV = 'adpcm_ima_amv';
+export const FF_ENCODER_ADPCM_IMA_APM = 'adpcm_ima_apm';
+export const FF_ENCODER_ADPCM_IMA_QT = 'adpcm_ima_qt';
+export const FF_ENCODER_ADPCM_IMA_SSI = 'adpcm_ima_ssi';
+export const FF_ENCODER_ADPCM_IMA_WAV = 'adpcm_ima_wav';
+export const FF_ENCODER_ADPCM_IMA_WS = 'adpcm_ima_ws';
+export const FF_ENCODER_ADPCM_MS = 'adpcm_ms';
+export const FF_ENCODER_ADPCM_SWF = 'adpcm_swf';
+export const FF_ENCODER_ADPCM_YAMAHA = 'adpcm_yamaha';
+export const FF_ENCODER_ALAC = 'alac';
+export const FF_ENCODER_APTX = 'aptx';
+export const FF_ENCODER_APTX_HD = 'aptx_hd';
+export const FF_ENCODER_COMFORTNOISE = 'comfortnoise';
+export const FF_ENCODER_DCA = 'dca';
+export const FF_ENCODER_DFPWM = 'dfpwm';
+export const FF_ENCODER_EAC3 = 'eac3';
+export const FF_ENCODER_FLAC = 'flac';
+export const FF_ENCODER_G723_1 = 'g723_1';
+export const FF_ENCODER_LIBFDK_AAC = 'libfdk_aac';
+export const FF_ENCODER_LIBMP3LAME = 'libmp3lame';
+export const FF_ENCODER_LIBOPUS = 'libopus';
+export const FF_ENCODER_LIBSPEEX = 'libspeex';
+export const FF_ENCODER_LIBVORBIS = 'libvorbis';
+export const FF_ENCODER_MLP = 'mlp';
+export const FF_ENCODER_MP2 = 'mp2';
+export const FF_ENCODER_MP2FIXED = 'mp2fixed';
+export const FF_ENCODER_NELLYMOSER = 'nellymoser';
+export const FF_ENCODER_OPUS = 'opus';
+export const FF_ENCODER_PCM_ALAW = 'pcm_alaw';
+export const FF_ENCODER_PCM_BLURAY = 'pcm_bluray';
+export const FF_ENCODER_PCM_DVD = 'pcm_dvd';
+export const FF_ENCODER_PCM_F32BE = 'pcm_f32be';
+export const FF_ENCODER_PCM_F32LE = 'pcm_f32le';
+export const FF_ENCODER_PCM_F64BE = 'pcm_f64be';
+export const FF_ENCODER_PCM_F64LE = 'pcm_f64le';
+export const FF_ENCODER_PCM_MULAW = 'pcm_mulaw';
+export const FF_ENCODER_PCM_S16BE = 'pcm_s16be';
+export const FF_ENCODER_PCM_S16BE_PLANAR = 'pcm_s16be_planar';
+export const FF_ENCODER_PCM_S16LE = 'pcm_s16le';
+export const FF_ENCODER_PCM_S16LE_PLANAR = 'pcm_s16le_planar';
+export const FF_ENCODER_PCM_S24BE = 'pcm_s24be';
+export const FF_ENCODER_PCM_S24DAUD = 'pcm_s24daud';
+export const FF_ENCODER_PCM_S24LE = 'pcm_s24le';
+export const FF_ENCODER_PCM_S24LE_PLANAR = 'pcm_s24le_planar';
+export const FF_ENCODER_PCM_S32BE = 'pcm_s32be';
+export const FF_ENCODER_PCM_S32LE = 'pcm_s32le';
+export const FF_ENCODER_PCM_S32LE_PLANAR = 'pcm_s32le_planar';
+export const FF_ENCODER_PCM_S64BE = 'pcm_s64be';
+export const FF_ENCODER_PCM_S64LE = 'pcm_s64le';
+export const FF_ENCODER_PCM_S8 = 'pcm_s8';
+export const FF_ENCODER_PCM_S8_PLANAR = 'pcm_s8_planar';
+export const FF_ENCODER_PCM_U16BE = 'pcm_u16be';
+export const FF_ENCODER_PCM_U16LE = 'pcm_u16le';
+export const FF_ENCODER_PCM_U24BE = 'pcm_u24be';
+export const FF_ENCODER_PCM_U24LE = 'pcm_u24le';
+export const FF_ENCODER_PCM_U32BE = 'pcm_u32be';
+export const FF_ENCODER_PCM_U32LE = 'pcm_u32le';
+export const FF_ENCODER_PCM_U8 = 'pcm_u8';
+export const FF_ENCODER_PCM_VIDC = 'pcm_vidc';
+export const FF_ENCODER_S302M = 's302m';
+export const FF_ENCODER_SBC = 'sbc';
+export const FF_ENCODER_SONIC = 'sonic';
+export const FF_ENCODER_SONIC_LS = 'sonic_ls';
+export const FF_ENCODER_TRUEHD = 'truehd';
+export const FF_ENCODER_TTA = 'tta';
+export const FF_ENCODER_VORBIS = 'vorbis';
+export const FF_ENCODER_WAVPACK = 'wavpack';
+export const FF_ENCODER_WMAV1 = 'wmav1';
+export const FF_ENCODER_WMAV2 = 'wmav2';
+// Hardware audio encoders
+export const FF_ENCODER_AAC_AT = 'aac_at';
+export const FF_ENCODER_AAC_MF = 'aac_mf';
+export const FF_ENCODER_AC3_MF = 'ac3_mf';
+export const FF_ENCODER_ALAC_AT = 'alac_at';
+export const FF_ENCODER_ILBC_AT = 'ilbc_at';
+export const FF_ENCODER_MP3_MF = 'mp3_mf';
+export const FF_ENCODER_PCM_ALAW_AT = 'pcm_alaw_at';
+export const FF_ENCODER_PCM_MULAW_AT = 'pcm_mulaw_at';
+// ============================================================================
+// SUBTITLE ENCODERS (10 encoders)
+// ============================================================================
+export const FF_ENCODER_ASS = 'ass';
+export const FF_ENCODER_DVBSUB = 'dvbsub';
+export const FF_ENCODER_DVDSUB = 'dvdsub';
+export const FF_ENCODER_SRT = 'srt';
+export const FF_ENCODER_SSA = 'ssa';
+export const FF_ENCODER_SUBRIP = 'subrip';
+export const FF_ENCODER_TEXT = 'text';
+export const FF_ENCODER_TTML = 'ttml';
+export const FF_ENCODER_WEBVTT = 'webvtt';
+export const FF_ENCODER_XSUB = 'xsub';
+//# sourceMappingURL=encoders.js.map
