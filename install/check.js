@@ -114,9 +114,10 @@ const buildFromSource = () => {
 
 (async () => {
   try {
-    // PodFirst: Skip install script when using git reference (postinstall will download binary)
-    if (process.env.SKIP_BINARY === 'true' || process.env.npm_package_resolved?.includes('github:')) {
-      log('Skipping install check (binary will be downloaded in postinstall)');
+    // PodFirst: Always skip native build - postinstall downloads binary from GitHub releases
+    // This fork uses prebuilt binaries exclusively (no npm packages, no source builds)
+    if (process.env.npm_config_build_from_source !== 'true') {
+      log('Skipping install check (binary will be downloaded from GitHub releases in postinstall)');
       return;
     }
 
