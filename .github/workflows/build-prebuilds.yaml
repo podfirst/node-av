@@ -99,7 +99,10 @@ jobs:
         run: |
           echo "Applying PodFirst patches for input device support..."
           cd externals/jellyfin-ffmpeg
-          git apply ../../patches/enable-indevs.patch
+          git apply --ignore-whitespace --ignore-space-change ../../patches/enable-indevs.patch || {
+            echo "Standard apply failed, trying with --3way..."
+            git apply --3way ../../patches/enable-indevs.patch
+          }
           echo "✓ Patch applied successfully"
           grep -A5 "PodFirst:" builder/variants/defaults-gpl.sh || true
 
@@ -563,7 +566,10 @@ jobs:
         run: |
           echo "Applying PodFirst patches for input device support..."
           cd externals/jellyfin-ffmpeg
-          git apply ../../patches/enable-indevs.patch
+          git apply --ignore-whitespace --ignore-space-change ../../patches/enable-indevs.patch || {
+            echo "Standard apply failed, trying with --3way..."
+            git apply --3way ../../patches/enable-indevs.patch
+          }
           echo "✓ Patch applied successfully"
           grep -A5 "PodFirst:" builder/variants/defaults-gpl.sh || true
 
@@ -834,7 +840,10 @@ jobs:
         run: |
           echo "Applying PodFirst patches for input device support..."
           cd externals/jellyfin-ffmpeg
-          git apply ../../patches/enable-indevs.patch
+          git apply --ignore-whitespace --ignore-space-change ../../patches/enable-indevs.patch || {
+            echo "Standard apply failed, trying with --3way..."
+            git apply --3way ../../patches/enable-indevs.patch
+          }
           echo "✓ Patch applied successfully"
           grep -A5 "PodFirst:" builder/variants/defaults-gpl.sh || true
 
