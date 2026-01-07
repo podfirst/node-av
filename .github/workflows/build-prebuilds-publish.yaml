@@ -213,21 +213,19 @@ jobs:
           # Output the release notes
           cat release_notes.md
 
-      - name: Publish to NPM
-        run: |
-          # Publish platform packages
-          for pkg_dir in packages/*/; do
-            if [ -d "$pkg_dir" ]; then
-              cd "$pkg_dir"
-              npm publish --access public
-              cd -
-            fi
-          done
-
-          # Publish main package
-          npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # PodFirst: Skip NPM publish - using GitHub releases only
+      # - name: Publish to NPM
+      #   run: |
+      #     for pkg_dir in packages/*/; do
+      #       if [ -d "$pkg_dir" ]; then
+      #         cd "$pkg_dir"
+      #         npm publish --access public
+      #         cd -
+      #       fi
+      #     done
+      #     npm publish --access public
+      #   env:
+      #     NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
