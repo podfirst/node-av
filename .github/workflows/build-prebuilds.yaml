@@ -45,6 +45,8 @@ on:
 
 jobs:
   build_windows_mingw:
+    # PodFirst: Disabled MinGW builds - MSVC is sufficient for Windows
+    if: false
     name: "Windows MinGW ${{ matrix.os.arch }}"
     runs-on: ${{ matrix.os.runner }}
     strategy:
