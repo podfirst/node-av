@@ -43,6 +43,10 @@ export declare class AudioFrameBuffer implements Disposable {
     private frameSize;
     private nextPts;
     private firstFramePts;
+    private bytesPerSample;
+    private channels;
+    private isPlanar;
+    private scratchBuffer;
     /**
      * @param fifo - Underlying AudioFifo instance
      *

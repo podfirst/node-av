@@ -1,5 +1,6 @@
 import { AudioFifo } from '../lib/audio-fifo.js';
 import { Frame } from '../lib/frame.js';
+import { SampleFormatUtils } from './utilities/sample-format.js';
 
 import type { AVSampleFormat } from '../constants/index.js';
 import type { ChannelLayout } from '../lib/types.js';
@@ -46,6 +47,11 @@ export class AudioFrameBuffer implements Disposable {
   private frameSize: number;
   private nextPts = 0n;
   private firstFramePts: bigint | null = null;
+  // Cached format info for Electron-safe buffer operations
+  private bytesPerSample: number;
+  private channels: number;
+  private isPlanar: boolean;
+  private scratchBuffer: Buffer;
 
   /**
    * @param fifo - Underlying AudioFifo instance
@@ -70,6 +76,14 @@ export class AudioFrameBuffer implements Disposable {
     this.frame.sampleRate = sampleRate;
     this.frame.channelLayout = channelLayout;
     this.frame.getBuffer(0); // Allocate buffer once
+
+    // Cache format info for Electron-safe buffer operations (avoids frame.data external buffers)
+    this.bytesPerSample = SampleFormatUtils.getBytesPerSample(sampleFormat);
+    this.channels = channelLayout.nbChannels;
+    this.isPlanar = SampleFormatUtils.isPlanar(sampleFormat);
+    // Pre-allocate scratch buffer for pull operations
+    const frameBytes = frameSize * this.bytesPerSample * this.channels;
+    this.scratchBuffer = Buffer.alloc(frameBytes);
   }
 
   /**
@@ -161,8 +175,24 @@ export class AudioFrameBuffer implements Disposable {
       this.nextPts = 0n;
     }
 
-    // Write frame data to FIFO
-    await this.fifo.write(frame.data as Buffer | Buffer[], frame.nbSamples);
+    // Use toBuffer() instead of frame.data to avoid external buffers (Electron compatibility)
+    // toBuffer() copies to Node.js-owned memory, which works in all environments
+    const buffer = frame.toBuffer();
+    const bytesPerSample = SampleFormatUtils.getBytesPerSample(frame.format as AVSampleFormat);
+    const channels = frame.channelLayout.nbChannels;
+    const isPlanar = SampleFormatUtils.isPlanar(frame.format as AVSampleFormat);
+
+    if (isPlanar) {
+      // For planar formats, split the contiguous buffer into separate channel planes
+      const planeBytes = frame.nbSamples * bytesPerSample;
+      const planes = Array.from({ length: channels }, (_, ch) =>
+        buffer.subarray(ch * planeBytes, (ch + 1) * planeBytes)
+      );
+      await this.fifo.write(planes, frame.nbSamples);
+    } else {
+      // For interleaved formats, pass the buffer directly
+      await this.fifo.write(buffer, frame.nbSamples);
+    }
   }
 
   /**
@@ -193,8 +223,24 @@ export class AudioFrameBuffer implements Disposable {
       this.nextPts = 0n;
     }
 
-    // Write frame data to FIFO
-    this.fifo.writeSync(frame.data as Buffer | Buffer[], frame.nbSamples);
+    // Use toBuffer() instead of frame.data to avoid external buffers (Electron compatibility)
+    // toBuffer() copies to Node.js-owned memory, which works in all environments
+    const buffer = frame.toBuffer();
+    const bytesPerSample = SampleFormatUtils.getBytesPerSample(frame.format as AVSampleFormat);
+    const channels = frame.channelLayout.nbChannels;
+    const isPlanar = SampleFormatUtils.isPlanar(frame.format as AVSampleFormat);
+
+    if (isPlanar) {
+      // For planar formats, split the contiguous buffer into separate channel planes
+      const planeBytes = frame.nbSamples * bytesPerSample;
+      const planes = Array.from({ length: channels }, (_, ch) =>
+        buffer.subarray(ch * planeBytes, (ch + 1) * planeBytes)
+      );
+      this.fifo.writeSync(planes, frame.nbSamples);
+    } else {
+      // For interleaved formats, pass the buffer directly
+      this.fifo.writeSync(buffer, frame.nbSamples);
+    }
   }
 
   /**
@@ -226,8 +272,21 @@ export class AudioFrameBuffer implements Disposable {
     // Update PTS
     this.frame.pts = this.nextPts;
 
-    // Read samples from FIFO into reusable frame
-    await this.fifo.read(this.frame.data as Buffer | Buffer[], this.frameSize);
+    // Read samples from FIFO into scratch buffer, then copy to frame
+    // This avoids using frame.data which creates external buffers (fails in Electron)
+    if (this.isPlanar) {
+      // For planar formats, read into separate plane buffers
+      const planeBytes = this.frameSize * this.bytesPerSample;
+      const planes = Array.from({ length: this.channels }, (_, ch) =>
+        this.scratchBuffer.subarray(ch * planeBytes, (ch + 1) * planeBytes)
+      );
+      await this.fifo.read(planes, this.frameSize);
+    } else {
+      // For interleaved formats, read directly into scratch buffer
+      await this.fifo.read(this.scratchBuffer, this.frameSize);
+    }
+    // Copy scratch buffer into frame's internal buffers
+    this.frame.fromBuffer(this.scratchBuffer);
 
     // Update PTS for next frame
     this.nextPts += BigInt(this.frameSize);
@@ -270,8 +329,21 @@ export class AudioFrameBuffer implements Disposable {
     // Update PTS
     this.frame.pts = this.nextPts;
 
-    // Read samples from FIFO into reusable frame
-    this.fifo.readSync(this.frame.data as Buffer | Buffer[], this.frameSize);
+    // Read samples from FIFO into scratch buffer, then copy to frame
+    // This avoids using frame.data which creates external buffers (fails in Electron)
+    if (this.isPlanar) {
+      // For planar formats, read into separate plane buffers
+      const planeBytes = this.frameSize * this.bytesPerSample;
+      const planes = Array.from({ length: this.channels }, (_, ch) =>
+        this.scratchBuffer.subarray(ch * planeBytes, (ch + 1) * planeBytes)
+      );
+      this.fifo.readSync(planes, this.frameSize);
+    } else {
+      // For interleaved formats, read directly into scratch buffer
+      this.fifo.readSync(this.scratchBuffer, this.frameSize);
+    }
+    // Copy scratch buffer into frame's internal buffers
+    this.frame.fromBuffer(this.scratchBuffer);
 
     // Update PTS for next frame
     this.nextPts += BigInt(this.frameSize);

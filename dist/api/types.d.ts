@@ -174,6 +174,19 @@ export interface DemuxerOptions {
      * These are passed directly to avformat_open_input().
      */
     options?: Record<string, string | number | boolean | undefined | null>;
+    /**
+     * Use blocking I/O mode for reading packets.
+     *
+     * When true, readFrame() will block and wait for data instead of returning
+     * immediately when no data is available. This is required for live device
+     * capture (avfoundation, v4l2, dshow) where frames arrive in real-time.
+     *
+     * When false (default), non-blocking mode is used which is better for
+     * file-based inputs where data is always available.
+     *
+     * @default false
+     */
+    blocking?: boolean;
 }
 /**
  * Options for Muxer creation.

@@ -357,7 +357,11 @@ export class Demuxer {
                 const resolvedInput = isUrl ? input : resolve(input);
                 const ret = await formatContext.openInput(resolvedInput, inputFormat, optionsDict);
                 FFmpegError.throwIfError(ret, 'Failed to open input');
-                formatContext.setFlags(AVFMT_FLAG_NONBLOCK);
+                // Use non-blocking I/O by default for file inputs (fast reads)
+                // For live device capture, blocking mode should be used (options.blocking = true)
+                if (!options.blocking) {
+                    formatContext.setFlags(AVFMT_FLAG_NONBLOCK);
+                }
             }
             else if (Buffer.isBuffer(input)) {
                 // Validate buffer is not empty
@@ -425,6 +429,7 @@ export class Demuxer {
                 dtsErrorThreshold: options.dtsErrorThreshold ?? DTS_ERROR_THRESHOLD,
                 copyTs: options.copyTs ?? false,
                 options: options.options ?? {},
+                blocking: options.blocking ?? false,
             };
             return new Demuxer(formatContext, fullOptions, ioContext);
         }
@@ -501,7 +506,11 @@ export class Demuxer {
                 const resolvedInput = isUrl ? input : resolve(input);
                 const ret = formatContext.openInputSync(resolvedInput, inputFormat, optionsDict);
                 FFmpegError.throwIfError(ret, 'Failed to open input');
-                formatContext.setFlags(AVFMT_FLAG_NONBLOCK);
+                // Use non-blocking I/O by default for file inputs (fast reads)
+                // For live device capture, blocking mode should be used (options.blocking = true)
+                if (!options.blocking) {
+                    formatContext.setFlags(AVFMT_FLAG_NONBLOCK);
+                }
             }
             else if (Buffer.isBuffer(input)) {
                 // Validate buffer is not empty
@@ -557,6 +566,7 @@ export class Demuxer {
                 dtsErrorThreshold: options.dtsErrorThreshold ?? DTS_ERROR_THRESHOLD,
                 copyTs: options.copyTs ?? false,
                 options: options.options ?? {},
+                blocking: options.blocking ?? false,
             };
             return new Demuxer(formatContext, fullOptions, ioContext);
         }
@@ -1444,7 +1454,15 @@ export class Demuxer {
                         break;
                     }
                     if (ret < 0) {
-                        // End of stream - notify all waiting consumers
+                        // EAGAIN (-11 on most systems, -35 on macOS) means no data available yet
+                        // This can happen with live device capture - retry instead of treating as EOF
+                        const EAGAIN_POSIX = -11;
+                        const EAGAIN_MACOS = -35;
+                        if (ret === EAGAIN_POSIX || ret === EAGAIN_MACOS) {
+                            await new Promise(resolve => setTimeout(resolve, 1));
+                            continue;
+                        }
+                        // Actual end of stream - notify all waiting consumers
                         this.demuxEof = true;
                         for (const resolve of this.queueResolvers.values()) {
                             resolve();
@@ -1522,15 +1540,21 @@ export class Demuxer {
      * @internal
      */
     async stopDemuxThread() {
-        if (!this.demuxThreadActive) {
-            return;
-        }
         this.demuxThreadActive = false;
+        this.demuxEof = true;
+        // Wake up any waiting generators
+        for (const resolve of this.queueResolvers.values()) {
+            resolve();
+        }
+        this.queueResolvers.clear();
+        // Wait for demux thread with timeout
         if (this.demuxThread) {
-            await this.demuxThread;
+            const threadPromise = this.demuxThread;
+            const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 2000));
+            await Promise.race([threadPromise, timeoutPromise]);
             this.demuxThread = null;
         }
-        // Clear all queues and resolvers
+        // Clear all queues
         for (const queue of this.packetQueues.values()) {
             for (const packet of queue) {
                 packet.free();
@@ -1538,8 +1562,6 @@ export class Demuxer {
             queue.length = 0;
         }
         this.packetQueues.clear();
-        this.queueResolvers.clear();
-        this.demuxEof = false;
     }
     /**
      * Get or create stream state for timestamp processing.
@@ -1803,15 +1825,37 @@ export class Demuxer {
             return;
         }
         this.isClosed = true;
-        // Clear pb reference FIRST to prevent use-after-free
+        // Signal demux thread to stop FIRST
+        this.demuxThreadActive = false;
+        // Set EOF flag so generators know to exit
+        this.demuxEof = true;
+        // Wake up all waiting generators BEFORE closing format context
+        // This ensures generators can exit cleanly even if readFrame() is blocking
+        for (const resolve of this.queueResolvers.values()) {
+            resolve();
+        }
+        this.queueResolvers.clear();
+        // Clear pb reference to prevent use-after-free
         if (this.ioContext) {
             this.formatContext.pb = null;
         }
-        // IMPORTANT: Close FormatContext BEFORE stopping demux thread
-        // This interrupts any blocking read() calls in the demux loop
+        // Close FormatContext - this may interrupt blocking readFrame()
         await this.formatContext.closeInput();
-        // Safely stop the demux thread
-        await this.stopDemuxThread();
+        // Wait for demux thread with timeout to avoid hanging on blocked reads
+        if (this.demuxThread) {
+            const threadPromise = this.demuxThread;
+            const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 2000));
+            await Promise.race([threadPromise, timeoutPromise]);
+            this.demuxThread = null;
+        }
+        // Clean up packet queues
+        for (const queue of this.packetQueues.values()) {
+            for (const packet of queue) {
+                packet.free();
+            }
+            queue.length = 0;
+        }
+        this.packetQueues.clear();
         // NOW we can safely free the IOContext
         if (this.ioContext) {
             this.ioContext.freeContext();
