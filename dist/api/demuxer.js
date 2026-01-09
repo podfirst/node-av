@@ -351,10 +351,21 @@ export class Demuxer {
                 }
             }
             if (typeof input === 'string') {
-                // File path or URL - resolve relative paths to absolute
-                // Check if it's a URL (starts with protocol://) or a file path
+                // File path or URL - resolve relative paths to absolute.
+                // For FFmpeg *device* inputs (avfoundation, dshow, etc) the "filename" is a device spec
+                // like "0:1" or "video=Name:audio=Name" and must NOT be path-resolved.
                 const isUrl = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(input);
-                const resolvedInput = isUrl ? input : resolve(input);
+                const noResolveFormats = new Set([
+                    'avfoundation',
+                    'dshow',
+                    'decklink',
+                    'v4l2',
+                    'alsa',
+                    'pulse',
+                    'lavfi',
+                ]);
+                const shouldResolve = !isUrl && !(options.format && noResolveFormats.has(options.format));
+                const resolvedInput = shouldResolve ? resolve(input) : input;
                 const ret = await formatContext.openInput(resolvedInput, inputFormat, optionsDict);
                 FFmpegError.throwIfError(ret, 'Failed to open input');
                 // Use non-blocking I/O by default for file inputs (fast reads)
@@ -500,10 +511,21 @@ export class Demuxer {
                 }
             }
             if (typeof input === 'string') {
-                // File path or URL - resolve relative paths to absolute
-                // Check if it's a URL (starts with protocol://) or a file path
+                // File path or URL - resolve relative paths to absolute.
+                // For FFmpeg *device* inputs (avfoundation, dshow, etc) the "filename" is a device spec
+                // like "0:1" or "video=Name:audio=Name" and must NOT be path-resolved.
                 const isUrl = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(input);
-                const resolvedInput = isUrl ? input : resolve(input);
+                const noResolveFormats = new Set([
+                    'avfoundation',
+                    'dshow',
+                    'decklink',
+                    'v4l2',
+                    'alsa',
+                    'pulse',
+                    'lavfi',
+                ]);
+                const shouldResolve = !isUrl && !(options.format && noResolveFormats.has(options.format));
+                const resolvedInput = shouldResolve ? resolve(input) : input;
                 const ret = formatContext.openInputSync(resolvedInput, inputFormat, optionsDict);
                 FFmpegError.throwIfError(ret, 'Failed to open input');
                 // Use non-blocking I/O by default for file inputs (fast reads)

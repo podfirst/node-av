@@ -254,7 +254,14 @@ export class WebRTCStream {
      */
     async setOffer(offerSdp) {
         const codecs = this.getCodecs();
-        const videoConfig = codecs.video;
+        // Use detected codecs or default to H.264/Opus for device capture
+        // (input isn't opened until start(), so codecs may be undefined)
+        const videoConfig = codecs.video ?? {
+            mimeType: 'video/H264',
+            clockRate: 90000,
+            payloadType: 96,
+            codecId: AV_CODEC_ID_H264,
+        };
         delete videoConfig.codecId;
         const audioConfig = codecs.audio ?? {
             mimeType: 'audio/opus',
