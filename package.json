@@ -1,6 +1,6 @@
 {
   "name": "node-av",
-  "version": "5.0.6",
+  "version": "5.0.7",
   "description": "FFmpeg bindings for Node.js",
   "author": "seydx (https://github.com/seydx/node-av)",
   "type": "module",
