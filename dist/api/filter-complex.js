@@ -1354,7 +1354,9 @@ export class FilterComplexAPI {
         else {
             // Audio: create with args string
             const formatName = avGetSampleFmtName(frame.format);
-            const channelLayout = frame.channelLayout.mask === 0n ? 'stereo' : frame.channelLayout.mask.toString();
+            const channelLayout = frame.channelLayout.mask === 0n
+                ? `${frame.channelLayout.nbChannels}c`
+                : frame.channelLayout.mask.toString();
             const args = `time_base=${timeBase.num}/${timeBase.den}:sample_rate=${frame.sampleRate}:sample_fmt=${formatName}:channel_layout=${channelLayout}`;
             buffersrcCtx = this.graph.createFilter(bufferFilter, `in_${label}`, args);
             if (!buffersrcCtx) {
