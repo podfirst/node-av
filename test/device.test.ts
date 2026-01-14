@@ -10,27 +10,27 @@ describe('Device', () => {
       assert.ok(['avfoundation', 'dshow', 'v4l2', 'unknown'].includes(platform));
     });
 
-    it('should return avfoundation on macOS', function () {
+    it('should return avfoundation on macOS', (t) => {
       if (process.platform !== 'darwin') {
-        this.skip();
+        t.skip();
         return;
       }
       const platform = Device.getPlatform();
       assert.equal(platform, 'avfoundation');
     });
 
-    it('should return dshow on Windows', function () {
+    it('should return dshow on Windows', (t) => {
       if (process.platform !== 'win32') {
-        this.skip();
+        t.skip();
         return;
       }
       const platform = Device.getPlatform();
       assert.equal(platform, 'dshow');
     });
 
-    it('should return v4l2 on Linux', function () {
+    it('should return v4l2 on Linux', (t) => {
       if (process.platform !== 'linux') {
-        this.skip();
+        t.skip();
         return;
       }
       const platform = Device.getPlatform();
@@ -89,10 +89,10 @@ describe('Device', () => {
   });
 
   describe('probeCapabilities', () => {
-    it('should return capabilities for first video device', function () {
+    it('should return capabilities for first video device', (t) => {
       const devices = Device.listDevices('video');
       if (devices.length === 0) {
-        this.skip();
+        t.skip();
         return;
       }
 
@@ -104,10 +104,10 @@ describe('Device', () => {
       assert.ok(Array.isArray(caps.videoCodecs), 'videoCodecs must be an array');
     });
 
-    it('should return valid VideoMode objects', function () {
+    it('should return valid VideoMode objects', (t) => {
       const devices = Device.listDevices('video');
       if (devices.length === 0) {
-        this.skip();
+        t.skip();
         return;
       }
 
@@ -130,10 +130,10 @@ describe('Device', () => {
       }
     });
 
-    it('should return pixel format strings', function () {
+    it('should return pixel format strings', (t) => {
       const devices = Device.listDevices('video');
       if (devices.length === 0) {
-        this.skip();
+        t.skip();
         return;
       }
 
@@ -166,10 +166,10 @@ describe('Device', () => {
   });
 
   describe('probeCapabilitiesAsync', () => {
-    it('should return capabilities asynchronously', async function () {
+    it('should return capabilities asynchronously', async (t) => {
       const devices = Device.listDevices('video');
       if (devices.length === 0) {
-        this.skip();
+        t.skip();
         return;
       }
 
@@ -201,10 +201,10 @@ describe('Device', () => {
   });
 
   describe('findById', () => {
-    it('should find device by ID', function () {
+    it('should find device by ID', (t) => {
       const devices = Device.listDevices();
       if (devices.length === 0) {
-        this.skip();
+        t.skip();
         return;
       }
 
@@ -220,10 +220,10 @@ describe('Device', () => {
   });
 
   describe('findByName', () => {
-    it('should find device by partial name match', function () {
+    it('should find device by partial name match', (t) => {
       const devices = Device.listDevices();
       if (devices.length === 0) {
-        this.skip();
+        t.skip();
         return;
       }
 
@@ -233,10 +233,10 @@ describe('Device', () => {
       assert.ok(device);
     });
 
-    it('should be case-insensitive', function () {
+    it('should be case-insensitive', (t) => {
       const devices = Device.listDevices();
       if (devices.length === 0) {
-        this.skip();
+        t.skip();
         return;
       }
 
