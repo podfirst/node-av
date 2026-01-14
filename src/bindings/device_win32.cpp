@@ -7,12 +7,18 @@
 #endif
 
 #include <windows.h>
+#include <initguid.h>  // Must come BEFORE dshow.h to define GUIDs
 #include <dshow.h>
 #include <dvdmedia.h>  // For VIDEOINFOHEADER2, FORMAT_VideoInfo2
-#include <initguid.h>
+#include <uuids.h>     // DirectShow media type GUIDs
 #include <map>
 #include <set>
 #include <stdexcept>
+
+// Define MEDIASUBTYPE_I420 if not available (common YUV420 format)
+#ifndef MEDIASUBTYPE_I420
+DEFINE_GUID(MEDIASUBTYPE_I420, 0x30323449, 0x0000, 0x0010, 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71);
+#endif
 
 #pragma comment(lib, "strmiids.lib")
 #pragma comment(lib, "ole32.lib")
