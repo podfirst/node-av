@@ -61,6 +61,7 @@
                 "src/bindings/bitstream_filter_context_sync.cc",
                 "src/bindings/option.cc",
                 "src/bindings/sync_queue.cc",
+                "src/bindings/device.cc",
                 "externals/jellyfin-ffmpeg/fftools/sync_queue.c",
             ],
             "include_dirs": [
@@ -76,6 +77,9 @@
                 [
                     "OS=='mac'",
                     {
+                        "sources": [
+                            "src/bindings/device_darwin.mm",
+                        ],
                         "include_dirs": [
                             "/opt/ffbuild/prefix/include",
                         ],
@@ -181,6 +185,9 @@
                 [
                     "OS=='linux'",
                     {
+                        "sources": [
+                            "src/bindings/device_linux.cpp",
+                        ],
                         "include_dirs": [
                             "/opt/ffbuild/prefix/include",
                         ],

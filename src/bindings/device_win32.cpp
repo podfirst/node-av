@@ -8,6 +8,7 @@
 
 #include <windows.h>
 #include <dshow.h>
+#include <dvdmedia.h>  // For VIDEOINFOHEADER2, FORMAT_VideoInfo2
 #include <initguid.h>
 #include <map>
 #include <set>
