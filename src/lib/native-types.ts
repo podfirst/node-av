@@ -1023,3 +1023,85 @@ export interface NativeSyncQueue extends Disposable {
 export interface NativeWrapper<T> {
   getNative(): T;
 }
+
+// ============================================================================
+// Device Enumeration Types
+// ============================================================================
+
+/**
+ * Supported capture platforms
+ * @internal
+ */
+export type NativeDevicePlatform = 'avfoundation' | 'dshow' | 'v4l2' | 'unknown';
+
+/**
+ * Media types a device can capture
+ * @internal
+ */
+export type NativeMediaType = 'video' | 'audio';
+
+/**
+ * Information about a capture device from native layer
+ * @internal
+ */
+export interface NativeDeviceInfo {
+  /** Stable unique identifier (persists across sessions) */
+  readonly id: string;
+
+  /** Human-readable device name for UI display */
+  readonly name: string;
+
+  /** Platform-specific device string for FFmpeg (e.g., "0" for avfoundation, "video=Name" for dshow) */
+  readonly ffmpegDevice: string;
+
+  /** Types of media this device can capture */
+  readonly mediaTypes: readonly NativeMediaType[];
+
+  /** Platform this device was enumerated from */
+  readonly platform: NativeDevicePlatform;
+}
+
+/**
+ * A specific video capture mode
+ * @internal
+ */
+export interface NativeVideoMode {
+  /** Width in pixels */
+  readonly width: number;
+
+  /** Height in pixels */
+  readonly height: number;
+
+  /** Minimum supported frame rate */
+  readonly minFps: number;
+
+  /** Maximum supported frame rate */
+  readonly maxFps: number;
+}
+
+/**
+ * Device capabilities for video capture
+ * @internal
+ */
+export interface NativeDeviceCapabilities {
+  /** Supported video modes (resolution + frame rate) */
+  readonly modes: readonly NativeVideoMode[];
+
+  /** Supported pixel formats (FFmpeg names: 'nv12', 'yuyv422', etc.) */
+  readonly pixelFormats: readonly string[];
+
+  /** Supported video codecs for compressed formats ('mjpeg', 'h264') */
+  readonly videoCodecs: readonly string[];
+}
+
+/**
+ * Native Device binding interface
+ *
+ * Provides platform-native device enumeration and capability querying.
+ * Uses AVFoundation on macOS, DirectShow on Windows, V4L2 on Linux.
+ *
+ * @internal
+ */
+export interface NativeDevice {
+  readonly __brand: 'NativeDevice';
+}

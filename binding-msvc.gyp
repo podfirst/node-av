@@ -61,6 +61,8 @@
                 "src/bindings/bitstream_filter_context_sync.cc",
                 "src/bindings/option.cc",
                 "src/bindings/sync_queue.cc",
+                "src/bindings/device.cc",
+                "src/bindings/device_win32.cpp",
                 "externals/jellyfin-ffmpeg/fftools/sync_queue.c",
             ],
             "include_dirs": [

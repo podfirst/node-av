@@ -14,6 +14,7 @@ export { WebRTCStream, type WebRTCCodecInfo, type WebRTCStreamOptions } from './
 export { RTPStream, type RTPStreamOptions } from './rtp-stream.js';
 export { FMP4_CODECS, FMP4Stream, type FMP4Data, type FMP4StreamOptions, type MP4Box } from './fmp4-stream.js';
 export { WhisperTranscriber, type WhisperSegment, type WhisperTranscriberOptions } from './whisper.js';
+export { Device, DeviceError, type DeviceCapabilities, type DeviceErrorCode, type DeviceInfo, type DevicePlatform, type MediaType, type VideoMode, } from './device.js';
 export * from './utilities/index.js';
 export * from './utils.js';
 export type * from './types.js';

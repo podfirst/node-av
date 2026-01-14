@@ -35,6 +35,7 @@ extern "C" {
 #include "log.h"
 #include "option.h"
 #include "sync_queue.h"
+#include "device.h"
 
 namespace ffmpeg {
 
@@ -96,6 +97,9 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
 
   // Sync Queue
   SyncQueue::Init(env, exports);
+
+  // Device Enumeration
+  Device::Init(env, exports);
 
   return exports;
 }

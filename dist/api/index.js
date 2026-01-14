@@ -28,6 +28,8 @@ export { RTPStream } from './rtp-stream.js';
 export { FMP4_CODECS, FMP4Stream } from './fmp4-stream.js';
 // Whisper Transcriber
 export { WhisperTranscriber } from './whisper.js';
+// Device Enumeration
+export { Device, DeviceError, } from './device.js';
 // Utilities
 export * from './utilities/index.js';
 export * from './utils.js';

@@ -32,6 +32,10 @@ import type {
   NativeCodecContext,
   NativeCodecParameters,
   NativeCodecParser,
+  NativeDevice,
+  NativeDeviceCapabilities,
+  NativeDeviceInfo,
+  NativeDevicePlatform,
   NativeDictionary,
   NativeFFmpegError,
   NativeFifo,
@@ -201,6 +205,38 @@ interface NativeSyncQueueConstructor {
   create(type: number, bufferSizeUs: number): NativeSyncQueue;
 }
 
+// Device Enumeration - Platform-native device enumeration and capability querying
+interface NativeDeviceConstructor {
+  new (): NativeDevice;
+
+  /**
+   * List all available capture devices on the current platform.
+   * @param mediaType Optional filter by media type ('video' or 'audio')
+   * @returns Array of device information
+   */
+  listDevices(mediaType?: string): NativeDeviceInfo[];
+
+  /**
+   * Probe capabilities for a specific device (synchronous).
+   * @param device Device object with id and platform properties
+   * @returns Device capabilities including modes, pixel formats, and codecs
+   */
+  probeCapabilities(device: { id: string; platform: string }): NativeDeviceCapabilities;
+
+  /**
+   * Probe capabilities for a specific device (asynchronous).
+   * @param device Device object with id and platform properties
+   * @returns Promise resolving to device capabilities
+   */
+  probeCapabilitiesAsync(device: { id: string; platform: string }): Promise<NativeDeviceCapabilities>;
+
+  /**
+   * Get the current platform's device format.
+   * @returns Platform identifier ('avfoundation', 'dshow', 'v4l2', or 'unknown')
+   */
+  getPlatform(): NativeDevicePlatform;
+}
+
 /**
  * The complete native binding interface
  */
@@ -255,6 +291,9 @@ export interface NativeBinding {
 
   // Sync Queue
   SyncQueue: NativeSyncQueueConstructor;
+
+  // Device Enumeration
+  Device: NativeDeviceConstructor;
 
   // Functions
   getFFmpegInfo: () => {

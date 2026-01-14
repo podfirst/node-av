@@ -42,6 +42,18 @@ export { FMP4_CODECS, FMP4Stream, type FMP4Data, type FMP4StreamOptions, type MP
 // Whisper Transcriber
 export { WhisperTranscriber, type WhisperSegment, type WhisperTranscriberOptions } from './whisper.js';
 
+// Device Enumeration
+export {
+  Device,
+  DeviceError,
+  type DeviceCapabilities,
+  type DeviceErrorCode,
+  type DeviceInfo,
+  type DevicePlatform,
+  type MediaType,
+  type VideoMode,
+} from './device.js';
+
 // Utilities
 export * from './utilities/index.js';
 export * from './utils.js';

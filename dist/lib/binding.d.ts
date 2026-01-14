@@ -6,7 +6,7 @@
  */
 import type { AVCodecID, AVError, AVHWDeviceType, AVLogLevel, AVMediaType, AVOptionSearchFlags, AVPixelFormat, AVSampleFormat, FFDecoderCodec, FFEncoderCodec } from '../constants/index.js';
 import type { PosixError } from './error.js';
-import type { NativeAudioFifo, NativeBitStreamFilter, NativeBitStreamFilterContext, NativeCodec, NativeCodecContext, NativeCodecParameters, NativeCodecParser, NativeDictionary, NativeFFmpegError, NativeFifo, NativeFilter, NativeFilterContext, NativeFilterGraph, NativeFilterInOut, NativeFormatContext, NativeFrame, NativeFrameUtils, NativeHardwareDeviceContext, NativeHardwareFramesContext, NativeInputFormat, NativeIOContext, NativeLog, NativeOption, NativeOutputFormat, NativePacket, NativeSoftwareResampleContext, NativeSoftwareScaleContext, NativeStream, NativeSyncQueue } from './native-types.js';
+import type { NativeAudioFifo, NativeBitStreamFilter, NativeBitStreamFilterContext, NativeCodec, NativeCodecContext, NativeCodecParameters, NativeCodecParser, NativeDevice, NativeDeviceCapabilities, NativeDeviceInfo, NativeDevicePlatform, NativeDictionary, NativeFFmpegError, NativeFifo, NativeFilter, NativeFilterContext, NativeFilterGraph, NativeFilterInOut, NativeFormatContext, NativeFrame, NativeFrameUtils, NativeHardwareDeviceContext, NativeHardwareFramesContext, NativeInputFormat, NativeIOContext, NativeLog, NativeOption, NativeOutputFormat, NativePacket, NativeSoftwareResampleContext, NativeSoftwareScaleContext, NativeStream, NativeSyncQueue } from './native-types.js';
 import type { ChannelLayout, DtsPredictState, IDimension, IRational } from './types.js';
 type NativePacketConstructor = new () => NativePacket;
 type NativeFrameConstructor = new () => NativeFrame;
@@ -118,6 +118,38 @@ interface NativeOptionStatic {
 interface NativeSyncQueueConstructor {
     create(type: number, bufferSizeUs: number): NativeSyncQueue;
 }
+interface NativeDeviceConstructor {
+    new (): NativeDevice;
+    /**
+     * List all available capture devices on the current platform.
+     * @param mediaType Optional filter by media type ('video' or 'audio')
+     * @returns Array of device information
+     */
+    listDevices(mediaType?: string): NativeDeviceInfo[];
+    /**
+     * Probe capabilities for a specific device (synchronous).
+     * @param device Device object with id and platform properties
+     * @returns Device capabilities including modes, pixel formats, and codecs
+     */
+    probeCapabilities(device: {
+        id: string;
+        platform: string;
+    }): NativeDeviceCapabilities;
+    /**
+     * Probe capabilities for a specific device (asynchronous).
+     * @param device Device object with id and platform properties
+     * @returns Promise resolving to device capabilities
+     */
+    probeCapabilitiesAsync(device: {
+        id: string;
+        platform: string;
+    }): Promise<NativeDeviceCapabilities>;
+    /**
+     * Get the current platform's device format.
+     * @returns Platform identifier ('avfoundation', 'dshow', 'v4l2', or 'unknown')
+     */
+    getPlatform(): NativeDevicePlatform;
+}
 /**
  * The complete native binding interface
  */
@@ -151,6 +183,7 @@ export interface NativeBinding {
     Log: NativeLogConstructor;
     Option: NativeOptionStatic;
     SyncQueue: NativeSyncQueueConstructor;
+    Device: NativeDeviceConstructor;
     getFFmpegInfo: () => {
         version: string;
         configuration: string;
