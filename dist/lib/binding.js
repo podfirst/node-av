@@ -12,6 +12,14 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 /**
+ * Get the asar.unpacked equivalent of a path.
+ * Electron unpacks native modules to app.asar.unpacked/ instead of app.asar/
+ * but __dirname resolves to app.asar/, causing existsSync() to fail.
+ */
+function getUnpackedPath(p) {
+    return p.replace(/\.asar([/\\])/g, '.asar.unpacked$1');
+}
+/**
  * Load the native binding
  *
  * @returns The loaded native binding interface
@@ -31,10 +39,23 @@ function loadBinding() {
         const releasePath = resolve(__dirname, '..', '..', 'build', 'Release', 'node-av.node');
         const binaryPath = resolve(__dirname, '..', '..', 'binary', 'node-av.node');
         const rootPath = resolve(__dirname, '..', '..', 'node-av.node');
-        const localPath = [releasePath, binaryPath, rootPath];
+        // Include asar.unpacked paths for Electron packaged apps
+        const localPath = [
+            releasePath,
+            getUnpackedPath(releasePath),
+            binaryPath,
+            getUnpackedPath(binaryPath),
+            rootPath,
+            getUnpackedPath(rootPath),
+        ];
         for (const path of localPath) {
             if (existsSync(path)) {
-                return require(path);
+                try {
+                    return require(path);
+                }
+                catch (err) {
+                    errors.push(new Error(`Local build loading from ${path} failed: ${err}`));
+                }
             }
         }
     }
@@ -44,13 +65,17 @@ function loadBinding() {
     if (!loadLocal) {
         // PodFirst: Try loading from binary folder (downloaded from GitHub releases)
         // This is the preferred method when using the fork via git reference
+        // Check both regular and asar.unpacked paths (Electron extracts native modules to .unpacked)
         const binaryNodePath = resolve(__dirname, '..', '..', 'binary', 'node-av.node');
-        if (existsSync(binaryNodePath)) {
-            try {
-                return require(binaryNodePath);
-            }
-            catch (err) {
-                errors.push(new Error(`Binary folder loading failed: ${err}`));
+        const unpackedBinaryPath = getUnpackedPath(binaryNodePath);
+        for (const nodePath of [binaryNodePath, unpackedBinaryPath]) {
+            if (existsSync(nodePath)) {
+                try {
+                    return require(nodePath);
+                }
+                catch (err) {
+                    errors.push(new Error(`Binary folder loading from ${nodePath} failed: ${err}`));
+                }
             }
         }
         // Fallback: Try npm packages (for backwards compatibility)
